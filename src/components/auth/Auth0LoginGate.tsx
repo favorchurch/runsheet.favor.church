@@ -40,8 +40,8 @@ export function Auth0LoginGate({ type = 'unauthenticated', userEmail, errorMessa
           </h1>
           <p className="text-sm font-medium text-slate-600 leading-relaxed">
             {isUnauthenticated
-              ? 'Sign in with your Auth0 account to access service runsheets and live production tools.'
-              : 'This account is not eligible to view or manage runsheets.'}
+              ? 'Sign in with your rock account to access service runsheets and live production tools.'
+              : 'This account does not have permissions to access this website.'}
           </p>
         </div>
 
@@ -55,7 +55,7 @@ export function Auth0LoginGate({ type = 'unauthenticated', userEmail, errorMessa
               </div>
             )}
             <p className="text-amber-800">
-              {errorMessage || 'Your Auth0 identity does not match any active Rock RMS volunteer or staff profile.'}
+              {errorMessage || 'Your identity does not match any active Rock RMS volunteer or staff profile.'}
             </p>
           </div>
         )}

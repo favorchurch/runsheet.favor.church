@@ -56,7 +56,6 @@ export default async function Home() {
   }
 
   const displayName = sessionUser.contact?.fullName || sessionUser.name || sessionUser.email || 'User';
-  const rockId = sessionUser.contact?.id;
 
   return (
     <main className="flex min-h-screen flex-col items-center px-3 py-4 sm:px-6 sm:py-6 bg-slate-50 text-slate-900 w-full">
