@@ -67,7 +67,7 @@ export function Auth0LoginGate({ type = 'unauthenticated', userEmail, errorMessa
               href="/api/auth/login"
               className="w-full inline-flex justify-center items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-sm py-3.5 px-4 shadow-md shadow-blue-500/20 transition-all duration-150 cursor-pointer"
             >
-              <span>Log In with Auth0</span>
+              <span>Log In</span>
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
               </svg>
