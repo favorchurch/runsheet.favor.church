@@ -5,7 +5,7 @@ import { assertAccessibleGroupId } from '@/auth0-hooks/server/assertAccessibleGr
 import {
   ROCK_CONNECT_SIGNUP_WORKFLOW_TYPE_ID,
   ROCK_WORKFLOW_ENTITY_TYPE_ID,
-} from '@/constants.client';
+} from '@/constants/client';
 import { rockUpsertEntityAttributeValue } from '@/server-actions/internal/rockConnectGroupAttributes';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import {

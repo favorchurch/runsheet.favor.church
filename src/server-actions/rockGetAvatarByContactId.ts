@@ -1,7 +1,7 @@
 'use server';
 
 import { assertAuthenticated } from '@/auth0-hooks/server/assertAuthenticated';
-import { ROCK_API_URL, ROCK_API_KEY } from '@/constants.server';
+import { ROCK_API_URL, ROCK_API_KEY } from '@/constants/server';
 import { number, object } from 'zod';
 
 const schema = object({

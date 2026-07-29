@@ -18,7 +18,7 @@ import {
   ROCK_CACHE_DEBUG,
   ROCK_CACHE_TTL_SECONDS,
   ROCK_CACHE_VERSION_TTL_SECONDS,
-} from '@/constants.server';
+} from '@/constants/server';
 import { isRedisEnabled, redisCommand } from '@/server-actions/internal/redisClient';
 import type { RockQueryParams } from '@/types/RockQueryParams';
 

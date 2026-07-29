@@ -1,5 +1,14 @@
 import { getServerSession } from '@/auth0-hooks/server/getServerSession';
-import { RunsheetManager } from '@/components/RunsheetManager';
+import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
+
+/*
+ * `/api/auth/login` and `/api/auth/logout` are Auth0 route handlers, not pages.
+ * They answer with a redirect to Auth0, so the browser has to make the request
+ * itself — `next/link` would try to client-side navigate and the login flow
+ * would never start. `no-html-link-for-pages` cannot tell the two apart, so it
+ * is switched off for this file only.
+ */
+/* eslint-disable @next/next/no-html-link-for-pages */
 
 export default async function Home() {
   let session = null;

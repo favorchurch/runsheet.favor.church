@@ -4,7 +4,7 @@
  * Everything here is read from environment variables and may contain secrets
  * (e.g. ROCK_API_KEY), so the `server-only` import guarantees a build error if
  * this module is ever imported into client code. Public, browser-safe config
- * lives in `constants.client.ts` instead.
+ * lives in `constants/client.ts` instead.
  */
 import 'server-only';
 

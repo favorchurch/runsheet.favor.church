@@ -3,7 +3,7 @@
 import { revalidateTag } from 'next/cache';
 import { assertAuthenticated } from '@/auth0-hooks/server/assertAuthenticated';
 import { assertHasRole } from '@/auth0-hooks/server/assertHasRole';
-import { ROCK_API_URL } from '@/constants.server';
+import { ROCK_API_URL } from '@/constants/server';
 import {
   rockGet,
   rockPost,

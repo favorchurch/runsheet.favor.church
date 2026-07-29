@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { ROCK_CONTENT_TYPE_ID } from '@/constants.server';
+import { ROCK_CONTENT_TYPE_ID } from '@/constants/server';
 import { rockGet } from './rockFetch';
 
 let cachedNumericId: number | null = null;

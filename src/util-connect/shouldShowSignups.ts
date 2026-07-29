@@ -1,4 +1,4 @@
-import { CampusName, RockCampusId } from './constants.client';
+import { CampusName, RockCampusId } from '@/constants/client';
 
 export function shouldShowSignups(campusName: string | number | undefined) {
   // return false;

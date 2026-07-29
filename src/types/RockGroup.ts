@@ -16,7 +16,7 @@ import {
   parseAgeRangeValue,
   inferAgeGroupFromRange,
   normalizeConnectAgeGroup,
-} from '@/connectGroupAttributes';
+} from '@/util-connect/connectGroupAttributes';
 import { normalizeMeetupTime } from '@/util-date/normalizeMeetupTime';
 import { RockGroupMember } from './RockGroupMember';
 import { RockCampus } from './RockCampus';

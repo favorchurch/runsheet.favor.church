@@ -1,8 +1,9 @@
 'use server';
 
+import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
 import { rockPost } from '@/server-actions/internal/rockFetch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
-import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
+import type { RunsheetItemRow } from '@/types/Runsheet';
 
 export async function rockCreateServiceRunsheet(title: string, contentChannelTypeId: number, categoryId?: number) {
   try {
@@ -35,9 +36,9 @@ export async function rockCreateServiceRunsheet(title: string, contentChannelTyp
       }
     }
 
-    // 3. Automatically populate the default 18 runsheet template items
+    // 3. Automatically populate the default runsheet template items
     try {
-      const preparedItems = DEFAULT_RUNSHEET_TEMPLATE.map((row, idx) => ({
+      const preparedItems: RunsheetItemRow[] = DEFAULT_RUNSHEET_TEMPLATE.map((row, idx) => ({
         id: `new_${idx}_${Date.now()}`,
         isNew: true,
         title: row.title,

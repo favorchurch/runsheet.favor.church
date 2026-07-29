@@ -24,7 +24,7 @@ import {
   CONNECT_MATERIALS_CACHE_TTL_SECONDS,
   REDIS_KEY_PREFIX,
   ROCK_CACHE_DEBUG,
-} from '@/constants.server';
+} from '@/constants/server';
 import { isRedisEnabled, redisCommand } from '@/server-actions/internal/redisClient';
 
 /** The raw, viewer-independent Rock reads that back the Connect Materials load. */

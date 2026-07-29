@@ -1,7 +1,7 @@
 'use server';
 
 import { assertAuthenticated } from '@/auth0-hooks/server/assertAuthenticated';
-import { ROCK_CACHE_TTL_SECONDS } from '@/constants.server';
+import { ROCK_CACHE_TTL_SECONDS } from '@/constants/server';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import { RockGroup, RockGroupType } from '@/types/RockGroup';
 import { ConnectRole } from '@/types/ConnectRole';

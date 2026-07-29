@@ -10,7 +10,7 @@
 import 'server-only';
 
 import NodeCache from 'node-cache';
-import { REDIS_KEY_PREFIX } from '@/constants.server';
+import { REDIS_KEY_PREFIX } from '@/constants/server';
 import { isRedisEnabled, redisCommand } from '@/server-actions/internal/redisClient';
 import type { AuthAccess, AuthContact, AuthRolesMap } from '@/types/AuthUser';
 

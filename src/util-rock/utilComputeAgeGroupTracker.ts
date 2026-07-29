@@ -1,4 +1,4 @@
-import { ConnectAgeGroup } from '@/connectGroupAttributes';
+import { ConnectAgeGroup } from '@/util-connect/connectGroupAttributes';
 
 export interface TrackerGroupInput {
   groupId: number;
