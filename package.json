@@ -1,6 +1,6 @@
 {
-  "name": "rock-roster",
-  "version": "1.0.0",
+  "name": "runsheet-favor-church",
+  "version": "1.0.1",
   "private": true,
   "ts-node": {
     "esm": true,
