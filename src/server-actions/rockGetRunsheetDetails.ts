@@ -1,5 +1,6 @@
 'use server';
 
+import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 import { isPersonColumn } from '@/constants/runsheetColumns';
@@ -68,6 +69,8 @@ async function resolvePersonName(rawValue: string): Promise<string> {
 /** Loads a runsheet channel, its dynamic columns, and every segment row. */
 export async function rockGetRunsheetDetails(channelId: number) {
   try {
+    await getRockSession();
+
     const channel = (await rockGet(`/ContentChannels/${channelId}`)) as {
       Id: number;
       Name: string;

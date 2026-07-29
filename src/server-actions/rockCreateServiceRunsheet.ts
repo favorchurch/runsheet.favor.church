@@ -1,12 +1,14 @@
 'use server';
 
 import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
+import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockPost } from '@/server-actions/internal/rockFetch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import type { RunsheetItemRow } from '@/types/Runsheet';
 
 export async function rockCreateServiceRunsheet(title: string, contentChannelTypeId: number, categoryId?: number) {
   try {
+    await getRockSession();
     // 1. Create the Content Channel in Rock RMS using the selected ContentChannelTypeId
     const result = await rockPost('/ContentChannels', {
       Name: title,

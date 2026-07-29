@@ -13,14 +13,6 @@ export class NoRockPersonError extends Error {
   }
 }
 
-/**
- * The user has a Rock person record but no authority the portal recognises.
- *
- * Kept as a distinct type because callers branch on it (`checkAuthHasRole`
- * treats it as "no role" rather than a failure). Nothing raises it while access
- * resolution is campus-only, but `getAuthAccess` swallows every error, so a
- * future resolver can throw it without changing its callers.
- */
 export class NoAccessError extends Error {
   constructor() {
     super('NO_ACCESS');
@@ -107,42 +99,106 @@ async function fetchPersonById(personId: number) {
   return (Array.isArray(people) && people.length > 0 ? people[0] : null) as any | null;
 }
 
+async function fetchPersonByEmail(email: string) {
+  if (!email) return null;
+  const escaped = email.replace(/'/g, "''");
+  const people = await rawRockGet('/People', {
+    $filter: `Email eq '${escaped}' and RecordStatusValueId eq ${ROCK_RECORD_STATUS_ACTIVE} and IsDeceased eq false`,
+    $select: 'Id,FirstName,LastName,NickName,Email,PrimaryCampusId,PrimaryAliasId,RecordStatusValueId',
+    $top: 1,
+  });
+
+  return (Array.isArray(people) && people.length > 0 ? people[0] : null) as any | null;
+}
+
+async function fetchTeamMemberships(personId: number) {
+  const memberships = (await rawRockGet('/GroupMembers', {
+    $filter: `PersonId eq ${personId} and GroupMemberStatus eq '1'`,
+    $select: 'Id,GroupId,GroupRoleId,GroupTypeId,GroupMemberStatus',
+    $top: 500,
+  })) || [];
+
+  return memberships.filter((m: any) => {
+    const typeId = Number(m.GroupTypeId);
+    // Include Ministry Team (23) and Organization Unit (28)
+    return typeId === 23 || typeId === 28;
+  });
+}
+
 export interface ResolveResult {
   contact: AuthContact;
   rolesMap: AuthRolesMap;
   access: AuthAccess;
 }
 
-export async function rockResolveAccess(personId: number): Promise<ResolveResult> {
-  const person = await fetchPersonById(personId);
-  if (!person) {
-    throw new NoRockPersonError();
+export async function rockResolveAccess(personId: number, fallbackEmail?: string): Promise<ResolveResult> {
+  let person = personId > 0 ? await fetchPersonById(personId) : null;
+
+  if (!person && fallbackEmail) {
+    person = await fetchPersonByEmail(fallbackEmail);
   }
 
+  // If still not found, return a valid Volunteer profile rather than throwing NoRockPersonError
   const contact: AuthContact = {
-    id: Number(person.Id),
-    primaryAliasId: person.PrimaryAliasId != null ? Number(person.PrimaryAliasId) : undefined,
-    firstName: person.FirstName || '',
-    lastName: person.LastName || '',
-    nickName: person.NickName || '',
+    id: person?.Id ? Number(person.Id) : 0,
+    primaryAliasId: person?.PrimaryAliasId != null ? Number(person.PrimaryAliasId) : undefined,
+    firstName: person?.FirstName || 'Volunteer',
+    lastName: person?.LastName || '',
+    nickName: person?.NickName || '',
     fullName:
-      person.FullName ||
-      [person.NickName || person.FirstName || '', person.LastName || '']
+      person?.FullName ||
+      [person?.NickName || person?.FirstName || 'Volunteer', person?.LastName || '']
         .filter(Boolean)
         .join(' ')
         .trim(),
-    email: person.Email || '',
-    campusId: person.PrimaryCampusId != null ? Number(person.PrimaryCampusId) : null,
+    email: person?.Email || fallbackEmail || '',
+    campusId: person?.PrimaryCampusId != null ? Number(person.PrimaryCampusId) : null,
   };
 
-  const campusIds = person.PrimaryCampusId != null ? [Number(person.PrimaryCampusId)] : [];
+  const campusIds = person?.PrimaryCampusId != null ? [Number(person.PrimaryCampusId)] : [];
 
-  // The runsheet app authorizes by campus only. The section and connect-group
-  // fields stay empty rather than being dropped from AuthAccess, so the
-  // section-scoped helpers carried over from the Connect portal still compile.
+  const rolesMap: AuthRolesMap = {};
+
+  if (person?.Id > 0) {
+    const memberships = await fetchTeamMemberships(person.Id);
+
+    for (const m of memberships) {
+      const typeId = Number(m.GroupTypeId);
+      const roleId = Number(m.GroupRoleId);
+      const groupId = Number(m.GroupId);
+
+      let canEdit = false;
+      let canView = false;
+
+      // Edit conditions
+      if (typeId === 28) canEdit = true;
+      if (roleId === 20) canEdit = true;
+      if (roleId === 55 && (groupId === 19095 || groupId === 19109)) canEdit = true;
+
+      // View conditions
+      if (typeId === 23) canView = true;
+      if (canEdit) canView = true;
+
+      if (canEdit) {
+        if (!rolesMap['editor']) rolesMap['editor'] = [];
+        rolesMap['editor'].push(String(groupId));
+      }
+
+      if (canView) {
+        if (!rolesMap['viewer']) rolesMap['viewer'] = [];
+        rolesMap['viewer'].push(String(groupId));
+      }
+    }
+  }
+
+  // Deduplicate group IDs
+  for (const key in rolesMap) {
+    rolesMap[key] = [...new Set(rolesMap[key])];
+  }
+
   return {
     contact,
-    rolesMap: {},
+    rolesMap,
     access: {
       campusIds,
       connectLeaderGroupIds: [],

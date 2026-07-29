@@ -2,7 +2,7 @@
 
 import type { Editor } from '@tiptap/react';
 import React, { useMemo, useState } from 'react';
-import { HiBars3, HiCheck, HiExclamationCircle, HiPlus, HiSparkles, HiTrash } from 'react-icons/hi2';
+import { HiBars3, HiCheck, HiExclamationCircle, HiLockClosed, HiPlus, HiSparkles, HiTrash } from 'react-icons/hi2';
 import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
 import {
   FALLBACK_RUNSHEET_COLUMNS,
@@ -30,6 +30,7 @@ interface RunsheetTableEditorProps {
   columns?: DynamicAttributeColumn[];
   initialItems: RunsheetItemRow[];
   initialStartTime?: string;
+  readOnly?: boolean;
 }
 
 /** A row plus the clock values derived from the durations above it. */
@@ -53,6 +54,7 @@ export function RunsheetTableEditor({
   columns = FALLBACK_RUNSHEET_COLUMNS,
   initialItems,
   initialStartTime = '09:00:00 AM',
+  readOnly = false,
 }: RunsheetTableEditorProps) {
   const [items, setItems] = useState<RunsheetItemRow[]>(initialItems);
   const [deletedIds, setDeletedIds] = useState<(number | string)[]>([]);
@@ -156,6 +158,7 @@ export function RunsheetTableEditor({
   }, [items, startTime]);
 
   const handleAttrValueChange = (index: number, key: string, value: string) => {
+    if (readOnly) return;
     setItems((previous) => {
       const updated = [...previous];
       const item = { ...updated[index] };
@@ -175,7 +178,7 @@ export function RunsheetTableEditor({
   };
 
   const handleCommitDurationDrafts = () => {
-    if (editingDurationBlockIndex === null) return;
+    if (readOnly || editingDurationBlockIndex === null) return;
 
     setItems((previous) => {
       const updated = [...previous];
@@ -193,6 +196,7 @@ export function RunsheetTableEditor({
   };
 
   const handleAddRow = () => {
+    if (readOnly) return;
     const newRow: RunsheetItemRow = {
       id: `new_${Date.now()}`,
       isNew: true,
@@ -215,6 +219,7 @@ export function RunsheetTableEditor({
   };
 
   const handleLoadDefaultTemplate = () => {
+    if (readOnly) return;
     const templateRows: RunsheetItemRow[] = DEFAULT_RUNSHEET_TEMPLATE.map((row, index) => ({
       id: `tmpl_${index}_${Date.now()}`,
       isNew: true,
@@ -243,6 +248,7 @@ export function RunsheetTableEditor({
   };
 
   const handleDeleteRow = (id: number | string) => {
+    if (readOnly) return;
     setDeletedIds((previous) => [...previous, id]);
     setItems((previous) => previous.filter((item) => item.id !== id));
     setEditingCell(null);
@@ -250,6 +256,7 @@ export function RunsheetTableEditor({
   };
 
   const handleDragStart = (index: number, event: React.DragEvent) => {
+    if (readOnly) return;
     setDraggedIndex(index);
     const rowElement = event.currentTarget.closest('tr');
     if (rowElement && event.dataTransfer) {
@@ -258,7 +265,7 @@ export function RunsheetTableEditor({
   };
 
   const handleDrop = (targetIndex: number) => {
-    if (draggedIndex === null || draggedIndex === targetIndex) return;
+    if (readOnly || draggedIndex === null || draggedIndex === targetIndex) return;
 
     setItems((previous) => {
       const updated = [...previous];
@@ -273,9 +280,8 @@ export function RunsheetTableEditor({
   };
 
   const handleSave = async () => {
+    if (readOnly) return;
     setStatus({ type: 'saving' });
-
-    // Close the open cell first so its last keystrokes are in `items`.
     setEditingCell(null);
 
     const preparedItems = processedRows.map((row) => ({ ...row, startDateTime: row.calculatedStart }));
@@ -290,19 +296,12 @@ export function RunsheetTableEditor({
     }
   };
 
-  /**
-   * Closes a cell only if it is still the open one.
-   *
-   * Some closers fire late — the people picker waits out a click on its results
-   * list — by which time the user may have opened a different cell. An
-   * unconditional `setEditingCell(null)` would shut that new cell instead.
-   */
   const closeCell = (index: number, key: string) => {
     setEditingCell((current) => (current?.rowIndex === index && current?.key === key ? null : current));
   };
 
   const renderCellContent = (index: number, key: string, value: string, isPersonField = false) => {
-    const isEditing = editingCell?.rowIndex === index && editingCell?.key === key;
+    const isEditing = !readOnly && editingCell?.rowIndex === index && editingCell?.key === key;
 
     if (isEditing) {
       if (isPersonField) {
@@ -327,23 +326,21 @@ export function RunsheetTableEditor({
 
     return (
       <div
-        // Opens on mousedown, not click: closing the previous cell collapses its
-        // editor and reflows the row, which can move this element out from under
-        // the pointer before mouseup — so the click would never arrive.
-        //
-        // The default is suppressed because the browser moves focus on the
-        // following mouseup, which would pull it straight back out of the editor
-        // or picker that just mounted.
         {...{ [CELL_ATTRIBUTE]: '' }}
         onMouseDown={(event) => {
+          if (readOnly) return;
           event.preventDefault();
           setEditingCell({ rowIndex: index, key });
         }}
-        className="min-h-[24px] w-full cursor-text rounded px-2 py-1 text-slate-900 transition-colors hover:bg-slate-100/80"
+        className={`min-h-[24px] w-full rounded px-2 py-1 text-slate-900 transition-colors ${
+          readOnly ? 'cursor-default' : 'cursor-text hover:bg-slate-100/80'
+        }`}
         title={
-          isPersonField
+          readOnly
+            ? 'Read-only volunteer view'
+            : isPersonField
             ? 'Click to search Rock for a person'
-            : 'Click to edit · format with the bar above · Enter saves, Shift+Enter adds a line'
+            : 'Click to edit'
         }
       >
         <RichTextContent value={value ?? ''} />
@@ -356,10 +353,15 @@ export function RunsheetTableEditor({
       {/* Header Bar */}
       <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center">
         <div>
-          <h2 className="text-lg font-bold leading-tight text-slate-900 sm:text-xl">{channelName}</h2>
-          <p className="text-xs font-medium text-slate-500">
-            Channel ID: {channelId} • Favor Runsheet Studio • Activity Title as Segment Title
-          </p>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold leading-tight text-slate-900 sm:text-xl">{channelName}</h2>
+            {readOnly && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-0.5 text-xs font-bold text-amber-900 border border-amber-300 shadow-xs">
+                <HiLockClosed className="h-3.5 w-3.5 text-amber-700" />
+                Read Only (Volunteer Access)
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -370,7 +372,8 @@ export function RunsheetTableEditor({
             <input
               id="runsheet-start-time"
               type="text"
-              className="w-24 rounded border border-slate-300 bg-white px-2 py-0.5 font-mono text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none"
+              disabled={readOnly}
+              className="w-24 rounded border border-slate-300 bg-white px-2 py-0.5 font-mono text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
               value={startTime}
               onChange={(event) => {
                 setStartTime(event.target.value);
@@ -380,36 +383,40 @@ export function RunsheetTableEditor({
             />
           </div>
 
-          <button
-            onClick={handleLoadDefaultTemplate}
-            className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-purple-300 bg-purple-50 px-3 py-2 text-xs font-semibold text-purple-900 hover:bg-purple-100"
-            title="Load standard Favor Runsheet template"
-          >
-            <HiSparkles className="h-4 w-4 text-purple-600" />
-            <span>Load Template</span>
-          </button>
+          {!readOnly && (
+            <>
+              <button
+                onClick={handleLoadDefaultTemplate}
+                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-purple-300 bg-purple-50 px-3 py-2 text-xs font-semibold text-purple-900 hover:bg-purple-100"
+                title="Load standard Favor Runsheet template"
+              >
+                <HiSparkles className="h-4 w-4 text-purple-600" />
+                <span>Load Template</span>
+              </button>
 
-          <button
-            onClick={handleAddRow}
-            className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
-          >
-            <HiPlus className="h-4 w-4 text-blue-600" />
-            <span>Add Row</span>
-          </button>
+              <button
+                onClick={handleAddRow}
+                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+              >
+                <HiPlus className="h-4 w-4 text-blue-600" />
+                <span>Add Row</span>
+              </button>
 
-          <button
-            onClick={handleSave}
-            disabled={status.type === 'saving' || !isDirty}
-            className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg bg-pink-700 px-4 py-2 text-xs font-semibold text-white hover:bg-pink-800 focus:outline-none active:bg-pink-900 disabled:opacity-40"
-          >
-            <HiCheck className="h-4 w-4" />
-            <span>{status.type === 'saving' ? 'Saving...' : 'Save Runsheet'}</span>
-          </button>
+              <button
+                onClick={handleSave}
+                disabled={status.type === 'saving' || !isDirty}
+                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg bg-pink-700 px-4 py-2 text-xs font-semibold text-white hover:bg-pink-800 focus:outline-none active:bg-pink-900 disabled:opacity-40"
+              >
+                <HiCheck className="h-4 w-4" />
+                <span>{status.type === 'saving' ? 'Saving...' : 'Save Runsheet'}</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Formatting bar for whichever cell is open */}
-      <RichTextToolbar editor={activeEditor} />
+      {/* Formatting bar for whichever cell is open (hidden in read-only mode) */}
+      {!readOnly && <RichTextToolbar editor={activeEditor} />}
 
       {status.type === 'success' && (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-800">
@@ -429,7 +436,7 @@ export function RunsheetTableEditor({
         <table className="w-full border-collapse bg-white text-xs text-slate-900" style={{ tableLayout: 'fixed' }}>
           <thead>
             <tr className="border-b-2 border-slate-300 bg-slate-100 text-left font-bold text-slate-900">
-              <th className="border-r border-slate-300 p-1.5 text-center" style={{ width: '2.5%' }} />
+              {!readOnly && <th className="border-r border-slate-300 p-1.5 text-center" style={{ width: '2.5%' }} />}
               <th className="border-r border-slate-300 p-2 text-center font-bold" style={{ width: '7%' }}>
                 Start
               </th>
@@ -449,7 +456,7 @@ export function RunsheetTableEditor({
                 </th>
               ))}
 
-              <th className="p-1.5 text-center" style={{ width: '3%' }} />
+              {!readOnly && <th className="p-1.5 text-center" style={{ width: '3%' }} />}
             </tr>
           </thead>
           <tbody>
@@ -457,26 +464,28 @@ export function RunsheetTableEditor({
               const spanInfo = timeSpanMap[index];
               const parentBlockIndex = parentBlockMap[index];
               const isDragOver = draggedIndex === index;
-              const isBlockEditing = editingDurationBlockIndex === parentBlockIndex;
+              const isBlockEditing = !readOnly && editingDurationBlockIndex === parentBlockIndex;
               const currentTitleVal = item.attributeValues?.ACTIVITYTITLE || item.title || '';
 
               return (
                 <tr
                   key={item.id}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => handleDrop(index)}
+                  onDragOver={(event) => !readOnly && event.preventDefault()}
+                  onDrop={() => !readOnly && handleDrop(index)}
                   className={`border-b border-slate-200 transition-colors hover:bg-slate-50/90 ${
                     isDragOver ? 'border-t-2 border-blue-500 bg-blue-50' : ''
                   }`}
                 >
-                  <td
-                    draggable
-                    onDragStart={(event) => handleDragStart(index, event)}
-                    className="cursor-grab select-none border-r border-slate-200 p-1 text-center text-slate-400 hover:text-slate-700 active:cursor-grabbing"
-                    title="Drag handle cell to move whole row"
-                  >
-                    <HiBars3 className="mx-auto h-5 w-5 pointer-events-none" />
-                  </td>
+                  {!readOnly && (
+                    <td
+                      draggable
+                      onDragStart={(event) => handleDragStart(index, event)}
+                      className="cursor-grab select-none border-r border-slate-200 p-1 text-center text-slate-400 hover:text-slate-700 active:cursor-grabbing"
+                      title="Drag handle cell to move whole row"
+                    >
+                      <HiBars3 className="mx-auto h-5 w-5 pointer-events-none" />
+                    </td>
+                  )}
 
                   {spanInfo ? (
                     <td
@@ -501,6 +510,7 @@ export function RunsheetTableEditor({
                       <td
                         rowSpan={spanInfo.count}
                         onDoubleClick={() => {
+                          if (readOnly) return;
                           const drafts: { [index: number]: string } = {};
                           for (let i = parentBlockIndex; i < parentBlockIndex + spanInfo.count; i++) {
                             drafts[i] = formatDurationToHMS(Number(items[i].duration) || 0);
@@ -508,8 +518,10 @@ export function RunsheetTableEditor({
                           setDurationDrafts(drafts);
                           setEditingDurationBlockIndex(parentBlockIndex);
                         }}
-                        className="cursor-pointer select-none border-b border-r border-slate-300 bg-slate-50/90 p-2 text-center align-middle font-mono font-semibold text-slate-800 hover:bg-slate-200/60"
-                        title="Double click to split & edit duration for sub-rows in this block"
+                        className={`select-none border-b border-r border-slate-300 bg-slate-50/90 p-2 text-center align-middle font-mono font-semibold text-slate-800 ${
+                          readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-slate-200/60'
+                        }`}
+                        title={readOnly ? 'Duration' : 'Double click to split & edit duration for sub-rows in this block'}
                       >
                         {spanInfo.formattedDuration || '-'}
                       </td>
@@ -529,7 +541,6 @@ export function RunsheetTableEditor({
                           setDurationDrafts((previous) => ({ ...previous, [index]: event.target.value }))
                         }
                         onBlur={(event) => {
-                          // Tabbing between the block's inputs must not commit yet.
                           if ((event.relatedTarget as HTMLElement | null)?.tagName === 'INPUT') return;
                           handleCommitDurationDrafts();
                         }}
@@ -551,15 +562,17 @@ export function RunsheetTableEditor({
                     </td>
                   ))}
 
-                  <td className="p-1 text-center">
-                    <button
-                      onClick={() => handleDeleteRow(item.id)}
-                      className="inline-flex min-h-[32px] min-w-[32px] cursor-pointer items-center justify-center rounded p-1.5 text-red-600 hover:bg-red-50"
-                      title="Delete Segment"
-                    >
-                      <HiTrash className="h-4 w-4" />
-                    </button>
-                  </td>
+                  {!readOnly && (
+                    <td className="p-1 text-center">
+                      <button
+                        onClick={() => handleDeleteRow(item.id)}
+                        className="inline-flex min-h-[32px] min-w-[32px] cursor-pointer items-center justify-center rounded p-1.5 text-red-600 hover:bg-red-50"
+                        title="Delete Segment"
+                      >
+                        <HiTrash className="h-4 w-4" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               );
             })}

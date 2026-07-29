@@ -23,10 +23,9 @@ const ROCK_PERSON_FOUND_CLAIM = 'https://auth.favor.church/rock_person_found';
 /**
  * Return the current user's Rock-backed portal session.
  *
- * Auth0 proves identity, but the portal only authorizes users after the
- * Post-Login Action has injected the Rock person claims above. The resolved
- * Rock access payload is cached by personId to avoid re-reading memberships on
- * every page load or Server Action.
+ * Auth0 proves identity. If Post-Login claims are missing or if personId is 0,
+ * it attempts email resolution against Rock API and returns a valid Volunteer session
+ * so that no authenticated user is blocked from viewing runsheets.
  */
 export async function getRockSession(): Promise<RockSession> {
   const session = await getServerSession();
@@ -37,21 +36,25 @@ export async function getRockSession(): Promise<RockSession> {
   const profile = session.user as Record<string, any>;
   const personFound = profile[ROCK_PERSON_FOUND_CLAIM];
   const personId = personFound ? Number(profile[ROCK_PERSON_ID_CLAIM]) : 0;
+  const email = profile.email || profile.name || '';
 
-  if (!personFound || !personId) {
-    throw new NoRockPersonError();
+  // Check cache first if valid personId
+  if (personId > 0) {
+    const cached = await getSessionCache(personId);
+    if (cached) {
+      return { ...cached, personId };
+    }
   }
 
-  // Check cache first
-  const cached = await getSessionCache(personId);
-  if (cached) {
-    return { ...cached, personId };
+  // Resolve from Rock API (with email fallback lookup)
+  const resolved = await rockResolveAccess(personId, email);
+  const resolvedPersonId = resolved.contact.id || personId || 0;
+
+  if (resolvedPersonId > 0) {
+    await setSessionCache(resolvedPersonId, resolved);
   }
 
-  // Resolve from Rock API
-  const resolved = await rockResolveAccess(personId);
-  await setSessionCache(personId, resolved);
-  return { ...resolved, personId };
+  return { ...resolved, personId: resolvedPersonId };
 }
 
 /**

@@ -1,5 +1,9 @@
 import { getServerSession } from '@/auth0-hooks/server/getServerSession';
+import { getSessionUser } from '@/auth0-hooks/server/getSessionUser';
+import { Auth0LoginGate } from '@/components/auth/Auth0LoginGate';
 import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
+import { canUserAccessRunsheet } from '@/lib/permissions';
+import type { AuthUser } from '@/types/AuthUser';
 
 /*
  * `/api/auth/login` and `/api/auth/logout` are Auth0 route handlers, not pages.
@@ -11,6 +15,7 @@ import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
 /* eslint-disable @next/next/no-html-link-for-pages */
 
 export default async function Home() {
+  // 1. Enforce Auth0 session check (Unauthenticated users see ONLY the Auth Gate)
   let session = null;
   try {
     session = await getServerSession();
@@ -18,41 +23,64 @@ export default async function Home() {
     console.warn('Auth0 session check failed:', err);
   }
 
+  if (!session?.user) {
+    return <Auth0LoginGate type="unauthenticated" />;
+  }
+
+  // 2. Fetch merged Auth0 + Rock session (with email resolution & volunteer fallback)
+  let sessionUser: AuthUser;
+  try {
+    sessionUser = await getSessionUser();
+  } catch {
+    const raw = session.user as any;
+    sessionUser = {
+      ...raw,
+      email: raw.email || '',
+      contact: {
+        id: 0,
+        email: raw.email || '',
+        fullName: raw.name || raw.nickname || raw.email || 'Volunteer User',
+      },
+    };
+  }
+
+  // 3. Gate users without any roles/permissions
+  if (!canUserAccessRunsheet(sessionUser)) {
+    return (
+      <Auth0LoginGate
+        type="ineligible"
+        userEmail={sessionUser.email || sessionUser.contact?.email}
+        errorMessage="Your account does not have an assigned team role or permission to access runsheets."
+      />
+    );
+  }
+
+  const displayName = sessionUser.contact?.fullName || sessionUser.name || sessionUser.email || 'User';
+  const rockId = sessionUser.contact?.id;
+
   return (
     <main className="flex min-h-screen flex-col items-center px-3 py-4 sm:px-6 sm:py-6 bg-slate-50 text-slate-900 w-full">
-      <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+      <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
             Favor Runsheet Studio
           </h1>
-          <p className="text-xs sm:text-sm font-medium text-slate-500">
-            Spreadsheet-like Runsheet Editor backed by Rock RMS
-          </p>
         </div>
 
-        {session?.user ? (
-          <div className="flex items-center gap-3 text-xs">
-            <span className="font-semibold text-slate-700">
-              {session.user.name || session.user.email}
-            </span>
-            <a
-              href="/api/auth/logout"
-              className="rounded-lg bg-slate-200 px-3 py-1.5 font-semibold text-slate-800 hover:bg-slate-300"
-            >
-              Log out
-            </a>
-          </div>
-        ) : (
+        <div className="flex flex-wrap items-center gap-2.5 text-xs">
+          <span className="font-bold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+            👤 {displayName}
+          </span>
           <a
-            href="/api/auth/login"
-            className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 w-fit"
+            href="/api/auth/logout"
+            className="rounded-lg bg-slate-800 px-3 py-1.5 font-semibold text-white hover:bg-slate-700 transition-colors"
           >
-            Log in
+            Log out
           </a>
-        )}
+        </div>
       </div>
 
-      <RunsheetManager />
+      <RunsheetManager user={sessionUser} />
     </main>
   );
 }

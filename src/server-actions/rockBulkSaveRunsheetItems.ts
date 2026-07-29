@@ -2,6 +2,7 @@
 
 import { readRunsheetCellValue } from '@/constants/runsheetColumns';
 import { htmlToPlainText } from '@/lib/richText';
+import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockDelete, rockGet, rockPatch, rockPost } from '@/server-actions/internal/rockFetch';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 
@@ -111,6 +112,7 @@ export async function rockBulkSaveRunsheetItems(
   columns?: DynamicAttributeColumn[],
 ) {
   try {
+    await getRockSession();
     for (const deletedId of deletedItemIds) {
       if (typeof deletedId === 'number' && deletedId > 0) {
         await rockDelete(`/ContentChannelItems/${deletedId}`);

@@ -81,7 +81,7 @@ export function CreateRunsheetForm({ onCreated }: CreateRunsheetFormProps) {
     if (res.success && res.id) {
       setStatus({
         type: 'success',
-        message: `Successfully created Content Channel "${title}" (ID: ${res.id}) in Rock RMS!`,
+        message: `Successfully created "${title}"!`,
       });
 
       // Automatically load into editor
@@ -95,7 +95,7 @@ export function CreateRunsheetForm({ onCreated }: CreateRunsheetFormProps) {
 
   return (
     <div className="max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="mb-4 text-xl font-bold text-slate-900">Create Content Channel Details</h2>
+      <h2 className="mb-4 text-xl font-bold text-slate-900">Create New Runsheet</h2>
 
       {status.type === 'success' && (
         <div className="mb-4 rounded-lg bg-emerald-50 p-4 text-sm font-semibold text-emerald-800 border border-emerald-200">
@@ -117,7 +117,7 @@ export function CreateRunsheetForm({ onCreated }: CreateRunsheetFormProps) {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
             <label className="mb-1 block text-sm font-semibold text-slate-700">
-              Content Channel Type
+              Runsheet Type
             </label>
             <select
               required
@@ -125,10 +125,10 @@ export function CreateRunsheetForm({ onCreated }: CreateRunsheetFormProps) {
               value={selectedTypeId}
               onChange={(e) => setSelectedTypeId(e.target.value ? Number(e.target.value) : '')}
             >
-              <option value="">Select a Channel Type...</option>
+              <option value="">Select a Type...</option>
               {types.map((type) => (
                 <option key={type.id} value={type.id}>
-                  {type.name} (ID: {type.id})
+                  {type.name}
                 </option>
               ))}
             </select>
@@ -146,7 +146,7 @@ export function CreateRunsheetForm({ onCreated }: CreateRunsheetFormProps) {
               <option value="">(None)</option>
               {categories.map((cat) => (
                 <option key={cat.id} value={cat.id}>
-                  {cat.name} (ID: {cat.id})
+                  {cat.name}
                 </option>
               ))}
             </select>
@@ -198,7 +198,7 @@ export function CreateRunsheetForm({ onCreated }: CreateRunsheetFormProps) {
             disabled={status.type === 'loading'}
             className="mt-4 flex w-full items-center justify-center rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none cursor-pointer disabled:opacity-50"
           >
-            {status.type === 'loading' ? 'Creating in Rock...' : 'Create Content Channel in Rock'}
+            {status.type === 'loading' ? 'Creating in Rock...' : 'Create Runsheet'}
           </button>
         </form>
       )}

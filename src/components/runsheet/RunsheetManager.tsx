@@ -1,26 +1,36 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { getRockContentChannelOptions } from '@/server-actions/getRockContentChannelOptions';
+import { canUserEditRunsheet } from '@/lib/permissions';
+import { rockGetAvailableRunsheetChannels, type RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
+import type { AuthUser } from '@/types/AuthUser';
 import type { RunsheetDetails } from '@/types/Runsheet';
 import { CreateRunsheetForm } from './CreateRunsheetForm';
 import { RunsheetTableEditor } from './RunsheetTableEditor';
 
-export function RunsheetManager() {
-  const [createdChannels, setCreatedChannels] = useState<{ id: number; name: string }[]>([]);
+interface RunsheetManagerProps {
+  user?: AuthUser;
+}
+
+export function RunsheetManager({ user }: RunsheetManagerProps) {
+  const [availableChannels, setAvailableChannels] = useState<RunsheetChannelOption[]>([]);
+  const [channelsLoading, setChannelsLoading] = useState(true);
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
   const [runsheetData, setRunsheetData] = useState<RunsheetDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
 
+  const canEdit = canUserEditRunsheet(user);
+
   useEffect(() => {
     async function loadChannels() {
-      try {
-        await getRockContentChannelOptions();
-      } catch (err) {
-        console.error(err);
+      setChannelsLoading(true);
+      const res = await rockGetAvailableRunsheetChannels();
+      if (res.success && res.channels) {
+        setAvailableChannels(res.channels);
       }
+      setChannelsLoading(false);
     }
     loadChannels();
   }, []);
@@ -38,7 +48,7 @@ export function RunsheetManager() {
   };
 
   const handleRunsheetCreated = (newChannelId: number, title: string) => {
-    setCreatedChannels((prev) => [{ id: newChannelId, name: title }, ...prev]);
+    setAvailableChannels((prev) => [{ id: newChannelId, name: title }, ...prev]);
     setShowCreateForm(false);
     handleSelectChannel(newChannelId);
   };
@@ -52,40 +62,39 @@ export function RunsheetManager() {
             Select Runsheet:
           </label>
           <select
-            className="w-full sm:w-auto rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-medium text-slate-900 focus:border-blue-600 focus:outline-none"
+            className="w-full sm:w-auto rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100"
             value={selectedChannelId || ''}
+            disabled={channelsLoading}
             onChange={(e) => e.target.value && handleSelectChannel(Number(e.target.value))}
           >
-            <option value="">Select a Runsheet Channel...</option>
-            {createdChannels.map((c) => (
+            <option value="">
+              {channelsLoading ? 'Loading runsheets...' : 'Select a Runsheet...'}
+            </option>
+            {availableChannels.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name} (ID: {c.id}) [NEW]
+                {c.name}
               </option>
             ))}
-            <option value="20">Sunday Service Runsheet // August 3, 2026 // AM (ID: 20)</option>
-            <option value="19">Sunday Service Runsheet // August 2, 2026 // AM (ID: 19)</option>
-            <option value="17">SUNDAY // 7/12 // PM (ID: 17)</option>
-            <option value="16">SUNDAY 7/12/2026 (ID: 16)</option>
-            <option value="15">SUNDAY 7/5/2026 (ID: 15)</option>
-            <option value="9">SUNDAY 6/28/2026 (ID: 9)</option>
           </select>
         </div>
 
-        <button
-          onClick={() => setShowCreateForm(!showCreateForm)}
-          className="w-full sm:w-auto rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer min-h-[38px]"
-        >
-          {showCreateForm ? 'Close Channel Creator' : '+ Create New Runsheet Channel'}
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            className="w-full sm:w-auto rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer min-h-[38px]"
+          >
+            {showCreateForm ? 'Close Form' : '+ Create New Runsheet'}
+          </button>
+        )}
       </div>
 
-      {showCreateForm && (
+      {canEdit && showCreateForm && (
         <div className="mx-auto max-w-lg">
           <CreateRunsheetForm onCreated={handleRunsheetCreated} />
         </div>
       )}
 
-      {/* Runsheet HTML Table Editor with Native rowSpan */}
+      {/* Runsheet HTML Table Editor */}
       {loading ? (
         <div className="py-12 text-center text-sm font-medium text-slate-600">Loading Runsheet from Rock...</div>
       ) : runsheetData ? (
@@ -94,6 +103,7 @@ export function RunsheetManager() {
           channelName={runsheetData.name}
           columns={runsheetData.columns}
           initialItems={runsheetData.items}
+          readOnly={!canEdit}
         />
       ) : (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 sm:p-12 text-center text-sm font-medium text-slate-500">
