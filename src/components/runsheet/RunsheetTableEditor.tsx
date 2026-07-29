@@ -433,30 +433,30 @@ export function RunsheetTableEditor({
       )}
 
       <div className="w-full overflow-x-auto rounded-lg border border-slate-300">
-        <table className="w-full border-collapse bg-white text-xs text-slate-900" style={{ tableLayout: 'fixed' }}>
+        <table className="w-full min-w-[1000px] lg:min-w-full border-collapse bg-white text-xs text-slate-900" style={{ tableLayout: 'fixed' }}>
           <thead>
             <tr className="border-b-2 border-slate-300 bg-slate-100 text-left font-bold text-slate-900">
-              {!readOnly && <th className="border-r border-slate-300 p-1.5 text-center" style={{ width: '2.5%' }} />}
-              <th className="border-r border-slate-300 p-2 text-center font-bold" style={{ width: '7%' }}>
+              {!readOnly && <th className="border-r border-slate-300 p-1.5 text-center" style={{ width: '2.5%', minWidth: '36px' }} />}
+              <th className="border-r border-slate-300 p-2 text-center font-bold" style={{ width: '7%', minWidth: '85px' }}>
                 Start
               </th>
-              <th className="border-r border-slate-300 p-2 text-center font-bold" style={{ width: '7%' }}>
+              <th className="border-r border-slate-300 p-2 text-center font-bold" style={{ width: '7%', minWidth: '85px' }}>
                 End
               </th>
-              <th className="border-r border-slate-300 p-2 text-center font-bold" style={{ width: '7%' }}>
+              <th className="border-r border-slate-300 p-2 text-center font-bold" style={{ width: '7%', minWidth: '85px' }}>
                 Duration
               </th>
-              <th className="border-r border-slate-300 p-2 font-bold" style={{ width: '15%' }}>
+              <th className="border-r border-slate-300 p-2 font-bold" style={{ width: '15%', minWidth: '200px' }}>
                 Activity Title
               </th>
 
               {dynamicAttrCols.map((col) => (
-                <th key={col.id} className="border-r border-slate-300 p-2 font-bold">
+                <th key={col.id} className="border-r border-slate-300 p-2 font-bold" style={{ minWidth: '160px' }}>
                   {col.name}
                 </th>
               ))}
 
-              {!readOnly && <th className="p-1.5 text-center" style={{ width: '3%' }} />}
+              {!readOnly && <th className="p-1.5 text-center" style={{ width: '3%', minWidth: '40px' }} />}
             </tr>
           </thead>
           <tbody>
