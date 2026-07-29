@@ -2,7 +2,7 @@
 
 import { assertAuthenticated } from '@/auth0-hooks/server/assertAuthenticated';
 import { assertAccessibleGroupId } from '@/auth0-hooks/server/assertAccessibleGroupId';
-import { CHECKIN_NOTES } from '@/constants.server';
+import { CHECKIN_NOTES } from '@/constants/server';
 import { rockGet, rockPatch, rockPost } from '@/server-actions/internal/rockFetch';
 import { revalidateTag } from 'next/cache';
 import { rockClearGroupHierarchyCache } from './rockGetGroupHierarchy';

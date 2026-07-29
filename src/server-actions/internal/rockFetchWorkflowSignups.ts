@@ -1,6 +1,6 @@
 'use server';
 
-import { ROCK_CONNECT_SIGNUP_WORKFLOW_TYPE_ID } from '@/constants.client';
+import { ROCK_CONNECT_SIGNUP_WORKFLOW_TYPE_ID } from '@/constants/client';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import { rockHydrateWorkflowAliases } from '@/server-actions/internal/rockHydrateWorkflowAliases';
 import { rockHydrateRegistrationTags } from '@/server-actions/internal/rockHydrateRegistrationTags';

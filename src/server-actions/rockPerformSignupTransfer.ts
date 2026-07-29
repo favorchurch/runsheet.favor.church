@@ -6,7 +6,7 @@ import { rockUpsertEntityAttributeValue } from '@/server-actions/internal/rockCo
 import { rockGet, rockPatch } from '@/server-actions/internal/rockFetch';
 import { rockSetSignupStatus } from './rockSetSignupStatus';
 import { rockSetWorkflowSignupStatus } from './rockSetWorkflowSignupStatus';
-import { ROCK_WORKFLOW_ENTITY_TYPE_ID } from '@/constants.client';
+import { ROCK_WORKFLOW_ENTITY_TYPE_ID } from '@/constants/client';
 import { number, object, string } from 'zod';
 import { revalidateTag } from 'next/cache';
 import { rockClearGroupHierarchyCache } from './rockGetGroupHierarchy';

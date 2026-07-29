@@ -1,4 +1,4 @@
-import { CampusName, RockCampusId } from './constants.client';
+import { CampusName, RockCampusId } from '@/constants/client';
 
 export function shouldShowCareNotes(campusName: string | undefined) {
   return (

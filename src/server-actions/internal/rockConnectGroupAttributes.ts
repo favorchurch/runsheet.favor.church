@@ -5,7 +5,7 @@ import {
   CONNECT_GROUP_ATTRIBUTE_SPECS,
   CONNECT_COLLECTING_MEMBERS_ATTRIBUTE_KEY,
   joinDelimitedValues,
-} from '@/connectGroupAttributes';
+} from '@/util-connect/connectGroupAttributes';
 import { RockAttributeValue } from '@/types/RockAttributeValue';
 import { RockGroupType } from '@/types/RockGroup';
 import { rockGet, rockPatch, rockPost } from './rockFetch';

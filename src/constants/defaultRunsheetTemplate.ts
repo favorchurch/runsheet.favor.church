@@ -1,30 +1,54 @@
-export const DEFAULT_RUNSHEET_TEMPLATE = [
-  // Group 1
-  { title: '**Runsheet Huddle**', duration: 10, detail: '', activityTitle: '**Runsheet Huddle**' },
-  { title: '**All-In Huddle**', duration: 15, detail: '', activityTitle: '**All-In Huddle**' },
-  { title: '**All Teams Prep Doors Open**', duration: 5, detail: '', activityTitle: '**All Teams Prep Doors Open**' },
-  { title: '**Doors Open**', duration: 26, detail: '', activityTitle: '**Doors Open**' },
-  { title: '**Pre-roll Starts**', duration: 4, detail: '', activityTitle: '**Pre-roll Starts**' },
+/**
+ * Standard Favor Sunday service runsheet.
+ *
+ * Values are the same rich-text HTML the cell editor produces, so a template row
+ * and a hand-edited row are stored identically in Rock. Rows with `duration: 0`
+ * are sub-items of the segment above them and share its time span in the grid.
+ */
+export interface RunsheetTemplateRow {
+  title: string;
+  duration: number;
+  detail: string;
+  activityTitle: string;
+}
 
-  // Group 2
-  { title: '**Fast Songs**', duration: 15, detail: '', activityTitle: '**Fast Songs**' },
-  { title: '', duration: 0, detail: '', activityTitle: '' },
-  { title: '', duration: 0, detail: '', activityTitle: '' },
-  { title: '**MC1**', duration: 3, detail: 'Welcome + Invite for Prayer', activityTitle: '**MC1**' },
-  { title: '**Slow Songs**', duration: 30, detail: '', activityTitle: '**Slow Songs**' },
-  { title: '', duration: 0, detail: '', activityTitle: '' },
-  { title: '', duration: 0, detail: '', activityTitle: '' },
-  { title: '', duration: 0, detail: '', activityTitle: '' },
-  {
-    title: '**MC2**',
-    duration: 5,
-    detail: 'Pray out of Worship\nTithes & Offerings\nNew People\n**Next Steps:**',
-    activityTitle: '**MC2**',
-  },
+/** Builds a template row whose title and activity title are the same bold text. */
+function segment(name: string, duration: number, detail = ''): RunsheetTemplateRow {
+  const heading = `<p><strong>${name}</strong></p>`;
+  return { title: heading, activityTitle: heading, duration, detail };
+}
 
-  // Group 3
-  { title: '**Just A Minute**', duration: 1, detail: '', activityTitle: '**Just A Minute**' },
-  { title: '**Sermon**', duration: 45, detail: '', activityTitle: '**Sermon**' },
-  { title: '**Minstry Time / Salvation Altar Call**', duration: 15, detail: '', activityTitle: '**Minstry Time / Salvation Altar Call**' },
-  { title: '**Wrap-up & Announcements**', duration: 2, detail: '', activityTitle: '**Wrap-up & Announcements**' },
+/** A sub-item row: no duration of its own, filled in by whoever plans the service. */
+function subItem(): RunsheetTemplateRow {
+  return { title: '', activityTitle: '', duration: 0, detail: '' };
+}
+
+export const DEFAULT_RUNSHEET_TEMPLATE: RunsheetTemplateRow[] = [
+  // Pre-service
+  segment('Runsheet Huddle', 10),
+  segment('All-In Huddle', 15),
+  segment('All Teams Prep Doors Open', 5),
+  segment('Doors Open', 26),
+  segment('Pre-roll Starts', 4),
+
+  // Worship
+  segment('Fast Songs', 15),
+  subItem(),
+  subItem(),
+  segment('MC1', 3, '<p>Welcome + Invite for Prayer</p>'),
+  segment('Slow Songs', 30),
+  subItem(),
+  subItem(),
+  subItem(),
+  segment(
+    'MC2',
+    5,
+    '<p>Pray out of Worship<br>Tithes &amp; Offerings<br>New People<br><strong>Next Steps:</strong></p>',
+  ),
+
+  // Word and response
+  segment('Just A Minute', 1),
+  segment('Sermon', 45),
+  segment('Ministry Time / Salvation Altar Call', 15),
+  segment('Wrap-up &amp; Announcements', 2),
 ];

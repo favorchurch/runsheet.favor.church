@@ -1,4 +1,4 @@
-import { RockCampusId } from './constants.client.ts';
+import { RockCampusId } from '@/constants/client';
 
 export type ConnectAgeGroup = 'Adults' | 'Seasoned' | 'Young Adults' | 'Youth' | 'Kids';
 export type ConnectAttributeFieldType = 'text' | 'integer' | 'single-select' | 'multi-select' | 'boolean';

@@ -17,7 +17,7 @@
  */
 import 'server-only';
 
-import { ROCK_DEBUG } from '@/constants.server';
+import { ROCK_DEBUG } from '@/constants/server';
 
 type LogFn = (...args: unknown[]) => void;
 

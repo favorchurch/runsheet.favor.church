@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { ROCK_API_URL, ROCK_API_KEY, ROCK_FETCH_REVALIDATE_SECONDS } from '@/constants.server';
+import { ROCK_API_URL, ROCK_API_KEY, ROCK_FETCH_REVALIDATE_SECONDS } from '@/constants/server';
 import { readRockObjectCache, writeRockObjectCache } from '@/server-actions/internal/rockObjectCache';
 import { AuthAccess, AuthContact, AuthRolesMap } from '@/types/AuthUser';
 
@@ -10,6 +10,21 @@ export class NoRockPersonError extends Error {
   constructor() {
     super('NO_ROCK_PERSON');
     this.name = 'NoRockPersonError';
+  }
+}
+
+/**
+ * The user has a Rock person record but no authority the portal recognises.
+ *
+ * Kept as a distinct type because callers branch on it (`checkAuthHasRole`
+ * treats it as "no role" rather than a failure). Nothing raises it while access
+ * resolution is campus-only, but `getAuthAccess` swallows every error, so a
+ * future resolver can throw it without changing its callers.
+ */
+export class NoAccessError extends Error {
+  constructor() {
+    super('NO_ACCESS');
+    this.name = 'NoAccessError';
   }
 }
 
@@ -122,5 +137,18 @@ export async function rockResolveAccess(personId: number): Promise<ResolveResult
 
   const campusIds = person.PrimaryCampusId != null ? [Number(person.PrimaryCampusId)] : [];
 
-  return { contact, rolesMap: {}, access: { campusIds } };
+  // The runsheet app authorizes by campus only. The section and connect-group
+  // fields stay empty rather than being dropped from AuthAccess, so the
+  // section-scoped helpers carried over from the Connect portal still compile.
+  return {
+    contact,
+    rolesMap: {},
+    access: {
+      campusIds,
+      connectLeaderGroupIds: [],
+      regionalLeaderSections: [],
+      clusterHeadSections: [],
+      departmentHeadSections: [],
+    },
+  };
 }

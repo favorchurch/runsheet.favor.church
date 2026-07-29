@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { CreateRunsheetForm } from '@/components/CreateRunsheetForm';
-import { RunsheetTableEditor } from '@/components/RunsheetTableEditor';
 import { getRockContentChannelOptions } from '@/server-actions/getRockContentChannelOptions';
-import { rockGetRunsheetDetails, RunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
+import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
+import type { RunsheetDetails } from '@/types/Runsheet';
+import { CreateRunsheetForm } from './CreateRunsheetForm';
+import { RunsheetTableEditor } from './RunsheetTableEditor';
 
 export function RunsheetManager() {
   const [createdChannels, setCreatedChannels] = useState<{ id: number; name: string }[]>([]);

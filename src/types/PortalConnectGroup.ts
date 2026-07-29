@@ -1,4 +1,4 @@
-import { CAMPUS_NAME_BY_ID, normalizeCapacityValue, splitDelimitedValues } from '@/connectGroupAttributes';
+import { CAMPUS_NAME_BY_ID, normalizeCapacityValue, splitDelimitedValues } from '@/util-connect/connectGroupAttributes';
 import { rockFormatSubtitle } from '@/util-rock/utilFormatSubtitle';
 import { rockGetConnectRoleFromGroupRoleId } from '@/util-rock/utilGetConnectRoleFromGroupRoleId';
 import { ConnectRole } from './ConnectRole';

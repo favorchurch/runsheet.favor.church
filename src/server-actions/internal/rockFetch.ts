@@ -4,7 +4,7 @@ import 'server-only';
 
 import { revalidateTag } from 'next/cache';
 import { assertAuthenticated } from '@/auth0-hooks/server/assertAuthenticated';
-import { ROCK_API_KEY, ROCK_API_URL, ROCK_FETCH_REVALIDATE_SECONDS } from '@/constants.server';
+import { ROCK_API_KEY, ROCK_API_URL, ROCK_FETCH_REVALIDATE_SECONDS } from '@/constants/server';
 import { redactRockUrl, serverLog, truncateForLog } from '@/lib/serverLog';
 import { bustRockObjectCache, readRockObjectCache, writeRockObjectCache } from '@/server-actions/internal/rockObjectCache';
 import { rockClearGroupHierarchyCache } from '@/server-actions/rockGetGroupHierarchy';

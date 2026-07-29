@@ -1,5 +1,10 @@
 'use server';
 
+import { rockGet } from '@/server-actions/internal/rockFetch';
+
+const MIN_QUERY_LENGTH = 2;
+const MAX_RESULTS = 15;
+
 export interface RockPersonSearchResult {
   id: number;
   name: string;
@@ -8,57 +13,58 @@ export interface RockPersonSearchResult {
   email?: string;
 }
 
-export async function searchRockPeople(query: string): Promise<RockPersonSearchResult[]> {
-  if (!query || query.trim().length < 2) return [];
+/** Escapes a value for use inside an OData string literal. */
+function escapeODataString(value: string): string {
+  return value.replace(/'/g, "''");
+}
 
-  const rockUrl = process.env.ROCK_API_URL || 'https://rock.favor.church/api';
-  const rockKey = process.env.ROCK_API_KEY || 'IULFJIYTsYHPd8x28Jwi0H21';
+/**
+ * Looks up people in Rock for the runsheet's Person-backed columns.
+ *
+ * Tries Rock's own `/People/Search` first (it handles nicknames and partial
+ * names), then falls back to an OData `substringof` query on first/last name.
+ */
+export async function searchRockPeople(query: string): Promise<RockPersonSearchResult[]> {
+  const trimmed = query?.trim() ?? '';
+  if (trimmed.length < MIN_QUERY_LENGTH) return [];
 
   try {
-    // 1. Try Rock's native /People/Search?name=... endpoint
-    const searchUrl = `${rockUrl}/People/Search?name=${encodeURIComponent(query.trim())}`;
-    const res = await fetch(searchUrl, {
-      headers: {
-        'Authorization-Token': rockKey,
-        'Accept': 'application/json',
-      },
-      cache: 'no-store',
-    });
+    const searchResults = (await rockGet('/People/Search', { name: trimmed }, true)) as any[];
 
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        return data.slice(0, 15).map((p: any) => ({
-          id: p.Id || p.PersonId || p.id,
-          name: p.Name || `${p.FirstName || ''} ${p.LastName || ''}`.trim(),
-          firstName: p.FirstName || '',
-          lastName: p.LastName || '',
-          email: p.Email || p.email || '',
-        }));
-      }
+    if (Array.isArray(searchResults) && searchResults.length > 0) {
+      return searchResults.slice(0, MAX_RESULTS).map((person) => ({
+        id: person.Id || person.PersonId || person.id,
+        name: person.Name || `${person.FirstName || ''} ${person.LastName || ''}`.trim(),
+        firstName: person.FirstName || '',
+        lastName: person.LastName || '',
+        email: person.Email || person.email || '',
+      }));
     }
+  } catch (err) {
+    console.warn('Rock /People/Search failed, falling back to OData:', err);
+  }
 
-    // 2. Fallback: OData search on People table
-    const odataUrl = `${rockUrl}/People?$filter=substringof('${encodeURIComponent(query.trim())}', FirstName) or substringof('${encodeURIComponent(query.trim())}', LastName)&$select=Id,FirstName,LastName,Email&$top=15&$orderby=Id`;
-    const odataRes = await fetch(odataUrl, {
-      headers: {
-        'Authorization-Token': rockKey,
-        'Accept': 'application/json',
+  try {
+    const escaped = escapeODataString(trimmed);
+    const odataResults = (await rockGet(
+      '/People',
+      {
+        $filter: `substringof('${escaped}', FirstName) or substringof('${escaped}', LastName)`,
+        $select: 'Id,FirstName,LastName,Email',
+        $top: MAX_RESULTS,
+        $orderby: 'Id',
       },
-      cache: 'no-store',
-    });
+      true,
+    )) as any[];
 
-    if (odataRes.ok) {
-      const odataData = await odataRes.json();
-      if (Array.isArray(odataData)) {
-        return odataData.map((p: any) => ({
-          id: p.Id,
-          name: `${p.FirstName} ${p.LastName}`.trim(),
-          firstName: p.FirstName,
-          lastName: p.LastName,
-          email: p.Email,
-        }));
-      }
+    if (Array.isArray(odataResults)) {
+      return odataResults.map((person) => ({
+        id: person.Id,
+        name: `${person.FirstName || ''} ${person.LastName || ''}`.trim(),
+        firstName: person.FirstName || '',
+        lastName: person.LastName || '',
+        email: person.Email,
+      }));
     }
   } catch (err) {
     console.error('Error searching Rock people:', err);

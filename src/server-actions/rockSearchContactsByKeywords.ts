@@ -1,7 +1,7 @@
 'use server';
 
 import { assertAuthenticated } from '@/auth0-hooks/server/assertAuthenticated';
-import { SEARCH_LIMIT_COUNT, SEARCH_PREFIX_LENGTH } from '@/constants.client';
+import { SEARCH_LIMIT_COUNT, SEARCH_PREFIX_LENGTH } from '@/constants/client';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import { RockPerson } from '@/types/RockPerson';
 import { number, object, string } from 'zod';

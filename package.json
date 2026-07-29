@@ -11,18 +11,15 @@
     "node": ">=24",
     "pnpm": ">=9"
   },
+  "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "rm -rf .next && next dev --turbopack",
     "build": "rm -rf .next && next build",
     "start": "next start",
     "lint": "next lint --fix && tsc --noEmit",
-    "provision:portal-status": "ts-node ext/ensure-rock-connect-portal-status-attribute.ts",
-    "provision:signups-display-config": "ts-node ext/ensure-rock-connect-signups-display-config-attribute.ts",
-    "provision:connect-group-type": "ts-node ext/ensure-rock-connect-group-type-25.ts",
-    "seed:dummy-connects": "ts-node experiments/dummy-connects/seed-dummy-connects.ts",
-    "seed:dummy-connects:teardown": "ts-node experiments/dummy-connects/seed-dummy-connects.ts --teardown",
-    "migrate:fluro-signups": "ts-node ext/fluro-signup-migration/migrate-fluro-signups.ts",
+    "typecheck": "tsc --noEmit",
     "test": "jest",
+    "list:channels": "ts-node scripts/list-runsheet-channels.ts",
     "analyze": "cross-env ANALYZE=true next build"
   },
   "dependencies": {
@@ -37,6 +34,8 @@
     "@mui/x-data-grid": "^6.20.4",
     "@next/third-parties": "^15.3.2",
     "@tailwindcss/aspect-ratio": "^0.4.2",
+    "@tiptap/extension-text-align": "^3.29.2",
+    "@tiptap/extension-text-style": "^3.29.2",
     "@tiptap/react": "^3.23.5",
     "@tiptap/starter-kit": "^3.23.5",
     "@uidotdev/usehooks": "^2.4.1",
@@ -69,6 +68,7 @@
   "devDependencies": {
     "@jest/globals": "^29.7.0",
     "@next/bundle-analyzer": "^16.2.6",
+    "@next/env": "^16.2.12",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^14.3.1",
     "@types/jest": "^29.5.14",

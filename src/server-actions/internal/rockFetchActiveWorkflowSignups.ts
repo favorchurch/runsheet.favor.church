@@ -1,6 +1,6 @@
 'use server';
 
-import { ROCK_CONNECT_SIGNUP_WORKFLOW_TYPE_ID } from '@/constants.client';
+import { ROCK_CONNECT_SIGNUP_WORKFLOW_TYPE_ID } from '@/constants/client';
 import { batchODataFilter } from '@/server-actions/internal/batchODataFilter';
 import { buildWorkflowSignupsFilter } from '@/server-actions/internal/buildWorkflowSignupsFilter';
 import { rockGet } from '@/server-actions/internal/rockFetch';

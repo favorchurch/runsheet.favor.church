@@ -1,4 +1,4 @@
-import { ROCK_WORKFLOW_ENTITY_TYPE_ID } from '@/constants.client';
+import { ROCK_WORKFLOW_ENTITY_TYPE_ID } from '@/constants/client';
 import { getTimezoneForCampus } from '@/providers/CampusContext/getTimezoneForCampus';
 import { RockWorkflowSignup, workflowGroupId, workflowSignupStatus, workflowIsArchived } from './RockWorkflow';
 import { RockRegistration } from './RockRegistration';

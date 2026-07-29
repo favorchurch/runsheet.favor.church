@@ -1,4 +1,4 @@
-import { ConnectAgeGroup } from '@/connectGroupAttributes';
+import { ConnectAgeGroup } from '@/util-connect/connectGroupAttributes';
 
 /**
  * Age-group label colors for the Department tracker and the section-header

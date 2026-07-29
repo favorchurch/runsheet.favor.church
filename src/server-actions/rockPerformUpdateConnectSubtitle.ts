@@ -7,14 +7,14 @@ import {
   capacityToRockValue,
   CONNECT_GROUP_ATTRIBUTE_KEYS,
   formatAgeRangeValue,
-} from '@/connectGroupAttributes';
+} from '@/util-connect/connectGroupAttributes';
 import { getTimezoneForCampus } from '@/providers/CampusContext/getTimezoneForCampus';
 import {
   rockRequireConnectGroupAttributeDefinitions,
   rockUpsertGroupAttributeValue,
 } from '@/server-actions/internal/rockConnectGroupAttributes';
 import { rockGet, rockPatch, rockPost } from '@/server-actions/internal/rockFetch';
-import { shouldConnectMeetEveryWeek } from '@/shouldConnectMeetEveryWeek';
+import { shouldConnectMeetEveryWeek } from '@/util-connect/shouldConnectMeetEveryWeek';
 import { RockGroup, getConnectGroupData } from '@/types/RockGroup';
 import { buildWeeklyICalendar } from '@/types/RockSchedule';
 import { getConnectWeekRange } from '@/util-date/getConnectWeekRange';

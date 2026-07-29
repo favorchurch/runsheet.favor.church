@@ -1,4 +1,4 @@
-import { RockGroup } from './types/RockGroup';
+import { RockGroup } from '@/types/RockGroup';
 
 /**
  * Should connect group meet every week or every other week?
