@@ -1,10 +1,41 @@
 import 'server-only';
 
 import { ROCK_API_URL, ROCK_API_KEY, ROCK_FETCH_REVALIDATE_SECONDS } from '@/constants/server';
+import { ALL_CAMPUSES, type RunsheetCampusCode } from '@/lib/runsheetCampus';
 import { readRockObjectCache, writeRockObjectCache } from '@/server-actions/internal/rockObjectCache';
 import { AuthAccess, AuthContact, AuthRolesMap } from '@/types/AuthUser';
 
 const ROCK_RECORD_STATUS_ACTIVE = 3;
+
+/**
+ * Group 46 "Global Staff" (Rock's own description: "Membership here
+ * AUTOMATICALLY grants cross-campus view... Access does NOT cascade from the
+ * campus groups below; only people added directly to THIS group are global
+ * staff") and Group 2 "RSR - Rock Administration" are the only two groups
+ * whose membership bypasses campus isolation entirely.
+ */
+const GLOBAL_STAFF_GROUP_ID = 46;
+const ROCK_ADMINISTRATION_GROUP_ID = 2;
+
+/**
+ * Rock's own per-campus organizational folders under Global Staff (Group
+ * Type 28) — "Manila" (32893), "Brisbane" (32898), "Seoul" (32902). These
+ * folders grant no access by themselves; a membership's *specific* staff
+ * role group (e.g. "MNL Staff") is a descendant of one of these, and that
+ * ancestry is what tells us which campus the role belongs to.
+ */
+const CAMPUS_ORG_UNIT_ROOT_IDS: Record<number, RunsheetCampusCode> = {
+  32893: 'MNL',
+  32898: 'BNE',
+  32902: 'SEL',
+};
+
+/** Rock's per-campus Ministry Team (Group Type 23) roots under "Ministry Teams" (56). */
+const CAMPUS_MINISTRY_TEAM_ROOT_IDS: Record<number, RunsheetCampusCode> = {
+  57: 'MNL',
+  59: 'BNE',
+  58: 'SEL',
+};
 
 export class NoRockPersonError extends Error {
   constructor() {
@@ -126,6 +157,39 @@ async function fetchTeamMemberships(personId: number) {
   });
 }
 
+/** Id -> ParentGroupId for every group of one Group Type, to walk a membership's ancestry. */
+async function fetchGroupParentMap(groupTypeId: number): Promise<Map<number, number | null>> {
+  const groups = (await rawRockGet('/Groups', {
+    $filter: `GroupTypeId eq ${groupTypeId}`,
+    $select: 'Id,ParentGroupId',
+    $top: 2000,
+  })) || [];
+
+  const map = new Map<number, number | null>();
+  for (const g of groups) {
+    map.set(Number(g.Id), g.ParentGroupId != null ? Number(g.ParentGroupId) : null);
+  }
+  return map;
+}
+
+/** Walks a group's ancestry up to whichever known campus root it descends from, if any. */
+function resolveCampusFromAncestry(
+  groupId: number,
+  parentMap: Map<number, number | null>,
+  roots: Record<number, RunsheetCampusCode>,
+): RunsheetCampusCode | null {
+  let current: number | null = groupId;
+  const seen = new Set<number>();
+
+  while (current !== null && !seen.has(current)) {
+    if (roots[current]) return roots[current];
+    seen.add(current);
+    current = parentMap.get(current) ?? null;
+  }
+
+  return null;
+}
+
 export interface ResolveResult {
   contact: AuthContact;
   rolesMap: AuthRolesMap;
@@ -159,9 +223,20 @@ export async function rockResolveAccess(personId: number, fallbackEmail?: string
   const campusIds = person?.PrimaryCampusId != null ? [Number(person.PrimaryCampusId)] : [];
 
   const rolesMap: AuthRolesMap = {};
+  const runsheetCampuses = new Set<string>();
 
   if (person?.Id > 0) {
     const memberships = await fetchTeamMemberships(person.Id);
+    const hasOrgUnitMembership = memberships.some((m: any) => Number(m.GroupTypeId) === 28);
+    const hasMinistryTeamMembership = memberships.some((m: any) => Number(m.GroupTypeId) === 23);
+
+    // Only fetched when actually needed - most sessions hit the group-type
+    // caches from `rockObjectCache` anyway, but this skips the round trip
+    // entirely for a person with no membership of that type at all.
+    const [orgUnitParentMap, ministryTeamParentMap] = await Promise.all([
+      hasOrgUnitMembership ? fetchGroupParentMap(28) : Promise.resolve(new Map<number, number | null>()),
+      hasMinistryTeamMembership ? fetchGroupParentMap(23) : Promise.resolve(new Map<number, number | null>()),
+    ]);
 
     for (const m of memberships) {
       const typeId = Number(m.GroupTypeId);
@@ -172,7 +247,8 @@ export async function rockResolveAccess(personId: number, fallbackEmail?: string
       let canView = false;
 
       // Edit conditions
-      if (groupId === 2) canEdit = true; // RSR - Rock Administration
+      if (groupId === ROCK_ADMINISTRATION_GROUP_ID) canEdit = true;
+      if (groupId === GLOBAL_STAFF_GROUP_ID) canEdit = true;
       if (typeId === 28) canEdit = true;
       if (roleId === 20) canEdit = true;
       if (roleId === 55 && (groupId === 19095 || groupId === 19109)) canEdit = true;
@@ -180,6 +256,22 @@ export async function rockResolveAccess(personId: number, fallbackEmail?: string
       // View conditions
       if (typeId === 23) canView = true;
       if (canEdit) canView = true;
+
+      // Campus isolation: Rock Administration and Global Staff see every
+      // campus; everyone else's scope comes from which campus's staff
+      // org-unit folder or ministry-team tree their specific role group
+      // descends from (see the root-id maps above).
+      if (groupId === ROCK_ADMINISTRATION_GROUP_ID || groupId === GLOBAL_STAFF_GROUP_ID) {
+        runsheetCampuses.add(ALL_CAMPUSES);
+      }
+      if (typeId === 28) {
+        const campus = resolveCampusFromAncestry(groupId, orgUnitParentMap, CAMPUS_ORG_UNIT_ROOT_IDS);
+        if (campus) runsheetCampuses.add(campus);
+      }
+      if (typeId === 23) {
+        const campus = resolveCampusFromAncestry(groupId, ministryTeamParentMap, CAMPUS_MINISTRY_TEAM_ROOT_IDS);
+        if (campus) runsheetCampuses.add(campus);
+      }
 
       if (canEdit) {
         if (!rolesMap['editor']) rolesMap['editor'] = [];
@@ -207,6 +299,7 @@ export async function rockResolveAccess(personId: number, fallbackEmail?: string
       regionalLeaderSections: [],
       clusterHeadSections: [],
       departmentHeadSections: [],
+      runsheetCampuses: Array.from(runsheetCampuses),
     },
   };
 }

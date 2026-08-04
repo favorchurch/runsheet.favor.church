@@ -1,6 +1,8 @@
+import { redirect } from 'next/navigation';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { canUserAccessRunsheet } from '@/lib/permissions';
 import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
+import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +16,16 @@ export default async function DirectRunsheetPage({ params }: PageProps) {
 
   const session = await getRockSession();
   const canAccess = canUserAccessRunsheet(session);
+
+  // A link to a runsheet that doesn't exist, or exists outside this user's
+  // campus scope, gets a real server redirect here rather than rendering the
+  // page and relying on a client effect to notice and clean it up.
+  if (canAccess && !isNaN(parsedChannelId)) {
+    const { success, channels } = await rockGetAvailableRunsheetChannels();
+    if (!success || !channels.some((c) => c.id === parsedChannelId)) {
+      redirect('/');
+    }
+  }
 
   if (!canAccess) {
     return (

@@ -49,6 +49,9 @@ export function parseSongAndKey(val: string): { songTitle: string; key: string }
   };
 }
 
+/** The fallback text a music cell saves as when no real song is linked. */
+export const MUSIC_CELL_PLACEHOLDER_TITLE = 'New Segment';
+
 export function SongSearchDropdown({
   initialValue,
   initialSongItemId = null,
@@ -56,10 +59,15 @@ export function SongSearchDropdown({
   onClose,
 }: SongSearchDropdownProps) {
   const parsed = parseSongAndKey(initialValue);
-  const [query, setQuery] = useState(parsed.songTitle);
-  const [selectedSongTitle, setSelectedSongTitle] = useState(parsed.songTitle);
+  // The placeholder text isn't a real search term — starting the box on it
+  // would just search Rock for songs named "New Segment".
+  const isPlaceholderTitle = parsed.songTitle.trim().toLowerCase() === MUSIC_CELL_PLACEHOLDER_TITLE.toLowerCase();
+  const initialQueryValue = isPlaceholderTitle ? '' : parsed.songTitle;
+
+  const [query, setQuery] = useState(initialQueryValue);
+  const [selectedSongTitle, setSelectedSongTitle] = useState(initialQueryValue);
   const [selectedSongId, setSelectedSongId] = useState<number | null>(initialSongItemId);
-  const [selectedKey, setSelectedKey] = useState(parsed.key);
+  const [selectedKey, setSelectedKey] = useState(isPlaceholderTitle ? '' : parsed.key);
   const [songs, setSongs] = useState<SongOption[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -101,13 +109,17 @@ export function SongSearchDropdown({
     setSelectedSongId(song.id);
   };
 
+  // Music cells only ever hold a real linked Rock song or the placeholder —
+  // free-typed text that doesn't match a real song is never saveable here,
+  // same as this cell's toggle button can't be turned on without a value.
   const handleConfirm = () => {
-    const finalSong = selectedSongTitle.trim() || query.trim();
-    if (!finalSong) {
+    if (!selectedSongId) {
+      onSelectSong(MUSIC_CELL_PLACEHOLDER_TITLE, null);
       onClose();
       return;
     }
 
+    const finalSong = selectedSongTitle.trim() || query.trim();
     const formattedKey = formatMusicalKey(selectedKey);
     const formatted = formattedKey
       ? `${finalSong} (${formattedKey})`
@@ -118,9 +130,10 @@ export function SongSearchDropdown({
   };
 
   const formattedKeyPreview = formatMusicalKey(selectedKey);
-  const computedPreview = selectedSongTitle.trim() || query.trim()
-    ? `${(selectedSongTitle.trim() || query.trim())}${formattedKeyPreview ? ` (${formattedKeyPreview})` : ''}`
-    : '';
+  const finalSongPreview = selectedSongTitle.trim() || query.trim();
+  const computedPreview = selectedSongId
+    ? `${finalSongPreview}${formattedKeyPreview ? ` (${formattedKeyPreview})` : ''}`
+    : MUSIC_CELL_PLACEHOLDER_TITLE;
 
   return (
     <div
@@ -186,7 +199,9 @@ export function SongSearchDropdown({
           ))
         ) : (
           <div className="py-3 text-center text-xs font-medium text-slate-400">
-            {query.trim() ? `Use "${query.trim()}" as custom song` : 'Type to search songs'}
+            {query.trim()
+              ? `No matching songs in Rock — pick one above, or Apply to save as "${MUSIC_CELL_PLACEHOLDER_TITLE}"`
+              : 'Type to search songs'}
           </div>
         )}
       </div>
@@ -226,12 +241,22 @@ export function SongSearchDropdown({
       </div>
 
       {/* Live Preview & Apply Button */}
-      {computedPreview && (
-        <div className="mb-3 rounded-lg border border-violet-200 bg-violet-50/80 p-2 text-center">
-          <span className="block text-[10px] font-bold uppercase text-violet-600 tracking-wider">Preview</span>
-          <span className="text-xs font-bold text-violet-950">{computedPreview}</span>
-        </div>
-      )}
+      <div
+        className={`mb-3 rounded-lg border p-2 text-center ${
+          selectedSongId ? 'border-violet-200 bg-violet-50/80' : 'border-slate-200 bg-slate-50'
+        }`}
+      >
+        <span
+          className={`block text-[10px] font-bold uppercase tracking-wider ${
+            selectedSongId ? 'text-violet-600' : 'text-slate-500'
+          }`}
+        >
+          {selectedSongId ? 'Preview' : 'No song selected — will save as'}
+        </span>
+        <span className={`text-xs font-bold ${selectedSongId ? 'text-violet-950' : 'text-slate-600'}`}>
+          {computedPreview}
+        </span>
+      </div>
 
       <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
         <button

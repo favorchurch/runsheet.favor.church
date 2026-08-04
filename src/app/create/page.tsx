@@ -1,5 +1,6 @@
+import { redirect } from 'next/navigation';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
-import { canUserAccessRunsheet } from '@/lib/permissions';
+import { canUserAccessRunsheet, canUserEditRunsheet } from '@/lib/permissions';
 import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
 
 export const dynamic = 'force-dynamic';
@@ -7,6 +8,13 @@ export const dynamic = 'force-dynamic';
 export default async function CreateRunsheetPage() {
   const session = await getRockSession();
   const canAccess = canUserAccessRunsheet(session);
+
+  // View-only accounts have no business on this route at all — send them
+  // home with a real server redirect rather than rendering `/create` and
+  // relying on a client effect to clean it up after the fact.
+  if (canAccess && !canUserEditRunsheet(session)) {
+    redirect('/');
+  }
 
   if (!canAccess) {
     return (

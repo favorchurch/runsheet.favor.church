@@ -53,6 +53,16 @@ export function RunsheetManager({
     }
   };
 
+  // A view-only account landing directly on a page it has no access to
+  // (e.g. `/create`) correctly renders nothing — but without this, the URL
+  // itself just sits there instead of returning to the home screen.
+  useEffect(() => {
+    if (showCreateForm && !canEdit) {
+      setShowCreateForm(false);
+      updateUrl('/');
+    }
+  }, [showCreateForm, canEdit]);
+
   // Lock browser back button (< button) when edits are unsaved
   useEffect(() => {
     const handlePopState = () => {
@@ -75,7 +85,12 @@ export function RunsheetManager({
     if (res.success && res.data) {
       setRunsheetData(res.data);
     } else {
+      // Denied (no campus access) or otherwise unavailable — back to home
+      // rather than leaving the URL and selection pointed at a blocked runsheet.
       alert(res.error || 'Could not load runsheet');
+      setSelectedChannelId(null);
+      setRunsheetData(null);
+      updateUrl('/');
     }
     setLoading(false);
   }, []);
@@ -91,6 +106,13 @@ export function RunsheetManager({
           loadChannelDetails(initialChannelId);
         } else if (res.channels.length > 0 && !initialChannelId && !initialShowCreate) {
           loadChannelDetails(res.channels[0].id);
+        } else if (initialChannelId) {
+          // A direct link to a channel that doesn't exist, or exists outside
+          // this user's campus scope, isn't in `res.channels` at all — back
+          // to home instead of leaving the URL pointed at a dead runsheet
+          // with nothing rendered.
+          setSelectedChannelId(null);
+          updateUrl('/');
         }
       }
       setChannelsLoading(false);
@@ -110,8 +132,10 @@ export function RunsheetManager({
       setShowCreateForm(nextShow);
       if (nextShow) updateUrl('/create');
     } else if (action.type === 'selectEmptyChannel') {
+      setShowCreateForm(false);
       setSelectedChannelId(null);
       setRunsheetData(null);
+      updateUrl('/');
     } else if (action.type === 'browserBack') {
       window.history.go(-2);
     }
@@ -140,6 +164,18 @@ export function RunsheetManager({
     }
   };
 
+  const handleGoHome = () => {
+    if (!selectedChannelId && !showCreateForm) return;
+
+    const action: PendingNavigationAction = { type: 'selectEmptyChannel' };
+    if (isEditorDirty) {
+      setPendingAction(action);
+      setShowUnsavedModal(true);
+    } else {
+      executeAction(action);
+    }
+  };
+
   const handleRunsheetCreated = (newChannelId: number, title: string) => {
     setAvailableChannels((prev) => [{ id: newChannelId, name: title }, ...prev]);
     setShowCreateForm(false);
@@ -155,6 +191,12 @@ export function RunsheetManager({
     setRunsheetData(null);
     setSelectedChannelId(null);
     updateUrl('/');
+
+    // Drop it from the dropdown immediately rather than waiting on the
+    // refetch below — Rock's own read side can lag a write by a beat, so a
+    // refetch landing before that settles would otherwise re-show an entry
+    // that 404s the moment it's clicked (it's already gone in Rock).
+    setAvailableChannels((previous) => previous.filter((c) => c.id !== deletedId));
 
     const res = await rockGetAvailableRunsheetChannels(showArchived);
     if (res.success && res.channels) {
@@ -191,7 +233,12 @@ export function RunsheetManager({
     <div className="w-full max-w-none space-y-4">
       {/* Sticky App Header — always visible, even while editing */}
       <header className="sticky top-0 z-40 -mx-3 sm:-mx-6 mb-2 bg-white/95 backdrop-blur border-b border-slate-200/80 px-4 sm:px-6 py-3 flex items-center justify-between shadow-xs">
-        <div className="flex items-center gap-2.5">
+        <button
+          type="button"
+          onClick={handleGoHome}
+          className="flex items-center gap-2.5 cursor-pointer rounded-lg hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          title="Back to home"
+        >
           <Image
             src="/img/favorlogo-black-on-transparent.png"
             alt="Favor Church logo"
@@ -203,7 +250,7 @@ export function RunsheetManager({
           <span className="text-sm sm:text-base font-extrabold tracking-tight text-slate-900 leading-tight">
             Favor Runsheet Studio
           </span>
-        </div>
+        </button>
 
         <div className="flex items-center gap-2 text-xs">
           {user && (
@@ -318,6 +365,16 @@ export function RunsheetManager({
       {/* Runsheet HTML Table Editor */}
       {loading ? (
         <div className="py-12 text-center text-sm font-medium text-slate-600">Loading Runsheet from Rock...</div>
+      ) : !runsheetData && !showCreateForm && canEdit ? (
+        <div className="mx-auto max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-bold text-slate-900">Getting Started</h2>
+          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-700">
+            <li>Pick an existing runsheet from the <span className="font-semibold">Select Runsheet</span> dropdown above, or click <span className="font-semibold">+ Create New Runsheet</span>.</li>
+            <li>Click any cell to edit it — use the toolbar above the grid for formatting.</li>
+            <li>Click the music icon on a segment to mark it as a song and link it to Rock.</li>
+            <li>Click <span className="font-semibold">Save Runsheet</span> when you&apos;re done — nothing is saved until you do.</li>
+          </ol>
+        </div>
       ) : runsheetData ? (
         <RunsheetTableEditor
           key={runsheetData.channelId}

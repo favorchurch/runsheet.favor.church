@@ -3,6 +3,7 @@
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import { canUserEditRunsheet } from '@/lib/permissions';
+import { canAccessRunsheetChannel } from '@/lib/runsheetCampus';
 
 export interface RunsheetChannelOption {
   id: number;
@@ -156,6 +157,11 @@ export async function rockGetAvailableRunsheetChannels(includeArchived = false):
     if (!allowArchived) {
       available = available.filter((c) => !isChannelPast(c.Name));
     }
+
+    // Campus isolation applies to everyone (editors and viewers alike) —
+    // only Global Staff / Rock Administration (runsheetCampuses: ['ALL'])
+    // bypass it. See rockResolveAccess for how a user's scope is derived.
+    available = available.filter((c) => canAccessRunsheetChannel(session?.access?.runsheetCampuses, c.Name));
 
     // If user is VIEW-only (not an editor / not Rock Admin), filter to only runsheets they are rostered in
     if (!canEdit && session) {

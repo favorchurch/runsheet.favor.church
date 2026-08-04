@@ -4,6 +4,7 @@ import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 import { isPersonColumn } from '@/constants/runsheetColumns';
+import { canAccessRunsheetChannel } from '@/lib/runsheetCampus';
 
 /** Rock's `ContentChannelItem` entity type, used to find item attributes. */
 const CONTENT_CHANNEL_ITEM_ENTITY_TYPE_ID = 208;
@@ -69,7 +70,7 @@ async function resolvePersonName(rawValue: string): Promise<string> {
 /** Loads a runsheet channel, its dynamic columns, and every segment row. */
 export async function rockGetRunsheetDetails(channelId: number) {
   try {
-    await getRockSession();
+    const session = await getRockSession();
 
     const channel = (await rockGet(`/ContentChannels/${channelId}`)) as {
       Id: number;
@@ -79,6 +80,12 @@ export async function rockGetRunsheetDetails(channelId: number) {
 
     if (!channel) {
       throw new Error(`Content Channel ${channelId} not found`);
+    }
+
+    // Defense in depth: the channel list already scopes by campus, but this
+    // blocks a direct/shared link to a channel outside the user's campus too.
+    if (!canAccessRunsheetChannel(session.access?.runsheetCampuses, channel.Name)) {
+      throw new Error('You do not have access to this runsheet.');
     }
 
     const typeId = channel.ContentChannelTypeId;

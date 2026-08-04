@@ -1,6 +1,7 @@
 'use client';
 
 /* eslint-disable @next/next/no-html-link-for-pages */
+import Image from 'next/image';
 import React from 'react';
 
 interface Auth0LoginGateProps {
@@ -21,13 +22,18 @@ export function Auth0LoginGate({ type = 'unauthenticated', userEmail, errorMessa
       {/* Main Glassmorphism Light Card */}
       <div className="w-full max-w-md bg-white border border-slate-200/80 rounded-2xl p-6 sm:p-8 shadow-xl shadow-slate-200/60 z-10 flex flex-col items-center text-center space-y-6 transition-all">
         {/* Brand Badge Icon */}
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/25">
+        <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200/80 flex items-center justify-center shadow-lg shadow-slate-200/60">
           {isUnauthenticated ? (
-            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
+            <Image
+              src="/img/favorlogo-black-on-transparent.png"
+              alt="Favor Church logo"
+              width={40}
+              height={40}
+              className="h-10 w-10"
+              priority
+            />
           ) : (
-            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-8 h-8 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           )}
