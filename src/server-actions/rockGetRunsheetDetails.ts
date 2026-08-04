@@ -96,9 +96,10 @@ export async function rockGetRunsheetDetails(channelId: number) {
       true,
     )) as any[];
 
-    // DURATION drives the dedicated Start/End/Duration columns, not a text cell.
+    // DURATION drives the dedicated Start/End/Duration columns, and SONGITEMID
+    // is an internal reference to the linked Song — neither is its own text cell.
     const columns: DynamicAttributeColumn[] = (rawAttrs || [])
-      .filter((attr) => attr.Key !== 'DURATION')
+      .filter((attr) => attr.Key !== 'DURATION' && attr.Key !== 'SONGITEMID')
       .map((attr) => ({
         id: attr.Id,
         key: attr.Key,
@@ -126,7 +127,13 @@ export async function rockGetRunsheetDetails(channelId: number) {
 
         for (const col of columns) {
           const attrObj = attrs[col.key];
-          let rawVal: string = attrObj?.PersistedTextValue || attrObj?.ValueFormatted || attrObj?.Value || '';
+          // `Value` is the raw stored value. `ValueFormatted` is Rock's own
+          // rendering for admin-screen display — for MarkdownFieldType it
+          // HTML-encodes the raw value first (our cells already store real
+          // HTML), so preferring it here double-escapes entities like `&`
+          // into `&amp;amp;`, which then only half-decodes back to `&amp;`
+          // once rendered. `Value` is what the runsheet editor itself wrote.
+          let rawVal: string = attrObj?.PersistedTextValue || attrObj?.Value || attrObj?.ValueFormatted || '';
 
           if (rawVal && isPersonColumn(col) && looksLikePersonKey(rawVal.trim())) {
             rawVal = await resolvePersonName(rawVal);
@@ -140,6 +147,8 @@ export async function rockGetRunsheetDetails(channelId: number) {
         const titleVal = attributeValues.ACTIVITYTITLE || item.Title || '';
         attributeValues.ACTIVITYTITLE = titleVal;
 
+        const songItemIdNum = parseInt(getAttrVal('SONGITEMID'), 10);
+
         return {
           id: item.Id,
           title: titleVal,
@@ -147,6 +156,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
           startDateTime: item.StartDateTime || '',
           duration: Number.isNaN(durationNum) ? 0 : durationNum,
           attributeValues,
+          songItemId: Number.isNaN(songItemIdNum) ? null : songItemIdNum,
           detail: attributeValues.DESCRIPTION || attributeValues.DETIAL || getAttrVal('DETIAL') || '',
           anchorPreacher: attributeValues.PLATFORM || attributeValues.ANCHORPREACHER || getAttrVal('ANCHORPREACHER') || '',
           mainInstrument: attributeValues.MAININSTRUMENT || getAttrVal('MAININSTRUMENT') || '',

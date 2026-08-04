@@ -17,6 +17,10 @@ export async function rockCreateServiceRunsheet(title: string, contentChannelTyp
       IsIndexEnabled: true,
       EnablePersonalization: true,
       IsStructuredContent: true,
+      // Without this, Rock's own admin grid ignores our `Order` field and
+      // falls back to sorting items by StartDateTime descending — showing
+      // the runsheet bottom-to-top.
+      ItemsManuallyOrdered: true,
     });
 
     // Rock RMS POST returns either the integer ID directly (e.g. 21) or an object { Id: 21 }

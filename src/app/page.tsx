@@ -55,30 +55,11 @@ export default async function Home() {
     );
   }
 
-  const displayName = sessionUser.contact?.fullName || sessionUser.name || sessionUser.email || 'User';
+
+
 
   return (
-    <main className="flex min-h-screen flex-col items-center px-3 py-4 sm:px-6 sm:py-6 bg-slate-50 text-slate-900 w-full">
-      <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
-            Favor Runsheet Studio
-          </h1>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5 text-xs">
-          <span className="font-bold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
-            👤 {displayName}
-          </span>
-          <a
-            href="/api/auth/logout"
-            className="rounded-lg bg-slate-800 px-3 py-1.5 font-semibold text-white hover:bg-slate-700 transition-colors"
-          >
-            Log out
-          </a>
-        </div>
-      </div>
-
+    <main className="flex min-h-screen flex-col items-center px-3 py-0 sm:px-6 bg-slate-50 text-slate-900 w-full">
       <RunsheetManager user={sessionUser} />
     </main>
   );

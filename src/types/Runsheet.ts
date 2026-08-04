@@ -31,6 +31,8 @@ export interface RunsheetItemRow {
   /** Attribute key to stored value. Text columns hold rich-text HTML. */
   attributeValues: Record<string, string>;
   detail?: string;
+  /** Rock `ContentChannelItem.Id` of the linked Song, when the title cell is a music cell. */
+  songItemId?: number | null;
   anchorPreacher?: string;
   mainInstrument?: string;
   ledLiveScreens?: string;

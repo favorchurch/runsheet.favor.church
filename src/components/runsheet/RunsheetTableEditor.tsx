@@ -2,7 +2,7 @@
 
 import type { Editor } from '@tiptap/react';
 import React, { useEffect, useMemo, useState } from 'react';
-import { HiBars3, HiCheck, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiPlus, HiTrash } from 'react-icons/hi2';
+import { HiBars3, HiCheck, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiTrash } from 'react-icons/hi2';
 import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
 import {
   FALLBACK_RUNSHEET_COLUMNS,
@@ -20,10 +20,12 @@ import {
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import { rockDeleteServiceRunsheet } from '@/server-actions/rockDeleteServiceRunsheet';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
+import { cleanSongTitle } from '@/lib/songUtils';
 import { PeopleSearchDropdown } from './PeopleSearchDropdown';
 import { CELL_ATTRIBUTE, RichTextCell } from './RichTextCell';
 import { RichTextContent } from './RichTextContent';
 import { RichTextToolbar } from './RichTextToolbar';
+import { SongSearchDropdown } from './SongSearchDropdown';
 
 interface RunsheetTableEditorProps {
   channelId: number;
@@ -87,6 +89,24 @@ export function RunsheetTableEditor({
 
   const [status, setStatus] = useState<{ type: 'idle' | 'saving' | 'success' | 'error'; message?: string }>({
     type: 'idle',
+  });
+
+  /**
+   * Keyed by row id (not array index) so deleting/reordering rows can't
+   * misassign the flag. Driven solely by `songItemId` being set (persisted in
+   * Rock as `SONGITEMID`; `0` means "flagged as music, no specific song
+   * linked yet", distinct from `null`/absent meaning "not a music cell") —
+   * no text heuristic, so an unrelated cell that happens to mention "song"
+   * is never auto-flagged.
+   */
+  const [musicCellMap, setMusicCellMap] = useState<Record<string, boolean>>(() => {
+    const map: Record<string, boolean> = {};
+    initialItems.forEach((item) => {
+      if (item.songItemId !== null && item.songItemId !== undefined) {
+        map[String(item.id)] = true;
+      }
+    });
+    return map;
   });
 
   useEffect(() => {
@@ -214,6 +234,28 @@ export function RunsheetTableEditor({
     setIsDirty(true);
   };
 
+  /**
+   * Same as `handleAttrValueChange` for the title, but also persists the
+   * linked Song's Rock id. Only reachable while the cell is already a music
+   * cell, so a missing link (custom text with no Rock match) still saves as
+   * `0` — flagged as music, just not tied to a specific song — rather than
+   * `null`, which would silently drop the row's music status.
+   */
+  const handleSelectSong = (index: number, formattedSong: string, songItemId: number | null) => {
+    if (readOnly) return;
+    setItems((previous) => {
+      const updated = [...previous];
+      const item = { ...updated[index] };
+      item.title = formattedSong;
+      item.attributeValues = { ...(item.attributeValues || {}), ACTIVITYTITLE: formattedSong };
+      item.songItemId = songItemId ?? 0;
+      updated[index] = item;
+      return updated;
+    });
+
+    setIsDirty(true);
+  };
+
   const handleCommitDurationDrafts = () => {
     if (readOnly || editingDurationBlockIndex === null) return;
 
@@ -277,8 +319,17 @@ export function RunsheetTableEditor({
       audio: '',
     }));
 
+    const templateMusicMap: Record<string, boolean> = {};
+    [6, 7, 10, 11, 12].forEach((idx) => {
+      templateMusicMap[String(templateRows[idx].id)] = true;
+      // Flagged as music with no song linked yet — matches the toggle button's
+      // convention, so the status survives the first save.
+      templateRows[idx].songItemId = 0;
+    });
+
     setDeletedIds((previous) => [...previous, ...items.map((item) => item.id)]);
     setItems(templateRows);
+    setMusicCellMap(templateMusicMap);
     setEditingCell(null);
     setIsDirty(true);
     setStatus({ type: 'idle' });
@@ -343,10 +394,35 @@ export function RunsheetTableEditor({
     setEditingCell((current) => (current?.rowIndex === index && current?.key === key ? null : current));
   };
 
-  const renderCellContent = (index: number, key: string, value: string, isPersonField = false) => {
+  const renderCellContent = (
+    index: number,
+    key: string,
+    value: string,
+    rowId: number | string,
+    isPersonField = false,
+    songItemId: number | null = null,
+  ) => {
+    const isActivityTitleColumn = key === 'title';
+    const musicCellId = String(rowId);
+    const isMusicCell = isActivityTitleColumn && !!musicCellMap[musicCellId];
     const isEditing = !readOnly && editingCell?.rowIndex === index && editingCell?.key === key;
 
     if (isEditing) {
+      if (isMusicCell) {
+        return (
+          <div className="relative">
+            <SongSearchDropdown
+              initialValue={value ?? ''}
+              initialSongItemId={songItemId}
+              onSelectSong={(formattedSong, selectedSongId) =>
+                handleSelectSong(index, formattedSong, selectedSongId)
+              }
+              onClose={() => closeCell(index, key)}
+            />
+          </div>
+        );
+      }
+
       if (isPersonField) {
         return (
           <PeopleSearchDropdown
@@ -368,25 +444,89 @@ export function RunsheetTableEditor({
     }
 
     return (
-      <div
-        {...{ [CELL_ATTRIBUTE]: '' }}
-        onMouseDown={(event) => {
-          if (readOnly) return;
-          event.preventDefault();
-          setEditingCell({ rowIndex: index, key });
-        }}
-        className={`min-h-[24px] w-full rounded px-2 py-1 text-slate-900 transition-colors ${
-          readOnly ? 'cursor-default' : 'cursor-text hover:bg-slate-100/80'
-        }`}
-        title={
-          readOnly
-            ? 'Read-only volunteer view'
-            : isPersonField
-            ? 'Click to search Rock for a person'
-            : 'Click to edit'
-        }
-      >
-        <RichTextContent value={value ?? ''} />
+      <div className="group relative w-full">
+        {!readOnly && isActivityTitleColumn && (
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              const turningOff = isMusicCell;
+              setMusicCellMap((prev) => ({
+                ...prev,
+                [musicCellId]: !prev[musicCellId],
+              }));
+              // Persist the flag immediately (not just in local UI state), so a
+              // music cell the user never reopens to pick a song still saves
+              // as one — `0` means "flagged, no specific song linked yet".
+              setItems((previous) => {
+                const updated = [...previous];
+                updated[index] = { ...updated[index], songItemId: turningOff ? null : 0 };
+                return updated;
+              });
+              setIsDirty(true);
+            }}
+            className={`absolute top-1 right-1 z-20 flex h-5 w-5 items-center justify-center rounded transition-all cursor-pointer ${
+              isMusicCell
+                ? 'bg-violet-600 text-white shadow-xs hover:bg-violet-700 ring-1 ring-violet-400'
+                : 'bg-slate-100/90 text-slate-400 hover:bg-violet-100 hover:text-violet-700 opacity-0 group-hover:opacity-100'
+            }`}
+            title={isMusicCell ? 'Music Cell (Click to toggle off)' : 'Mark cell as Music / Song'}
+          >
+            <HiMusicalNote className="h-3 w-3" />
+          </button>
+        )}
+
+        <div
+          {...{ [CELL_ATTRIBUTE]: '' }}
+          onMouseDown={(event) => {
+            if (readOnly) return;
+            event.preventDefault();
+            setEditingCell({ rowIndex: index, key });
+          }}
+          className={`relative min-h-[28px] w-full rounded px-2.5 py-1 text-slate-900 transition-all ${
+            isMusicCell
+              ? 'bg-violet-50/90 border-2 border-violet-400/80 text-violet-950 font-bold ring-1 ring-violet-300 shadow-xs pr-7'
+              : readOnly
+              ? 'cursor-default'
+              : 'cursor-text hover:bg-slate-100/80'
+          }`}
+          title={
+            readOnly
+              ? 'Read-only volunteer view'
+              : isMusicCell
+              ? 'Music Cell - Click to search songs & set key'
+              : isPersonField
+              ? 'Click to search Rock for a person'
+              : 'Click to edit'
+          }
+        >
+          {isMusicCell && value ? (
+            <div className="flex items-center gap-1.5 font-semibold text-violet-950">
+              <a
+                href={
+                  songItemId
+                    ? // `0` is the "flagged, no song linked" sentinel — falsy, so it
+                      // correctly falls through to the title-based lookup below.
+                      `/api/song?id=${songItemId}`
+                    : `/api/song?title=${encodeURIComponent(cleanSongTitle(value))}`
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center rounded bg-violet-200/90 px-1.5 py-0.5 text-[10px] font-bold text-violet-800 uppercase tracking-wider hover:bg-violet-300 hover:text-violet-950 transition-colors cursor-pointer"
+                title="Click to view song JSON details in new tab"
+              >
+                <HiMusicalNote className="mr-0.5 h-3 w-3 text-violet-700" />
+                Song
+              </a>
+              <RichTextContent value={value ?? ''} />
+            </div>
+          ) : (
+            <RichTextContent value={value ?? ''} />
+          )}
+        </div>
       </div>
     );
   };
@@ -635,12 +775,12 @@ export function RunsheetTableEditor({
                   )}
 
                   <td className="border-r border-slate-200 p-1 align-top">
-                    {renderCellContent(index, 'title', currentTitleVal)}
+                    {renderCellContent(index, 'title', currentTitleVal, item.id, false, item.songItemId ?? null)}
                   </td>
 
                   {dynamicAttrCols.map((col) => (
                     <td key={col.id} className="border-r border-slate-200 p-1 align-top">
-                      {renderCellContent(index, col.key, readRunsheetCellValue(item, col.key), isPersonColumn(col))}
+                      {renderCellContent(index, col.key, readRunsheetCellValue(item, col.key), item.id, isPersonColumn(col))}
                     </td>
                   ))}
 

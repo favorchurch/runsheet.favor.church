@@ -26,9 +26,19 @@ interface ResolvedChannel {
 
 /** Reads a channel's type and item attributes straight from Rock. */
 async function resolveChannel(channelId: number): Promise<ResolvedChannel> {
-  const channel = (await rockGet(`/ContentChannels/${channelId}`)) as { ContentChannelTypeId: number } | null;
+  const channel = (await rockGet(`/ContentChannels/${channelId}`)) as {
+    ContentChannelTypeId: number;
+    ItemsManuallyOrdered: boolean;
+  } | null;
   if (!channel?.ContentChannelTypeId) {
     throw new Error(`Content Channel ${channelId} not found`);
+  }
+
+  // Without this, Rock's own admin grid ignores our `Order` field and falls
+  // back to sorting items by StartDateTime descending — showing the runsheet
+  // bottom-to-top. Self-heals channels created before this flag was set.
+  if (!channel.ItemsManuallyOrdered) {
+    await rockPatch(`/ContentChannels/${channelId}`, { ItemsManuallyOrdered: true });
   }
 
   const rawAttrs = (await rockGet(
@@ -123,13 +133,18 @@ export async function rockBulkSaveRunsheetItems(
     // create items) and the DURATION attribute id are only known from Rock.
     const channel = await resolveChannel(channelId);
     const attributeColumns = (columns?.length ? columns : channel.columns).filter(
-      (col) => col.id && col.key !== 'DURATION',
+      (col) => col.id && col.key !== 'DURATION' && col.key !== 'SONGITEMID',
     );
 
     const durationAttributeId =
       channel.columns.find((col) => col.key === 'DURATION')?.id ?? FALLBACK_DURATION_ATTRIBUTE_ID;
+    const songItemIdAttributeId = channel.columns.find((col) => col.key === 'SONGITEMID')?.id;
 
-    const attributeIds = [...attributeColumns.map((col) => col.id), durationAttributeId];
+    const attributeIds = [
+      ...attributeColumns.map((col) => col.id),
+      durationAttributeId,
+      ...(songItemIdAttributeId ? [songItemIdAttributeId] : []),
+    ];
 
     for (const item of items) {
       const richTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
@@ -172,6 +187,18 @@ export async function rockBulkSaveRunsheetItems(
       }
 
       await saveAttributeValue(existingValueIds, durationAttributeId, itemId, String(item.duration || 0));
+
+      if (songItemIdAttributeId) {
+        // `0` is a valid value (flagged as a music cell with no specific song
+        // linked) and must round-trip distinctly from "not a music cell" (''),
+        // so this checks presence, not truthiness.
+        await saveAttributeValue(
+          existingValueIds,
+          songItemIdAttributeId,
+          itemId,
+          item.songItemId != null ? String(item.songItemId) : '',
+        );
+      }
     }
 
     return { success: true };

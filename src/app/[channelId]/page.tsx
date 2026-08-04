@@ -36,9 +36,11 @@ export default async function DirectRunsheetPage({ params }: PageProps) {
   };
 
   return (
-    <RunsheetManager
-      user={user}
-      initialChannelId={isNaN(parsedChannelId) ? null : parsedChannelId}
-    />
+    <main className="flex min-h-screen flex-col items-center px-3 py-0 sm:px-6 bg-slate-50 text-slate-900 w-full">
+      <RunsheetManager
+        user={user}
+        initialChannelId={isNaN(parsedChannelId) ? null : parsedChannelId}
+      />
+    </main>
   );
 }
