@@ -55,9 +55,10 @@ export function generateRunsheetTitle(
 
 interface CreateRunsheetFormProps {
   onCreated?: (channelId: number, title: string) => void;
+  onCancel?: () => void;
 }
 
-export function CreateRunsheetForm({ onCreated }: CreateRunsheetFormProps) {
+export function CreateRunsheetForm({ onCreated, onCancel }: CreateRunsheetFormProps) {
   const [categories, setCategories] = useState<ContentChannelCategoryOption[]>([]);
   const [schedules, setSchedules] = useState<ScheduleOption[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(true);
@@ -258,13 +259,23 @@ export function CreateRunsheetForm({ onCreated }: CreateRunsheetFormProps) {
             </p>
           </div>
 
-          <button
-            type="submit"
-            disabled={status.type === 'loading'}
-            className="mt-2 flex w-full items-center justify-center rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none cursor-pointer disabled:opacity-50"
-          >
-            {status.type === 'loading' ? 'Creating in Rock...' : 'Create Runsheet'}
-          </button>
+          <div className="mt-2 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={status.type === 'loading'}
+              className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none cursor-pointer disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={status.type === 'loading'}
+              className="flex flex-1 items-center justify-center rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none cursor-pointer disabled:opacity-50"
+            >
+              {status.type === 'loading' ? 'Saving...' : 'Save Runsheet'}
+            </button>
+          </div>
         </form>
       )}
     </div>

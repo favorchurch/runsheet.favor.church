@@ -2,7 +2,7 @@
 
 import type { Editor } from '@tiptap/react';
 import React, { useEffect, useMemo, useState } from 'react';
-import { HiBars3, HiCheck, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiTrash } from 'react-icons/hi2';
+import { HiArrowPath, HiBars3, HiCheck, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiTrash } from 'react-icons/hi2';
 import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
 import {
   FALLBACK_RUNSHEET_COLUMNS,
@@ -54,6 +54,39 @@ interface TimeSpan {
   formattedDuration: string;
 }
 
+/** Builds fresh template rows with unique ids, so every call (reset, auto-load) gets its own set. */
+function buildTemplateState() {
+  const templateRows: RunsheetItemRow[] = DEFAULT_RUNSHEET_TEMPLATE.map((row, index) => ({
+    id: `tmpl_${index}_${Date.now()}`,
+    isNew: true,
+    title: row.title,
+    duration: row.duration,
+    attributeValues: {
+      ACTIVITYTITLE: row.activityTitle || row.title,
+      DESCRIPTION: row.detail,
+      DETIAL: row.detail,
+    },
+    detail: row.detail,
+    order: index + 1,
+    anchorPreacher: '',
+    mainInstrument: '',
+    ledLiveScreens: '',
+    overlayBroadcast: '',
+    lighting: '',
+    audio: '',
+  }));
+
+  const templateMusicMap: Record<string, boolean> = {};
+  [6, 7, 10, 11, 12].forEach((idx) => {
+    templateMusicMap[String(templateRows[idx].id)] = true;
+    // Flagged as music with no song linked yet — matches the toggle button's
+    // convention, so the status survives the first save.
+    templateRows[idx].songItemId = 0;
+  });
+
+  return { templateRows, templateMusicMap };
+}
+
 export function RunsheetTableEditor({
   channelId,
   channelName,
@@ -65,7 +98,24 @@ export function RunsheetTableEditor({
   onDirtyChange,
   onSaveRef,
 }: RunsheetTableEditorProps) {
-  const [items, setItems] = useState<RunsheetItemRow[]>(initialItems);
+  /**
+   * A brand-new (or emptied-out) runsheet has nothing to lose, so it starts
+   * pre-filled with the template instead of an empty grid — no manual "Reset
+   * Form" click needed. Computed once, synchronously, during the first
+   * render (not a post-mount effect): a `useEffect` here would paint an
+   * empty grid first and only fill it in a tick later, which both flashes
+   * and can silently wipe out anything the user managed to type into that
+   * empty grid in the meantime.
+   */
+  const initialTemplateRef = React.useRef<ReturnType<typeof buildTemplateState> | null | undefined>(undefined);
+  if (initialTemplateRef.current === undefined) {
+    initialTemplateRef.current = !readOnly && initialItems.length === 0 ? buildTemplateState() : null;
+  }
+  const initialTemplate = initialTemplateRef.current;
+
+  const [items, setItems] = useState<RunsheetItemRow[]>(() =>
+    initialTemplate ? initialTemplate.templateRows : initialItems
+  );
   const [deletedIds, setDeletedIds] = useState<(number | string)[]>([]);
   const [startTime, setStartTime] = useState(initialStartTime);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -83,9 +133,10 @@ export function RunsheetTableEditor({
   const [editingDurationBlockIndex, setEditingDurationBlockIndex] = useState<number | null>(null);
   const [durationDrafts, setDurationDrafts] = useState<{ [index: number]: string }>({});
 
-  const [isDirty, setIsDirty] = useState(false);
+  const [isDirty, setIsDirty] = useState(() => !!initialTemplate);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
 
   const [status, setStatus] = useState<{ type: 'idle' | 'saving' | 'success' | 'error'; message?: string }>({
     type: 'idle',
@@ -100,6 +151,8 @@ export function RunsheetTableEditor({
    * is never auto-flagged.
    */
   const [musicCellMap, setMusicCellMap] = useState<Record<string, boolean>>(() => {
+    if (initialTemplate) return initialTemplate.templateMusicMap;
+
     const map: Record<string, boolean> = {};
     initialItems.forEach((item) => {
       if (item.songItemId !== null && item.songItemId !== undefined) {
@@ -297,35 +350,8 @@ export function RunsheetTableEditor({
     setEditingCell({ rowIndex: items.length, key: 'title' });
   };
 
-  const handleLoadDefaultTemplate = () => {
-    if (readOnly) return;
-    const templateRows: RunsheetItemRow[] = DEFAULT_RUNSHEET_TEMPLATE.map((row, index) => ({
-      id: `tmpl_${index}_${Date.now()}`,
-      isNew: true,
-      title: row.title,
-      duration: row.duration,
-      attributeValues: {
-        ACTIVITYTITLE: row.activityTitle || row.title,
-        DESCRIPTION: row.detail,
-        DETIAL: row.detail,
-      },
-      detail: row.detail,
-      order: index + 1,
-      anchorPreacher: '',
-      mainInstrument: '',
-      ledLiveScreens: '',
-      overlayBroadcast: '',
-      lighting: '',
-      audio: '',
-    }));
-
-    const templateMusicMap: Record<string, boolean> = {};
-    [6, 7, 10, 11, 12].forEach((idx) => {
-      templateMusicMap[String(templateRows[idx].id)] = true;
-      // Flagged as music with no song linked yet — matches the toggle button's
-      // convention, so the status survives the first save.
-      templateRows[idx].songItemId = 0;
-    });
+  const applyDefaultTemplate = () => {
+    const { templateRows, templateMusicMap } = buildTemplateState();
 
     setDeletedIds((previous) => [...previous, ...items.map((item) => item.id)]);
     setItems(templateRows);
@@ -333,6 +359,16 @@ export function RunsheetTableEditor({
     setEditingCell(null);
     setIsDirty(true);
     setStatus({ type: 'idle' });
+  };
+
+  const handleResetFormClick = () => {
+    if (readOnly) return;
+    setShowResetModal(true);
+  };
+
+  const handleConfirmResetForm = () => {
+    applyDefaultTemplate();
+    setShowResetModal(false);
   };
 
   const handleDeleteRow = (id: number | string) => {
@@ -569,12 +605,12 @@ export function RunsheetTableEditor({
           {!readOnly && (
             <>
               <button
-                onClick={handleLoadDefaultTemplate}
+                onClick={handleResetFormClick}
                 className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
-                title="Load standard Favor Runsheet template"
+                title="Reset to the standard Favor Runsheet template"
               >
-                <HiDocumentDuplicate className="h-4 w-4 text-blue-600" />
-                <span>Load Template</span>
+                <HiArrowPath className="h-4 w-4 text-blue-600" />
+                <span>Reset Form</span>
               </button>
 
               <button
@@ -606,6 +642,35 @@ export function RunsheetTableEditor({
           )}
         </div>
       </div>
+
+      {/* Reset Form Confirmation Modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-900">Reset Form</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Are you sure you want to reset? This will replace every segment currently in the
+              grid with the standard Favor Runsheet template and cannot be undone.
+            </p>
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowResetModal(false)}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmResetForm}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer"
+              >
+                Yes, Reset Form
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Runsheet Confirmation Modal */}
       {showDeleteModal && (

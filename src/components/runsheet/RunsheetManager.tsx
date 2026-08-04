@@ -4,6 +4,7 @@
 import Image from 'next/image';
 import React, { useEffect, useState } from 'react';
 import { canUserEditRunsheet } from '@/lib/permissions';
+import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
 import { rockGetAvailableRunsheetChannels, type RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
 import type { AuthUser } from '@/types/AuthUser';
@@ -146,6 +147,9 @@ export function RunsheetManager({
     loadChannelDetails(newChannelId);
   };
 
+  // Deleting always lands on the empty "/" home state — it never auto-opens
+  // another runsheet, so the address bar and the displayed content agree
+  // instead of racing each other.
   const handleRunsheetDeleted = async (deletedId: number) => {
     setIsEditorDirty(false);
     setRunsheetData(null);
@@ -154,19 +158,8 @@ export function RunsheetManager({
 
     const res = await rockGetAvailableRunsheetChannels(showArchived);
     if (res.success && res.channels) {
-      const remaining = res.channels.filter((c) => c.id !== deletedId);
-      setAvailableChannels(remaining);
-      if (remaining.length > 0) {
-        setSelectedChannelId(remaining[0].id);
-        setLoading(true);
-        const detailsRes = await rockGetRunsheetDetails(remaining[0].id);
-        if (detailsRes.success && detailsRes.data) {
-          setRunsheetData(detailsRes.data);
-        }
-        setLoading(false);
-      }
+      setAvailableChannels(res.channels.filter((c) => c.id !== deletedId));
     }
-    updateUrl('/');
   };
 
   const handleSaveAndLeave = async () => {
@@ -275,7 +268,7 @@ export function RunsheetManager({
 
       {canEdit && showCreateForm && (
         <div className="mx-auto max-w-lg">
-          <CreateRunsheetForm onCreated={handleRunsheetCreated} />
+          <CreateRunsheetForm onCreated={handleRunsheetCreated} onCancel={handleToggleCreateForm} />
         </div>
       )}
 
@@ -332,6 +325,7 @@ export function RunsheetManager({
           channelName={runsheetData.name}
           columns={runsheetData.columns}
           initialItems={runsheetData.items}
+          initialStartTime={parseStartTimeFromRunsheetName(runsheetData.name)}
           readOnly={!canEdit}
           onDeleted={() => handleRunsheetDeleted(runsheetData.channelId)}
           onDirtyChange={(dirty) => setIsEditorDirty(dirty)}
