@@ -7,7 +7,6 @@ import { assertAuthenticated } from '@/auth0-hooks/server/assertAuthenticated';
 import { ROCK_API_KEY, ROCK_API_URL, ROCK_FETCH_REVALIDATE_SECONDS } from '@/constants/server';
 import { redactRockUrl, serverLog, truncateForLog } from '@/lib/serverLog';
 import { bustRockObjectCache, readRockObjectCache, writeRockObjectCache } from '@/server-actions/internal/rockObjectCache';
-import { rockClearGroupHierarchyCache } from '@/server-actions/rockGetGroupHierarchy';
 import type { RockQueryParams } from '@/types/RockQueryParams';
 
 const log = serverLog('rockFetch');
@@ -129,7 +128,6 @@ export async function rockFetch(
       await writeRockObjectCache(url, method, params, parsed);
     } else if (method !== 'GET') {
       await bustRockObjectCache();
-      await rockClearGroupHierarchyCache();
       // Purge the Next.js Data Cache for the mutated entity so reads (which are
       // tagged by deriveRockTag) don't return stale data on the next refetch.
       // Mirrors the Redis bust above so both server caches invalidate symmetrically.

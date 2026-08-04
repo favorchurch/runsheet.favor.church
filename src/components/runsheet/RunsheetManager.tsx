@@ -1,5 +1,7 @@
+/* eslint-disable @next/next/no-html-link-for-pages */
 'use client';
 
+import Image from 'next/image';
 import React, { useEffect, useState } from 'react';
 import { canUserEditRunsheet } from '@/lib/permissions';
 import { rockGetAvailableRunsheetChannels, type RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
@@ -194,6 +196,38 @@ export function RunsheetManager({
 
   return (
     <div className="w-full max-w-none space-y-4">
+      {/* Sticky App Header — always visible, even while editing */}
+      <header className="sticky top-0 z-40 -mx-3 sm:-mx-6 mb-2 bg-white/95 backdrop-blur border-b border-slate-200/80 px-4 sm:px-6 py-3 flex items-center justify-between shadow-xs">
+        <div className="flex items-center gap-2.5">
+          <Image
+            src="/img/favorlogo-black-on-transparent.png"
+            alt="Favor Church logo"
+            width={32}
+            height={32}
+            className="h-8 w-8 shrink-0"
+            priority
+          />
+          <span className="text-sm sm:text-base font-extrabold tracking-tight text-slate-900 leading-tight">
+            Favor Runsheet Studio
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs">
+          {user && (
+            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-md bg-slate-100 border border-slate-200 px-2.5 py-1 font-semibold text-slate-800">
+              <span className="text-slate-500">👤</span>
+              {user.contact?.fullName || user.name || user.email || 'User'}
+            </span>
+          )}
+          <a
+            href="/api/auth/logout"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 font-semibold text-white hover:bg-slate-700 transition-colors"
+          >
+            Log out
+          </a>
+        </div>
+      </header>
+
       {/* Top Controls Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4 w-full sm:w-auto">
