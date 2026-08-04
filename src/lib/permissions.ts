@@ -1,9 +1,13 @@
-import type { AuthUser } from '@/types/AuthUser';
+import type { AuthRolesMap, AuthUser } from '@/types/AuthUser';
+
+interface HasRolesMap {
+  rolesMap?: AuthRolesMap;
+}
 
 /**
  * Check if a user has edit access to runsheets.
  */
-export function canUserEditRunsheet(user?: AuthUser | null): boolean {
+export function canUserEditRunsheet(user?: HasRolesMap | AuthUser | null): boolean {
   if (!user) return false;
 
   if (user.rolesMap && user.rolesMap['editor'] && user.rolesMap['editor'].length > 0) {
@@ -17,7 +21,7 @@ export function canUserEditRunsheet(user?: AuthUser | null): boolean {
  * Check if a user is eligible to view or access runsheets.
  * If user has no assigned roles/permissions, returns false so they can be gated.
  */
-export function canUserAccessRunsheet(user?: AuthUser | null): boolean {
+export function canUserAccessRunsheet(user?: HasRolesMap | AuthUser | null): boolean {
   if (!user) return false;
 
   if (user.rolesMap && user.rolesMap['viewer'] && user.rolesMap['viewer'].length > 0) {

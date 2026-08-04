@@ -1,8 +1,8 @@
 'use client';
 
 import type { Editor } from '@tiptap/react';
-import React, { useMemo, useState } from 'react';
-import { HiBars3, HiCheck, HiExclamationCircle, HiLockClosed, HiPlus, HiSparkles, HiTrash } from 'react-icons/hi2';
+import React, { useEffect, useMemo, useState } from 'react';
+import { HiBars3, HiCheck, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiPlus, HiTrash } from 'react-icons/hi2';
 import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
 import {
   FALLBACK_RUNSHEET_COLUMNS,
@@ -18,6 +18,7 @@ import {
   parseTimeToMinutes,
 } from '@/lib/runsheetTime';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
+import { rockDeleteServiceRunsheet } from '@/server-actions/rockDeleteServiceRunsheet';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 import { PeopleSearchDropdown } from './PeopleSearchDropdown';
 import { CELL_ATTRIBUTE, RichTextCell } from './RichTextCell';
@@ -31,6 +32,9 @@ interface RunsheetTableEditorProps {
   initialItems: RunsheetItemRow[];
   initialStartTime?: string;
   readOnly?: boolean;
+  onDeleted?: () => void;
+  onDirtyChange?: (isDirty: boolean) => void;
+  onSaveRef?: (saveFn: () => Promise<boolean>) => void;
 }
 
 /** A row plus the clock values derived from the durations above it. */
@@ -55,6 +59,9 @@ export function RunsheetTableEditor({
   initialItems,
   initialStartTime = '09:00:00 AM',
   readOnly = false,
+  onDeleted,
+  onDirtyChange,
+  onSaveRef,
 }: RunsheetTableEditorProps) {
   const [items, setItems] = useState<RunsheetItemRow[]>(initialItems);
   const [deletedIds, setDeletedIds] = useState<(number | string)[]>([]);
@@ -75,9 +82,39 @@ export function RunsheetTableEditor({
   const [durationDrafts, setDurationDrafts] = useState<{ [index: number]: string }>({});
 
   const [isDirty, setIsDirty] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const [status, setStatus] = useState<{ type: 'idle' | 'saving' | 'success' | 'error'; message?: string }>({
     type: 'idle',
   });
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
+
+  const handleDeleteRunsheet = async () => {
+    setIsDeleting(true);
+    const res = await rockDeleteServiceRunsheet(channelId);
+    setIsDeleting(false);
+    if (res.success) {
+      setShowDeleteModal(false);
+      onDeleted?.();
+    } else {
+      alert(res.error || 'Failed to delete runsheet.');
+    }
+  };
 
   // The activity title has its own column, so it is dropped from the dynamic loop.
   const dynamicAttrCols = useMemo(() => {
@@ -279,8 +316,8 @@ export function RunsheetTableEditor({
     setIsDirty(true);
   };
 
-  const handleSave = async () => {
-    if (readOnly) return;
+  const handleSave = React.useCallback(async (): Promise<boolean> => {
+    if (readOnly) return false;
     setStatus({ type: 'saving' });
     setEditingCell(null);
 
@@ -291,10 +328,16 @@ export function RunsheetTableEditor({
       setStatus({ type: 'success', message: 'Favor Runsheet successfully saved to Rock RMS!' });
       setIsDirty(false);
       setDeletedIds([]);
+      return true;
     } else {
       setStatus({ type: 'error', message: result.error || 'Failed to save changes.' });
+      return false;
     }
-  };
+  }, [readOnly, processedRows, channelId, deletedIds, columns]);
+
+  useEffect(() => {
+    onSaveRef?.(handleSave);
+  }, [onSaveRef, handleSave]);
 
   const closeCell = (index: number, key: string) => {
     setEditingCell((current) => (current?.rowIndex === index && current?.key === key ? null : current));
@@ -387,10 +430,10 @@ export function RunsheetTableEditor({
             <>
               <button
                 onClick={handleLoadDefaultTemplate}
-                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-purple-300 bg-purple-50 px-3 py-2 text-xs font-semibold text-purple-900 hover:bg-purple-100"
+                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
                 title="Load standard Favor Runsheet template"
               >
-                <HiSparkles className="h-4 w-4 text-purple-600" />
+                <HiDocumentDuplicate className="h-4 w-4 text-blue-600" />
                 <span>Load Template</span>
               </button>
 
@@ -400,6 +443,15 @@ export function RunsheetTableEditor({
               >
                 <HiPlus className="h-4 w-4 text-blue-600" />
                 <span>Add Row</span>
+              </button>
+
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800 hover:bg-rose-100 focus:outline-none"
+                title="Delete this Runsheet"
+              >
+                <HiTrash className="h-4 w-4 text-rose-600" />
+                <span>Delete Runsheet</span>
               </button>
 
               <button
@@ -414,6 +466,36 @@ export function RunsheetTableEditor({
           )}
         </div>
       </div>
+
+      {/* Delete Runsheet Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-900">Delete Runsheet</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Are you sure you want to delete <span className="font-semibold text-slate-900">&quot;{channelName}&quot;</span>? This action will permanently remove the runsheet and cannot be undone.
+            </p>
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeleting}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteRunsheet}
+                disabled={isDeleting}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? 'Deleting...' : 'Yes, Delete Runsheet'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Formatting bar for whichever cell is open (hidden in read-only mode) */}
       {!readOnly && <RichTextToolbar editor={activeEditor} />}

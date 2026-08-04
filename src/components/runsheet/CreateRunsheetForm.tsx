@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { getRockContentChannelOptions, ContentChannelTypeOption, ContentChannelCategoryOption } from '@/server-actions/getRockContentChannelOptions';
+import { getRockContentChannelOptions, ContentChannelCategoryOption } from '@/server-actions/getRockContentChannelOptions';
+import { rockGetScheduleOptions, ScheduleOption } from '@/server-actions/rockGetScheduleOptions';
 import { rockCreateServiceRunsheet } from '@/server-actions/rockCreateServiceRunsheet';
 
 function getNextSunday() {
@@ -24,15 +25,16 @@ interface CreateRunsheetFormProps {
 }
 
 export function CreateRunsheetForm({ onCreated }: CreateRunsheetFormProps) {
-  const [types, setTypes] = useState<ContentChannelTypeOption[]>([]);
   const [categories, setCategories] = useState<ContentChannelCategoryOption[]>([]);
+  const [schedules, setSchedules] = useState<ScheduleOption[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(true);
+  const [loadingSchedules, setLoadingSchedules] = useState(false);
 
-  const [selectedTypeId, setSelectedTypeId] = useState<number | ''>('');
+  const [selectedTypeId, setSelectedTypeId] = useState<number>(13);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | ''>('');
   const [serviceTypePrefix, setServiceTypePrefix] = useState('Sunday Service Runsheet');
   const [date, setDate] = useState(getNextSunday());
-  const [session, setSession] = useState('AM');
+  const [session, setSession] = useState('');
   const [status, setStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message?: string }>({ type: 'idle' });
 
   useEffect(() => {
@@ -40,18 +42,15 @@ export function CreateRunsheetForm({ onCreated }: CreateRunsheetFormProps) {
       setLoadingOptions(true);
       const res = await getRockContentChannelOptions();
       if (res.success) {
-        setTypes(res.types);
         setCategories(res.categories);
 
-        const defaultType = res.types.find((t) => t.name.toLowerCase().includes('runsheet'));
-        if (defaultType) {
-          setSelectedTypeId(defaultType.id);
-        } else if (res.types.length > 0) {
+        if (res.types.length > 0) {
           setSelectedTypeId(res.types[0].id);
         }
 
         if (res.categories.length > 0) {
-          setSelectedCategoryId(res.categories[0].id);
+          const initialCatId = res.categories[0].id;
+          setSelectedCategoryId(initialCatId);
         }
       }
       setLoadingOptions(false);
@@ -60,10 +59,29 @@ export function CreateRunsheetForm({ onCreated }: CreateRunsheetFormProps) {
     loadOptions();
   }, []);
 
+  useEffect(() => {
+    async function loadSchedules() {
+      if (!selectedCategoryId) return;
+      setLoadingSchedules(true);
+      const res = await rockGetScheduleOptions(Number(selectedCategoryId), date);
+      if (res.success && res.schedules) {
+        setSchedules(res.schedules);
+        if (res.schedules.length > 0) {
+          setSession(res.schedules[0].name);
+        } else {
+          setSession('AM');
+        }
+      }
+      setLoadingSchedules(false);
+    }
+
+    loadSchedules();
+  }, [selectedCategoryId, date]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTypeId) {
-      setStatus({ type: 'error', message: 'Please select a Content Channel Type.' });
+    if (!selectedCategoryId) {
+      setStatus({ type: 'error', message: 'Please select a Category.' });
       return;
     }
 
@@ -74,8 +92,8 @@ export function CreateRunsheetForm({ onCreated }: CreateRunsheetFormProps) {
 
     const res = await rockCreateServiceRunsheet(
       title,
-      Number(selectedTypeId),
-      selectedCategoryId ? Number(selectedCategoryId) : undefined
+      Number(selectedTypeId || 13),
+      Number(selectedCategoryId)
     );
 
     if (res.success && res.id) {
@@ -117,33 +135,15 @@ export function CreateRunsheetForm({ onCreated }: CreateRunsheetFormProps) {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
             <label className="mb-1 block text-sm font-semibold text-slate-700">
-              Runsheet Type
+              Category
             </label>
             <select
               required
               className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:border-blue-600 focus:outline-none"
-              value={selectedTypeId}
-              onChange={(e) => setSelectedTypeId(e.target.value ? Number(e.target.value) : '')}
-            >
-              <option value="">Select a Type...</option>
-              {types.map((type) => (
-                <option key={type.id} value={type.id}>
-                  {type.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-semibold text-slate-700">
-              Category
-            </label>
-            <select
-              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:border-blue-600 focus:outline-none"
               value={selectedCategoryId}
               onChange={(e) => setSelectedCategoryId(e.target.value ? Number(e.target.value) : '')}
             >
-              <option value="">(None)</option>
+              {categories.length === 0 && <option value="" disabled>No Categories Available</option>}
               {categories.map((cat) => (
                 <option key={cat.id} value={cat.id}>
                   {cat.name}
@@ -180,16 +180,30 @@ export function CreateRunsheetForm({ onCreated }: CreateRunsheetFormProps) {
 
           <div>
             <label className="mb-1 block text-sm font-semibold text-slate-700">
-              Session
+              Session / Service Schedule
             </label>
             <select
-              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:border-blue-600 focus:outline-none"
+              required
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100"
               value={session}
+              disabled={loadingSchedules}
               onChange={(e) => setSession(e.target.value)}
             >
-              <option value="AM">AM</option>
-              <option value="PM">PM</option>
-              <option value="All Day">All Day</option>
+              {loadingSchedules ? (
+                <option value="">Loading schedules...</option>
+              ) : schedules.length > 0 ? (
+                schedules.map((s) => (
+                  <option key={s.id} value={s.name}>
+                    {s.name} ({s.timeLabel})
+                  </option>
+                ))
+              ) : (
+                <>
+                  <option value="AM">AM</option>
+                  <option value="PM">PM</option>
+                  <option value="All Day">All Day</option>
+                </>
+              )}
             </select>
           </div>
 

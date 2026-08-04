@@ -120,8 +120,9 @@ async function fetchTeamMemberships(personId: number) {
 
   return memberships.filter((m: any) => {
     const typeId = Number(m.GroupTypeId);
-    // Include Ministry Team (23) and Organization Unit (28)
-    return typeId === 23 || typeId === 28;
+    const groupId = Number(m.GroupId);
+    // Include Ministry Team (23), Organization Unit (28), and RSR - Rock Administration (Group 2)
+    return typeId === 23 || typeId === 28 || groupId === 2;
   });
 }
 
@@ -171,6 +172,7 @@ export async function rockResolveAccess(personId: number, fallbackEmail?: string
       let canView = false;
 
       // Edit conditions
+      if (groupId === 2) canEdit = true; // RSR - Rock Administration
       if (typeId === 28) canEdit = true;
       if (roleId === 20) canEdit = true;
       if (roleId === 55 && (groupId === 19095 || groupId === 19109)) canEdit = true;
