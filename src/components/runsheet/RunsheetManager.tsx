@@ -34,7 +34,7 @@ export function RunsheetManager({
   const [channelsLoading, setChannelsLoading] = useState(true);
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(initialChannelId);
   const [runsheetData, setRunsheetData] = useState<RunsheetDetails | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(initialChannelId !== null);
   const [showCreateForm, setShowCreateForm] = useState(initialShowCreate);
 
   const [isEditorDirty, setIsEditorDirty] = useState(false);
@@ -44,6 +44,7 @@ export function RunsheetManager({
   const [showArchived, setShowArchived] = useState(false);
 
   const saveRunsheetRef = React.useRef<(() => Promise<boolean>) | null>(null);
+  const activeChannelIdRef = React.useRef<number | null>(initialChannelId);
 
   const canEdit = canUserEditRunsheet(user);
 
@@ -78,44 +79,86 @@ export function RunsheetManager({
   }, [isEditorDirty]);
 
   const loadChannelDetails = React.useCallback(async (id: number) => {
+    activeChannelIdRef.current = id;
     setSelectedChannelId(id);
     setLoading(true);
     updateUrl(`/${id}`);
-    const res = await rockGetRunsheetDetails(id);
-    if (res.success && res.data) {
-      setRunsheetData(res.data);
-    } else {
-      // Denied (no campus access) or otherwise unavailable — back to home
-      // rather than leaving the URL and selection pointed at a blocked runsheet.
-      alert(res.error || 'Could not load runsheet');
+    try {
+      const res = await rockGetRunsheetDetails(id);
+      if (activeChannelIdRef.current !== id) return;
+
+      if (res.success && res.data) {
+        setRunsheetData(res.data);
+      } else {
+        // Denied (no campus access) or otherwise unavailable — back to home
+        // rather than leaving the URL and selection pointed at a blocked runsheet.
+        alert(res.error || 'Could not load runsheet');
+        activeChannelIdRef.current = null;
+        setSelectedChannelId(null);
+        setRunsheetData(null);
+        updateUrl('/');
+      }
+    } catch (err: any) {
+      if (activeChannelIdRef.current !== id) return;
+      alert(err?.message || 'Could not load runsheet');
+      activeChannelIdRef.current = null;
       setSelectedChannelId(null);
       setRunsheetData(null);
       updateUrl('/');
+    } finally {
+      if (activeChannelIdRef.current === id) {
+        setLoading(false);
+      }
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
+    let isCancelled = false;
     async function loadChannels() {
       setChannelsLoading(true);
-      const res = await rockGetAvailableRunsheetChannels(showArchived);
-      if (res.success && res.channels) {
-        setAvailableChannels(res.channels);
+      try {
+        const res = await rockGetAvailableRunsheetChannels(showArchived);
+        if (isCancelled) return;
 
-        if (initialChannelId && res.channels.some((c) => c.id === initialChannelId)) {
-          loadChannelDetails(initialChannelId);
+        if (res.success && res.channels) {
+          setAvailableChannels(res.channels);
+
+          if (initialChannelId && res.channels.some((c) => c.id === initialChannelId)) {
+            loadChannelDetails(initialChannelId);
+          } else if (initialChannelId) {
+            // A direct link to a channel that doesn't exist, or exists outside
+            // this user's campus scope, isn't in `res.channels` at all — back
+            // to home instead of leaving the URL pointed at a dead runsheet
+            // with nothing rendered.
+            activeChannelIdRef.current = null;
+            setSelectedChannelId(null);
+            setLoading(false);
+            updateUrl('/');
+          }
         } else if (initialChannelId) {
-          // A direct link to a channel that doesn't exist, or exists outside
-          // this user's campus scope, isn't in `res.channels` at all — back
-          // to home instead of leaving the URL pointed at a dead runsheet
-          // with nothing rendered.
+          activeChannelIdRef.current = null;
           setSelectedChannelId(null);
+          setLoading(false);
           updateUrl('/');
         }
+      } catch (err) {
+        console.error('Error loading channels:', err);
+        if (initialChannelId) {
+          activeChannelIdRef.current = null;
+          setSelectedChannelId(null);
+          setLoading(false);
+          updateUrl('/');
+        }
+      } finally {
+        if (!isCancelled) {
+          setChannelsLoading(false);
+        }
       }
-      setChannelsLoading(false);
     }
     loadChannels();
+    return () => {
+      isCancelled = true;
+    };
   }, [initialChannelId, loadChannelDetails, showArchived]);
 
   const executeAction = (action: PendingNavigationAction) => {
@@ -127,12 +170,18 @@ export function RunsheetManager({
       loadChannelDetails(action.id);
     } else if (action.type === 'toggleCreateForm') {
       const nextShow = !showCreateForm;
+      if (nextShow) {
+        activeChannelIdRef.current = null;
+        setLoading(false);
+      }
       setShowCreateForm(nextShow);
       if (nextShow) updateUrl('/create');
     } else if (action.type === 'selectEmptyChannel') {
+      activeChannelIdRef.current = null;
       setShowCreateForm(false);
       setSelectedChannelId(null);
       setRunsheetData(null);
+      setLoading(false);
       updateUrl('/');
     } else if (action.type === 'browserBack') {
       window.history.go(-2);
@@ -140,7 +189,7 @@ export function RunsheetManager({
   };
 
   const handleSelectChannel = (id: number) => {
-    if (id === selectedChannelId && !showCreateForm) return;
+    if (!id || (id === selectedChannelId && !showCreateForm)) return;
 
     const action: PendingNavigationAction = id ? { type: 'selectChannel', id } : { type: 'selectEmptyChannel' };
 
@@ -163,7 +212,7 @@ export function RunsheetManager({
   };
 
   const handleGoHome = () => {
-    if (!selectedChannelId && !showCreateForm) return;
+    if (!selectedChannelId && !showCreateForm && !loading) return;
 
     const action: PendingNavigationAction = { type: 'selectEmptyChannel' };
     if (isEditorDirty) {
@@ -276,11 +325,16 @@ export function RunsheetManager({
             className="w-full sm:w-auto rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100"
             value={selectedChannelId || ''}
             disabled={channelsLoading}
-            onChange={(e) => handleSelectChannel(Number(e.target.value))}
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              if (val) handleSelectChannel(val);
+            }}
           >
-            <option value="">
-              {channelsLoading ? 'Loading runsheets...' : 'Select a Runsheet...'}
-            </option>
+            {(!selectedChannelId || channelsLoading) && (
+              <option value="" disabled hidden>
+                {channelsLoading ? 'Loading runsheets...' : 'Select a Runsheet...'}
+              </option>
+            )}
             {availableChannels.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
