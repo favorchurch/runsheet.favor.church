@@ -24,47 +24,103 @@ function looksLikePersonKey(value: string): boolean {
  * name alongside it in `AttributeValue.PersistedTextValue`, which is checked
  * first; otherwise the person record is fetched directly.
  */
-async function resolvePersonName(rawValue: string): Promise<string> {
-  const trimmed = rawValue?.trim() ?? '';
-  if (!trimmed || trimmed === 'undefined') return '';
+/**
+ * Resolves every person-column cell's stored key to a display name in at most
+ * two Rock API calls total, regardless of how many rows/cells need it.
+ *
+ * Resolving one cell at a time (one `/AttributeValues` + one `/People` round
+ * trip per cell) was the actual cause of multi-minute runsheet loads: on a
+ * serverless deploy each request gets a fresh function instance, so
+ * `personNameCache` starts empty every time and every person cell paid for a
+ * live, sequential Rock round trip on every single page view/refresh.
+ */
+async function resolvePersonNamesBatch(rawValues: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const toResolve = new Set<string>();
 
-  const cached = personNameCache.get(trimmed);
-  if (cached) return cached;
+  for (const rawValue of rawValues) {
+    const trimmed = rawValue?.trim() ?? '';
+    if (!trimmed || trimmed === 'undefined') continue;
 
-  // Already a name rather than an id/GUID.
-  if (!looksLikePersonKey(trimmed)) return trimmed;
-
-  try {
-    const matches = (await rockGet('/AttributeValues', {
-      $filter: `Value eq '${trimmed.replace(/'/g, "''")}'`,
-      $top: 1,
-      $select: 'PersistedTextValue,ValueAsPersonId',
-    })) as any[];
-
-    const match = Array.isArray(matches) ? matches[0] : undefined;
-
-    if (match?.PersistedTextValue) {
-      personNameCache.set(trimmed, match.PersistedTextValue);
-      return match.PersistedTextValue;
+    const cached = personNameCache.get(trimmed);
+    if (cached) {
+      result.set(trimmed, cached);
+      continue;
     }
 
-    const personId = match?.ValueAsPersonId ?? (/^\d+$/.test(trimmed) ? trimmed : null);
-    if (personId) {
-      const person = (await rockGet(`/People/${personId}`, { $select: 'FirstName,LastName' })) as
-        | { FirstName?: string; LastName?: string }
-        | null;
+    // Already a name rather than an id/GUID.
+    if (!looksLikePersonKey(trimmed)) {
+      result.set(trimmed, trimmed);
+      continue;
+    }
 
-      if (person?.FirstName) {
+    toResolve.add(trimmed);
+  }
+
+  if (toResolve.size === 0) return result;
+
+  const keys = Array.from(toResolve);
+
+  try {
+    const filter = keys.map((key) => `Value eq '${key.replace(/'/g, "''")}'`).join(' or ');
+    const matches = (await rockGet('/AttributeValues', {
+      $filter: filter,
+      $top: keys.length,
+      $select: 'Value,PersistedTextValue,ValueAsPersonId',
+    })) as any[];
+
+    const byValue = new Map<string, any>();
+    for (const match of matches || []) {
+      byValue.set(match.Value, match);
+    }
+
+    const idToKeys = new Map<string, string[]>();
+
+    for (const key of keys) {
+      const match = byValue.get(key);
+      if (match?.PersistedTextValue) {
+        personNameCache.set(key, match.PersistedTextValue);
+        result.set(key, match.PersistedTextValue);
+        continue;
+      }
+
+      const personId = match?.ValueAsPersonId ?? (/^\d+$/.test(key) ? key : null);
+      if (personId) {
+        const idKey = String(personId);
+        idToKeys.set(idKey, [...(idToKeys.get(idKey) || []), key]);
+      }
+    }
+
+    if (idToKeys.size > 0) {
+      const idFilter = Array.from(idToKeys.keys())
+        .map((id) => `Id eq ${id}`)
+        .join(' or ');
+      const people = (await rockGet('/People', {
+        $filter: idFilter,
+        $select: 'Id,FirstName,LastName',
+        $top: idToKeys.size,
+      })) as any[];
+
+      for (const person of people || []) {
+        if (!person?.FirstName) continue;
         const fullName = `${person.FirstName} ${person.LastName || ''}`.trim();
-        personNameCache.set(trimmed, fullName);
-        return fullName;
+        for (const key of idToKeys.get(String(person.Id)) || []) {
+          personNameCache.set(key, fullName);
+          result.set(key, fullName);
+        }
       }
     }
   } catch (err) {
-    console.error('Error resolving person name for key:', trimmed, err);
+    console.error('Error batch resolving person names:', err);
   }
 
-  return rawValue;
+  // Anything still unresolved (lookup failed, orphaned reference) just
+  // falls back to showing its raw stored key instead of blowing up the load.
+  for (const key of keys) {
+    if (!result.has(key)) result.set(key, key);
+  }
+
+  return result;
 }
 
 /** Loads a runsheet channel, its dynamic columns, and every segment row. */
@@ -124,8 +180,24 @@ export async function rockGetRunsheetDetails(channelId: number) {
       true,
     )) as any[];
 
-    const items: RunsheetItemRow[] = await Promise.all(
-      (rawItems || []).map(async (item) => {
+    // Collect every person-column cell's raw value up front so all of them can
+    // be resolved to display names in one or two batched Rock calls, instead
+    // of one live round trip per cell (see resolvePersonNamesBatch above).
+    const personKeysToResolve: string[] = [];
+    for (const item of rawItems || []) {
+      const attrs = item.AttributeValues || {};
+      for (const col of columns) {
+        if (!isPersonColumn(col)) continue;
+        const attrObj = attrs[col.key];
+        const rawVal: string = attrObj?.PersistedTextValue || attrObj?.Value || attrObj?.ValueFormatted || '';
+        if (rawVal && looksLikePersonKey(rawVal.trim())) {
+          personKeysToResolve.push(rawVal.trim());
+        }
+      }
+    }
+    const resolvedPersonNames = await resolvePersonNamesBatch(personKeysToResolve);
+
+    const items: RunsheetItemRow[] = (rawItems || []).map((item) => {
         const attrs = item.AttributeValues || {};
         const getAttrVal = (key: string) => attrs[key]?.Value || '';
 
@@ -143,7 +215,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
           let rawVal: string = attrObj?.PersistedTextValue || attrObj?.Value || attrObj?.ValueFormatted || '';
 
           if (rawVal && isPersonColumn(col) && looksLikePersonKey(rawVal.trim())) {
-            rawVal = await resolvePersonName(rawVal);
+            rawVal = resolvedPersonNames.get(rawVal.trim()) || rawVal;
           }
 
           attributeValues[col.key] = rawVal;
@@ -173,8 +245,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
           lighting: attributeValues.LIGHTING || getAttrVal('LIGHTING') || '',
           audio: attributeValues.AUDIO || getAttrVal('AUDIO') || '',
         };
-      }),
-    );
+      });
 
     return {
       success: true,
