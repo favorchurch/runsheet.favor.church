@@ -74,20 +74,28 @@ export function CreateRunsheetForm({ onCreated, onCancel }: CreateRunsheetFormPr
   useEffect(() => {
     async function loadOptions() {
       setLoadingOptions(true);
-      const res = await getRockContentChannelOptions();
-      if (res.success) {
-        setCategories(res.categories);
+      try {
+        const res = await getRockContentChannelOptions();
+        if (res.success) {
+          setCategories(res.categories);
 
-        if (res.types.length > 0) {
-          setSelectedTypeId(res.types[0].id);
-        }
+          if (res.types.length > 0) {
+            setSelectedTypeId(res.types[0].id);
+          }
 
-        if (res.categories.length > 0) {
-          const initialCatId = res.categories[0].id;
-          setSelectedCategoryId(initialCatId);
+          if (res.categories.length > 0) {
+            const initialCatId = res.categories[0].id;
+            setSelectedCategoryId(initialCatId);
+          }
+        } else {
+          setStatus({ type: 'error', message: res.error || 'Failed to load options from Rock.' });
         }
+      } catch (err: any) {
+        console.error('Error loading options in CreateRunsheetForm:', err);
+        setStatus({ type: 'error', message: err?.message || 'Failed to load options from Rock.' });
+      } finally {
+        setLoadingOptions(false);
       }
-      setLoadingOptions(false);
     }
 
     loadOptions();
@@ -97,16 +105,21 @@ export function CreateRunsheetForm({ onCreated, onCancel }: CreateRunsheetFormPr
     async function loadSchedules() {
       if (!selectedCategoryId) return;
       setLoadingSchedules(true);
-      const res = await rockGetScheduleOptions(Number(selectedCategoryId), date);
-      if (res.success && res.schedules) {
-        setSchedules(res.schedules);
-        if (res.schedules.length > 0) {
-          setSession(res.schedules[0].name);
-        } else {
-          setSession('AM');
+      try {
+        const res = await rockGetScheduleOptions(Number(selectedCategoryId), date);
+        if (res.success && res.schedules) {
+          setSchedules(res.schedules);
+          if (res.schedules.length > 0) {
+            setSession(res.schedules[0].name);
+          } else {
+            setSession('AM');
+          }
         }
+      } catch (err: any) {
+        console.error('Error loading schedules in CreateRunsheetForm:', err);
+      } finally {
+        setLoadingSchedules(false);
       }
-      setLoadingSchedules(false);
     }
 
     loadSchedules();
