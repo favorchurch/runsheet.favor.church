@@ -45,6 +45,7 @@ export function RunsheetManager({
 
   const saveRunsheetRef = React.useRef<(() => Promise<boolean>) | null>(null);
   const activeChannelIdRef = React.useRef<number | null>(initialChannelId);
+  const deletedChannelIdsRef = React.useRef<Set<number>>(new Set());
 
   const canEdit = canUserEditRunsheet(user);
 
@@ -135,10 +136,11 @@ export function RunsheetManager({
         if (isCancelled) return;
 
         if (res.success && res.channels) {
-          setAvailableChannels(res.channels);
+          const filtered = res.channels.filter((c) => !deletedChannelIdsRef.current.has(c.id));
+          setAvailableChannels(filtered);
 
           // If the requested channel is not available (e.g. deleted or no campus access), redirect to home
-          if (initialChannelId && !res.channels.some((c) => c.id === initialChannelId)) {
+          if (initialChannelId && !filtered.some((c) => c.id === initialChannelId)) {
             activeChannelIdRef.current = null;
             setSelectedChannelId(null);
             setRunsheetData(null);
@@ -237,31 +239,43 @@ export function RunsheetManager({
     }
   };
 
-  const handleRunsheetCreated = (newChannelId: number, title: string) => {
+  const handleRunsheetCreated = (newChannelId: number, title: string, createdData?: RunsheetDetails) => {
     setAvailableChannels((prev) => [{ id: newChannelId, name: title }, ...prev]);
     setShowCreateForm(false);
     setIsEditorDirty(false);
-    loadChannelDetails(newChannelId);
+    activeChannelIdRef.current = newChannelId;
+    setSelectedChannelId(newChannelId);
+    updateUrl(`/${newChannelId}`);
+
+    if (createdData && createdData.items) {
+      setRunsheetData(createdData);
+      setLoading(false);
+    } else {
+      loadChannelDetails(newChannelId);
+    }
   };
 
   // Deleting always lands on the empty "/" home state — it never auto-opens
   // another runsheet, so the address bar and the displayed content agree
   // instead of racing each other.
   const handleRunsheetDeleted = async (deletedId: number) => {
+    deletedChannelIdsRef.current.add(deletedId);
+    activeChannelIdRef.current = null;
     setIsEditorDirty(false);
     setRunsheetData(null);
     setSelectedChannelId(null);
+    setLoading(false);
     updateUrl('/');
 
-    // Drop it from the dropdown immediately rather than waiting on the
-    // refetch below — Rock's own read side can lag a write by a beat, so a
-    // refetch landing before that settles would otherwise re-show an entry
-    // that 404s the moment it's clicked (it's already gone in Rock).
     setAvailableChannels((previous) => previous.filter((c) => c.id !== deletedId));
 
-    const res = await rockGetAvailableRunsheetChannels(showArchived);
-    if (res.success && res.channels) {
-      setAvailableChannels(res.channels.filter((c) => c.id !== deletedId));
+    try {
+      const res = await rockGetAvailableRunsheetChannels(showArchived);
+      if (res.success && res.channels) {
+        setAvailableChannels(res.channels.filter((c) => !deletedChannelIdsRef.current.has(c.id)));
+      }
+    } catch (err) {
+      console.warn('Error loading channels after delete:', err);
     }
   };
 

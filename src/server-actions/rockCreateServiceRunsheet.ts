@@ -43,8 +43,9 @@ export async function rockCreateServiceRunsheet(title: string, contentChannelTyp
     }
 
     // 3. Automatically populate the default runsheet template items
+    let preparedItems: RunsheetItemRow[] = [];
     try {
-      const preparedItems: RunsheetItemRow[] = DEFAULT_RUNSHEET_TEMPLATE.map((row, idx) => ({
+      preparedItems = DEFAULT_RUNSHEET_TEMPLATE.map((row, idx) => ({
         id: `new_${idx}_${Date.now()}`,
         isNew: true,
         title: row.title,
@@ -69,7 +70,17 @@ export async function rockCreateServiceRunsheet(title: string, contentChannelTyp
       console.warn('Could not populate initial template items:', templateErr);
     }
 
-    return { success: true, id: channelId };
+    return {
+      success: true,
+      id: channelId,
+      data: {
+        channelId,
+        name: title,
+        contentChannelTypeId,
+        columns: [],
+        items: preparedItems,
+      },
+    };
   } catch (err: any) {
     console.error('Error creating content channel:', err);
     return { success: false, error: err.message || 'Unknown error occurred' };

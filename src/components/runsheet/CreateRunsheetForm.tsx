@@ -53,8 +53,10 @@ export function generateRunsheetTitle(
   return `${prefix} // ${formattedDate} // ${slot}`;
 }
 
+import type { RunsheetDetails } from '@/types/Runsheet';
+
 interface CreateRunsheetFormProps {
-  onCreated?: (channelId: number, title: string) => void;
+  onCreated?: (channelId: number, title: string, createdData?: RunsheetDetails) => void;
   onCancel?: () => void;
 }
 
@@ -166,7 +168,7 @@ export function CreateRunsheetForm({ onCreated, onCancel }: CreateRunsheetFormPr
 
       // Automatically load into editor
       if (onCreated) {
-        onCreated(res.id, finalTitle);
+        onCreated(res.id, finalTitle, res.data);
       }
     } else {
       setStatus({ type: 'error', message: res.error || 'Unknown error' });
