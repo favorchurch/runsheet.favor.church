@@ -60,58 +60,85 @@ async function resolvePersonNamesBatch(rawValues: string[]): Promise<Map<string,
   if (toResolve.size === 0) return result;
 
   const keys = Array.from(toResolve);
+  const BATCH_SIZE = 15; // Keep OData $filter string under IIS 2048-byte URL limit
 
-  try {
-    const filter = keys.map((key) => `Value eq '${key.replace(/'/g, "''")}'`).join(' or ');
-    const matches = (await rockGet('/AttributeValues', {
-      $filter: filter,
-      $top: keys.length,
-      $select: 'Value,PersistedTextValue,ValueAsPersonId',
-    })) as any[];
+  // 1. Chunk keys into batches of 15 and fetch AttributeValues in parallel
+  const keyBatches: string[][] = [];
+  for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+    keyBatches.push(keys.slice(i, i + BATCH_SIZE));
+  }
 
-    const byValue = new Map<string, any>();
-    for (const match of matches || []) {
-      byValue.set(match.Value, match);
-    }
+  const byValue = new Map<string, any>();
 
-    const idToKeys = new Map<string, string[]>();
+  await Promise.all(
+    keyBatches.map(async (batchKeys) => {
+      try {
+        const filter = batchKeys.map((key) => `Value eq '${key.replace(/'/g, "''")}'`).join(' or ');
+        const matches = (await rockGet('/AttributeValues', {
+          $filter: filter,
+          $top: batchKeys.length,
+          $select: 'Value,PersistedTextValue,ValueAsPersonId',
+        })) as any[];
 
-    for (const key of keys) {
-      const match = byValue.get(key);
-      if (match?.PersistedTextValue) {
-        personNameCache.set(key, match.PersistedTextValue);
-        result.set(key, match.PersistedTextValue);
-        continue;
-      }
-
-      const personId = match?.ValueAsPersonId ?? (/^\d+$/.test(key) ? key : null);
-      if (personId) {
-        const idKey = String(personId);
-        idToKeys.set(idKey, [...(idToKeys.get(idKey) || []), key]);
-      }
-    }
-
-    if (idToKeys.size > 0) {
-      const idFilter = Array.from(idToKeys.keys())
-        .map((id) => `Id eq ${id}`)
-        .join(' or ');
-      const people = (await rockGet('/People', {
-        $filter: idFilter,
-        $select: 'Id,FirstName,LastName',
-        $top: idToKeys.size,
-      })) as any[];
-
-      for (const person of people || []) {
-        if (!person?.FirstName) continue;
-        const fullName = `${person.FirstName} ${person.LastName || ''}`.trim();
-        for (const key of idToKeys.get(String(person.Id)) || []) {
-          personNameCache.set(key, fullName);
-          result.set(key, fullName);
+        for (const match of matches || []) {
+          if (match?.Value) {
+            byValue.set(match.Value, match);
+          }
         }
+      } catch (err) {
+        console.error('Error fetching AttributeValues chunk:', err);
       }
+    })
+  );
+
+  const idToKeys = new Map<string, string[]>();
+
+  for (const key of keys) {
+    const match = byValue.get(key);
+    if (match?.PersistedTextValue) {
+      personNameCache.set(key, match.PersistedTextValue);
+      result.set(key, match.PersistedTextValue);
+      continue;
     }
-  } catch (err) {
-    console.error('Error batch resolving person names:', err);
+
+    const personId = match?.ValueAsPersonId ?? (/^\d+$/.test(key) ? key : null);
+    if (personId) {
+      const idKey = String(personId);
+      idToKeys.set(idKey, [...(idToKeys.get(idKey) || []), key]);
+    }
+  }
+
+  // 2. Chunk person IDs into batches of 15 and fetch People in parallel
+  if (idToKeys.size > 0) {
+    const personIds = Array.from(idToKeys.keys());
+    const idBatches: string[][] = [];
+    for (let i = 0; i < personIds.length; i += BATCH_SIZE) {
+      idBatches.push(personIds.slice(i, i + BATCH_SIZE));
+    }
+
+    await Promise.all(
+      idBatches.map(async (batchIds) => {
+        try {
+          const idFilter = batchIds.map((id) => `Id eq ${id}`).join(' or ');
+          const people = (await rockGet('/People', {
+            $filter: idFilter,
+            $select: 'Id,FirstName,LastName',
+            $top: batchIds.length,
+          })) as any[];
+
+          for (const person of people || []) {
+            if (!person?.FirstName) continue;
+            const fullName = `${person.FirstName} ${person.LastName || ''}`.trim();
+            for (const key of idToKeys.get(String(person.Id)) || []) {
+              personNameCache.set(key, fullName);
+              result.set(key, fullName);
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching People chunk:', err);
+        }
+      })
+    );
   }
 
   // Anything still unresolved (lookup failed, orphaned reference) just

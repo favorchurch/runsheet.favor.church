@@ -86,7 +86,11 @@ export async function rockFetch(
     }
   }
 
-  const fetchOptions: RequestInit = { method, headers };
+  const fetchOptions: RequestInit = {
+    method,
+    headers,
+    signal: AbortSignal.timeout(15000),
+  };
 
   if (body && (method === 'POST' || method === 'PATCH')) {
     fetchOptions.body = JSON.stringify(body);
