@@ -426,6 +426,21 @@ export function RunsheetTableEditor({
     onSaveRef?.(handleSave);
   }, [onSaveRef, handleSave]);
 
+  // The template auto-fill above only sets local (dirty) state — without
+  // this, a freshly created runsheet's template exists only in the browser
+  // until someone remembers to click Save, and is lost entirely if they
+  // navigate away first. Auto-saving here guarantees it actually lands in
+  // Rock the moment the runsheet is opened.
+  const handleSaveRef = React.useRef(handleSave);
+  handleSaveRef.current = handleSave;
+
+  const didAutoSaveTemplate = React.useRef(false);
+  useEffect(() => {
+    if (didAutoSaveTemplate.current || !initialTemplate) return;
+    didAutoSaveTemplate.current = true;
+    handleSaveRef.current();
+  }, [initialTemplate]);
+
   const closeCell = (index: number, key: string) => {
     setEditingCell((current) => (current?.rowIndex === index && current?.key === key ? null : current));
   };

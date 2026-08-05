@@ -104,8 +104,6 @@ export function RunsheetManager({
 
         if (initialChannelId && res.channels.some((c) => c.id === initialChannelId)) {
           loadChannelDetails(initialChannelId);
-        } else if (res.channels.length > 0 && !initialChannelId && !initialShowCreate) {
-          loadChannelDetails(res.channels[0].id);
         } else if (initialChannelId) {
           // A direct link to a channel that doesn't exist, or exists outside
           // this user's campus scope, isn't in `res.channels` at all — back
@@ -118,7 +116,7 @@ export function RunsheetManager({
       setChannelsLoading(false);
     }
     loadChannels();
-  }, [initialChannelId, initialShowCreate, loadChannelDetails, showArchived]);
+  }, [initialChannelId, loadChannelDetails, showArchived]);
 
   const executeAction = (action: PendingNavigationAction) => {
     if (!action) return;
