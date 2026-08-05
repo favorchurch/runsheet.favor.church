@@ -84,14 +84,21 @@ export function RunsheetManager({
     setLoading(true);
     updateUrl(`/${id}`);
     try {
-      const res = await rockGetRunsheetDetails(id);
+      let res = await rockGetRunsheetDetails(id);
+
+      // Retry once after 400ms if initial read fails (e.g. right after channel creation or cold start)
+      if (!res.success && activeChannelIdRef.current === id) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        if (activeChannelIdRef.current === id) {
+          res = await rockGetRunsheetDetails(id);
+        }
+      }
+
       if (activeChannelIdRef.current !== id) return;
 
       if (res.success && res.data) {
         setRunsheetData(res.data);
       } else {
-        // Denied (no campus access) or otherwise unavailable — back to home
-        // rather than leaving the URL and selection pointed at a blocked runsheet.
         alert(res.error || 'Could not load runsheet');
         activeChannelIdRef.current = null;
         setSelectedChannelId(null);
@@ -112,6 +119,13 @@ export function RunsheetManager({
     }
   }, []);
 
+  // On initial mount with a channelId in URL (e.g. /45 on refresh), load the channel details immediately
+  useEffect(() => {
+    if (initialChannelId) {
+      loadChannelDetails(initialChannelId);
+    }
+  }, [initialChannelId, loadChannelDetails]);
+
   useEffect(() => {
     let isCancelled = false;
     async function loadChannels() {
@@ -123,21 +137,18 @@ export function RunsheetManager({
         if (res.success && res.channels) {
           setAvailableChannels(res.channels);
 
-          if (initialChannelId && res.channels.some((c) => c.id === initialChannelId)) {
-            loadChannelDetails(initialChannelId);
-          } else if (initialChannelId) {
-            // A direct link to a channel that doesn't exist, or exists outside
-            // this user's campus scope, isn't in `res.channels` at all — back
-            // to home instead of leaving the URL pointed at a dead runsheet
-            // with nothing rendered.
+          // If the requested channel is not available (e.g. deleted or no campus access), redirect to home
+          if (initialChannelId && !res.channels.some((c) => c.id === initialChannelId)) {
             activeChannelIdRef.current = null;
             setSelectedChannelId(null);
+            setRunsheetData(null);
             setLoading(false);
             updateUrl('/');
           }
         } else if (initialChannelId) {
           activeChannelIdRef.current = null;
           setSelectedChannelId(null);
+          setRunsheetData(null);
           setLoading(false);
           updateUrl('/');
         }
@@ -146,6 +157,7 @@ export function RunsheetManager({
         if (initialChannelId) {
           activeChannelIdRef.current = null;
           setSelectedChannelId(null);
+          setRunsheetData(null);
           setLoading(false);
           updateUrl('/');
         }
@@ -159,7 +171,7 @@ export function RunsheetManager({
     return () => {
       isCancelled = true;
     };
-  }, [initialChannelId, loadChannelDetails, showArchived]);
+  }, [initialChannelId, showArchived]);
 
   const executeAction = (action: PendingNavigationAction) => {
     if (!action) return;
@@ -172,6 +184,8 @@ export function RunsheetManager({
       const nextShow = !showCreateForm;
       if (nextShow) {
         activeChannelIdRef.current = null;
+        setSelectedChannelId(null);
+        setRunsheetData(null);
         setLoading(false);
       }
       setShowCreateForm(nextShow);
@@ -427,7 +441,7 @@ export function RunsheetManager({
             <li>Click <span className="font-semibold">Save Runsheet</span> when you&apos;re done — nothing is saved until you do.</li>
           </ol>
         </div>
-      ) : runsheetData ? (
+      ) : runsheetData && !showCreateForm ? (
         <RunsheetTableEditor
           key={runsheetData.channelId}
           channelId={runsheetData.channelId}

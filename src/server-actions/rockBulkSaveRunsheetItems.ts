@@ -123,14 +123,17 @@ export async function rockBulkSaveRunsheetItems(
 ) {
   try {
     await getRockSession();
-    for (const deletedId of deletedItemIds) {
-      if (typeof deletedId === 'number' && deletedId > 0) {
-        await rockDelete(`/ContentChannelItems/${deletedId}`);
-      }
+
+    // 1. Delete removed items in parallel
+    const deletePromises = deletedItemIds
+      .filter((deletedId): deletedId is number => typeof deletedId === 'number' && deletedId > 0)
+      .map((deletedId) => rockDelete(`/ContentChannelItems/${deletedId}`));
+
+    if (deletePromises.length > 0) {
+      await Promise.all(deletePromises);
     }
 
-    // The client sends the columns it rendered, but the channel type (needed to
-    // create items) and the DURATION attribute id are only known from Rock.
+    // 2. Resolve channel & attribute metadata from Rock
     const channel = await resolveChannel(channelId);
     const attributeColumns = (columns?.length ? columns : channel.columns).filter(
       (col) => col.id && col.key !== 'DURATION' && col.key !== 'SONGITEMID',
@@ -146,59 +149,75 @@ export async function rockBulkSaveRunsheetItems(
       ...(songItemIdAttributeId ? [songItemIdAttributeId] : []),
     ];
 
-    for (const item of items) {
-      const richTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
-      const plainTitle = htmlToPlainText(richTitle) || 'New Segment';
+    // 3. Process items in concurrent batches of 5
+    const ITEM_BATCH_SIZE = 5;
+    for (let i = 0; i < items.length; i += ITEM_BATCH_SIZE) {
+      const itemBatch = items.slice(i, i + ITEM_BATCH_SIZE);
+      await Promise.all(
+        itemBatch.map(async (item) => {
+          const richTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
+          const plainTitle = htmlToPlainText(richTitle) || 'New Segment';
 
-      let itemId: number;
+          let itemId: number;
+          const isNewItem = typeof item.id === 'string' || item.isNew;
 
-      if (typeof item.id === 'string' || item.isNew) {
-        const created = await rockPost('/ContentChannelItems', {
-          ContentChannelId: channelId,
-          ContentChannelTypeId: channel.contentChannelTypeId,
-          Title: plainTitle,
-          Order: item.order,
-          Status: CONTENT_CHANNEL_ITEM_STATUS_APPROVED,
-          StartDateTime: item.startDateTime || null,
-        });
+          if (isNewItem) {
+            const created = await rockPost('/ContentChannelItems', {
+              ContentChannelId: channelId,
+              ContentChannelTypeId: channel.contentChannelTypeId,
+              Title: plainTitle,
+              Order: item.order,
+              Status: CONTENT_CHANNEL_ITEM_STATUS_APPROVED,
+              StartDateTime: item.startDateTime || null,
+            });
 
-        // Rock returns either the new id directly or an object wrapping it.
-        itemId = typeof created === 'number' ? created : created?.Id || created?.id || Number(created);
-      } else {
-        itemId = Number(item.id);
-        await rockPatch(`/ContentChannelItems/${itemId}`, {
-          Title: plainTitle,
-          Order: item.order,
-          StartDateTime: item.startDateTime || null,
-        });
-      }
+            itemId = typeof created === 'number' ? created : created?.Id || created?.id || Number(created);
+          } else {
+            itemId = Number(item.id);
+            await rockPatch(`/ContentChannelItems/${itemId}`, {
+              Title: plainTitle,
+              Order: item.order,
+              StartDateTime: item.startDateTime || null,
+            });
+          }
 
-      if (!itemId || Number.isNaN(itemId) || itemId <= 0) continue;
+          if (!itemId || Number.isNaN(itemId) || itemId <= 0) return;
 
-      const existingValueIds = await fetchExistingValueIds(itemId, attributeIds);
+          // For brand new items, we know no attribute values exist yet — skip the extra GET query
+          const existingValueIds = isNewItem
+            ? new Map<number, number>()
+            : await fetchExistingValueIds(itemId, attributeIds);
 
-      for (const col of attributeColumns) {
-        const value =
-          col.key === 'ACTIVITYTITLE' && item.attributeValues?.ACTIVITYTITLE === undefined
-            ? richTitle
-            : readRunsheetCellValue(item, col.key);
+          // Save all attribute values for this item concurrently
+          const savePromises: Promise<void>[] = [];
 
-        await saveAttributeValue(existingValueIds, col.id, itemId, value);
-      }
+          for (const col of attributeColumns) {
+            const value =
+              col.key === 'ACTIVITYTITLE' && item.attributeValues?.ACTIVITYTITLE === undefined
+                ? richTitle
+                : readRunsheetCellValue(item, col.key);
 
-      await saveAttributeValue(existingValueIds, durationAttributeId, itemId, String(item.duration || 0));
+            savePromises.push(saveAttributeValue(existingValueIds, col.id, itemId, value));
+          }
 
-      if (songItemIdAttributeId) {
-        // `0` is a valid value (flagged as a music cell with no specific song
-        // linked) and must round-trip distinctly from "not a music cell" (''),
-        // so this checks presence, not truthiness.
-        await saveAttributeValue(
-          existingValueIds,
-          songItemIdAttributeId,
-          itemId,
-          item.songItemId != null ? String(item.songItemId) : '',
-        );
-      }
+          savePromises.push(
+            saveAttributeValue(existingValueIds, durationAttributeId, itemId, String(item.duration || 0))
+          );
+
+          if (songItemIdAttributeId) {
+            savePromises.push(
+              saveAttributeValue(
+                existingValueIds,
+                songItemIdAttributeId,
+                itemId,
+                item.songItemId != null ? String(item.songItemId) : '',
+              )
+            );
+          }
+
+          await Promise.all(savePromises);
+        })
+      );
     }
 
     return { success: true };
