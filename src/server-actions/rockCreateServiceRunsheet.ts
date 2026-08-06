@@ -4,11 +4,23 @@ import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockPost } from '@/server-actions/internal/rockFetch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
+import { canAccessRunsheetChannel, ALL_CAMPUSES } from '@/lib/runsheetCampus';
 import type { RunsheetItemRow } from '@/types/Runsheet';
 
 export async function rockCreateServiceRunsheet(title: string, contentChannelTypeId: number, categoryId?: number) {
   try {
-    await getRockSession();
+    const session = await getRockSession();
+
+    if (!canAccessRunsheetChannel(session?.access?.runsheetCampuses, title)) {
+      const allowed = (session?.access?.runsheetCampuses || [])
+        .filter((c) => c !== ALL_CAMPUSES)
+        .join(', ');
+      return {
+        success: false,
+        error: `You are only authorized to create runsheets for your assigned campus (${allowed || 'none'}).`,
+      };
+    }
+
     // 1. Create the Content Channel in Rock RMS using the selected ContentChannelTypeId
     const result = await rockPost('/ContentChannels', {
       Name: title,

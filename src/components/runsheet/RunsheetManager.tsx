@@ -323,7 +323,7 @@ export function RunsheetManager({
             priority
           />
           <span className="text-sm sm:text-base font-extrabold tracking-tight text-slate-900 leading-tight">
-            Favor Runsheet Studio
+            Favor Runsheet Platform
           </span>
         </button>
 
@@ -344,13 +344,13 @@ export function RunsheetManager({
       </header>
 
       {/* Top Controls Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4 w-full sm:w-auto">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-4 w-full md:w-auto min-w-0">
           <label className="text-xs sm:text-sm font-semibold text-slate-800 whitespace-nowrap">
             Select Runsheet:
           </label>
           <select
-            className="w-full sm:w-auto rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100"
+            className="w-full sm:w-auto min-w-0 max-w-full md:max-w-md text-ellipsis rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100"
             value={selectedChannelId || ''}
             disabled={channelsLoading}
             onChange={(e) => {
@@ -386,7 +386,7 @@ export function RunsheetManager({
         {canEdit && (
           <button
             onClick={handleToggleCreateForm}
-            className="w-full sm:w-auto rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer min-h-[38px]"
+            className="w-full md:w-auto shrink-0 whitespace-nowrap rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer min-h-[38px]"
           >
             {showCreateForm ? 'Close Form' : '+ Create New Runsheet'}
           </button>
@@ -395,7 +395,11 @@ export function RunsheetManager({
 
       {canEdit && showCreateForm && (
         <div className="mx-auto max-w-lg">
-          <CreateRunsheetForm onCreated={handleRunsheetCreated} onCancel={handleToggleCreateForm} />
+          <CreateRunsheetForm
+            runsheetCampuses={user?.access?.runsheetCampuses}
+            onCreated={handleRunsheetCreated}
+            onCancel={handleToggleCreateForm}
+          />
         </div>
       )}
 
@@ -464,6 +468,8 @@ export function RunsheetManager({
           initialItems={runsheetData.items}
           initialStartTime={parseStartTimeFromRunsheetName(runsheetData.name)}
           readOnly={!canEdit}
+          runsheetCampuses={user?.access?.runsheetCampuses}
+          onCreated={handleRunsheetCreated}
           onDeleted={() => handleRunsheetDeleted(runsheetData.channelId)}
           onDirtyChange={(dirty) => setIsEditorDirty(dirty)}
           onSaveRef={(saveFn) => (saveRunsheetRef.current = saveFn)}

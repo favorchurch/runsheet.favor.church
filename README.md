@@ -1,4 +1,4 @@
-# Favor Runsheet Studio
+# Favor Runsheet Platform
 
 A spreadsheet-style editor for Favor Church service runsheets, backed by Rock RMS.
 

@@ -42,11 +42,11 @@ export function Auth0LoginGate({ type = 'unauthenticated', userEmail, errorMessa
         {/* Title & Description */}
         <div className="space-y-2">
           <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-            {isUnauthenticated ? 'Favor Runsheet Studio' : 'Access Restricted'}
+            {isUnauthenticated ? 'Favor Runsheet Platform' : 'Access Restricted'}
           </h1>
           <p className="text-sm font-medium text-slate-600 leading-relaxed">
             {isUnauthenticated
-              ? 'Sign in with your rock account to access service runsheets and live production tools.'
+              ? 'Access Favor Church service runsheets with your Rock account!'
               : 'This account does not have permissions to access this website.'}
           </p>
         </div>
@@ -73,7 +73,7 @@ export function Auth0LoginGate({ type = 'unauthenticated', userEmail, errorMessa
               href="/api/auth/login"
               className="w-full inline-flex justify-center items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-sm py-3.5 px-4 shadow-md shadow-blue-500/20 transition-all duration-150 cursor-pointer"
             >
-              <span>Log In</span>
+              <span>Login via Rock</span>
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
               </svg>
@@ -98,7 +98,7 @@ export function Auth0LoginGate({ type = 'unauthenticated', userEmail, errorMessa
 
         {/* Footer */}
         <div className="text-[11px] font-medium text-slate-400 pt-2 border-t border-slate-100 w-full">
-          Favor Tech • Backed Rock RMS
+          Favor Tech 𐄁 Rock RMS
         </div>
       </div>
     </div>

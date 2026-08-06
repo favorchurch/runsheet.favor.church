@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import { cleanSongTitle } from '@/lib/songUtils';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const titleParam = searchParams.get('title') || '';

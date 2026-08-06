@@ -53,14 +53,25 @@ export function generateRunsheetTitle(
   return `${prefix} // ${formattedDate} // ${slot}`;
 }
 
+import { ALL_CAMPUSES, extractRunsheetCampus, RunsheetCampusCode } from '@/lib/runsheetCampus';
 import type { RunsheetDetails } from '@/types/Runsheet';
 
+function extractCategoryCampus(catName: string): RunsheetCampusCode | null {
+  if (!catName) return null;
+  const upper = catName.toUpperCase();
+  if (upper.includes('MNL') || upper.includes('MANILA')) return 'MNL';
+  if (upper.includes('BNE') || upper.includes('BRISBANE')) return 'BNE';
+  if (upper.includes('SEL') || upper.includes('SEOUL')) return 'SEL';
+  return null;
+}
+
 interface CreateRunsheetFormProps {
+  runsheetCampuses?: string[];
   onCreated?: (channelId: number, title: string, createdData?: RunsheetDetails) => void;
   onCancel?: () => void;
 }
 
-export function CreateRunsheetForm({ onCreated, onCancel }: CreateRunsheetFormProps) {
+export function CreateRunsheetForm({ runsheetCampuses, onCreated, onCancel }: CreateRunsheetFormProps) {
   const [categories, setCategories] = useState<ContentChannelCategoryOption[]>([]);
   const [schedules, setSchedules] = useState<ScheduleOption[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(true);
@@ -73,20 +84,44 @@ export function CreateRunsheetForm({ onCreated, onCancel }: CreateRunsheetFormPr
   const [title, setTitle] = useState('');
   const [status, setStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message?: string }>({ type: 'idle' });
 
+  const isGlobalStaffOrAdmin = React.useMemo(
+    () => !runsheetCampuses || runsheetCampuses.includes(ALL_CAMPUSES),
+    [runsheetCampuses]
+  );
+  const userAllowedCampuses = React.useMemo(
+    () => (runsheetCampuses || []).filter((c) => c !== ALL_CAMPUSES) as RunsheetCampusCode[],
+    [runsheetCampuses]
+  );
+
   useEffect(() => {
+    let cancelled = false;
+
     async function loadOptions() {
       setLoadingOptions(true);
       try {
         const res = await getRockContentChannelOptions();
+        if (cancelled) return;
         if (res.success) {
-          setCategories(res.categories);
+          const isGlobal = !runsheetCampuses || runsheetCampuses.includes(ALL_CAMPUSES);
+          const allowed = (runsheetCampuses || []).filter((c) => c !== ALL_CAMPUSES) as RunsheetCampusCode[];
+
+          let filteredCats = res.categories;
+
+          if (!isGlobal && allowed.length > 0) {
+            filteredCats = res.categories.filter((cat) => {
+              const catCampus = extractCategoryCampus(cat.name);
+              return catCampus === null || allowed.includes(catCampus);
+            });
+          }
+
+          setCategories(filteredCats);
 
           if (res.types.length > 0) {
             setSelectedTypeId(res.types[0].id);
           }
 
-          if (res.categories.length > 0) {
-            const initialCatId = res.categories[0].id;
+          if (filteredCats.length > 0) {
+            const initialCatId = filteredCats[0].id;
             setSelectedCategoryId(initialCatId);
           }
         } else {
@@ -96,35 +131,45 @@ export function CreateRunsheetForm({ onCreated, onCancel }: CreateRunsheetFormPr
         console.error('Error loading options in CreateRunsheetForm:', err);
         setStatus({ type: 'error', message: err?.message || 'Failed to load options from Rock.' });
       } finally {
-        setLoadingOptions(false);
+        if (!cancelled) setLoadingOptions(false);
       }
     }
 
     loadOptions();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
+    if (!selectedCategoryId) return;
+    let cancelled = false;
+
     async function loadSchedules() {
-      if (!selectedCategoryId) return;
       setLoadingSchedules(true);
       try {
         const res = await rockGetScheduleOptions(Number(selectedCategoryId), date);
+        if (cancelled) return;
         if (res.success && res.schedules) {
           setSchedules(res.schedules);
-          if (res.schedules.length > 0) {
-            setSession(res.schedules[0].name);
-          } else {
-            setSession('AM');
-          }
+          setSession((prevSession) => {
+            const exists = res.schedules.some((s) => s.name === prevSession);
+            if (exists) return prevSession;
+            return res.schedules.length > 0 ? res.schedules[0].name : 'AM';
+          });
         }
       } catch (err: any) {
         console.error('Error loading schedules in CreateRunsheetForm:', err);
       } finally {
-        setLoadingSchedules(false);
+        if (!cancelled) setLoadingSchedules(false);
       }
     }
 
     loadSchedules();
+    return () => {
+      cancelled = true;
+    };
   }, [selectedCategoryId, date]);
 
   useEffect(() => {
@@ -150,9 +195,20 @@ export function CreateRunsheetForm({ onCreated, onCancel }: CreateRunsheetFormPr
       return;
     }
 
-    setStatus({ type: 'loading' });
-
     const finalTitle = title.trim();
+
+    if (!isGlobalStaffOrAdmin && userAllowedCampuses.length > 0) {
+      const titleCampus = extractRunsheetCampus(finalTitle);
+      if (titleCampus && !userAllowedCampuses.includes(titleCampus)) {
+        setStatus({
+          type: 'error',
+          message: `You are only authorized to create runsheets for your assigned campus (${userAllowedCampuses.join(', ')}).`,
+        });
+        return;
+      }
+    }
+
+    setStatus({ type: 'loading' });
 
     const res = await rockCreateServiceRunsheet(
       finalTitle,

@@ -2,7 +2,14 @@
 
 import type { Editor } from '@tiptap/react';
 import React, { useEffect, useMemo, useState } from 'react';
-import { HiArrowPath, HiBars3, HiCheck, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiTrash } from 'react-icons/hi2';
+import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiTrash } from 'react-icons/hi2';
+
+interface RunsheetSnapshot {
+  items: RunsheetItemRow[];
+  startTime: string;
+  musicCellMap: Record<string, boolean>;
+  deletedIds: (number | string)[];
+}
 import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
 import {
   FALLBACK_RUNSHEET_COLUMNS,
@@ -17,15 +24,55 @@ import {
   parseDurationInputToMinutes,
   parseTimeToMinutes,
 } from '@/lib/runsheetTime';
+import { ALL_CAMPUSES, extractRunsheetCampus, RunsheetCampusCode } from '@/lib/runsheetCampus';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import { rockDeleteServiceRunsheet } from '@/server-actions/rockDeleteServiceRunsheet';
-import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
+import { getRockContentChannelOptions, ContentChannelCategoryOption } from '@/server-actions/getRockContentChannelOptions';
+import { rockGetScheduleOptions, ScheduleOption } from '@/server-actions/rockGetScheduleOptions';
+import { rockDuplicateServiceRunsheet } from '@/server-actions/rockDuplicateServiceRunsheet';
+import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetDetails } from '@/types/Runsheet';
 import { cleanSongTitle } from '@/lib/songUtils';
-import { PeopleSearchDropdown } from './PeopleSearchDropdown';
+import { PeopleSearchDropdown, parsePeopleString } from './PeopleSearchDropdown';
+import { generateRunsheetTitle } from './CreateRunsheetForm';
 import { CELL_ATTRIBUTE, RichTextCell } from './RichTextCell';
 import { RichTextContent } from './RichTextContent';
 import { RichTextToolbar } from './RichTextToolbar';
 import { SongSearchDropdown } from './SongSearchDropdown';
+
+function extractCategoryCampus(catName: string): RunsheetCampusCode | null {
+  if (!catName) return null;
+  const upper = catName.toUpperCase();
+  if (upper.includes('MNL') || upper.includes('MANILA')) return 'MNL';
+  if (upper.includes('BNE') || upper.includes('BRISBANE')) return 'BNE';
+  if (upper.includes('SEL') || upper.includes('SEOUL')) return 'SEL';
+  return null;
+}
+
+function getNextSunday() {
+  const d = new Date();
+  d.setDate(d.getDate() + ((7 - d.getDay()) % 7 || 7));
+  return d.toISOString().split('T')[0];
+}
+
+function extractDateFromChannelName(name: string): string {
+  const m1 = name.match(/(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2}),?\s+(\d{4})/i);
+  if (m1) {
+    const months: Record<string, number> = {
+      january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+      july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+      jan: 0, feb: 1, mar: 2, apr: 3, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+    };
+    const month = months[m1[1].toLowerCase()];
+    const day = parseInt(m1[2], 10);
+    const year = parseInt(m1[3], 10);
+    const dt = new Date(year, month, day);
+    const yyyy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return getNextSunday();
+}
 
 interface RunsheetTableEditorProps {
   channelId: number;
@@ -34,6 +81,8 @@ interface RunsheetTableEditorProps {
   initialItems: RunsheetItemRow[];
   initialStartTime?: string;
   readOnly?: boolean;
+  runsheetCampuses?: string[];
+  onCreated?: (channelId: number, title: string, createdData?: RunsheetDetails) => void;
   onDeleted?: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
   onSaveRef?: (saveFn: () => Promise<boolean>) => void;
@@ -94,6 +143,8 @@ export function RunsheetTableEditor({
   initialItems,
   initialStartTime = '09:00:00 AM',
   readOnly = false,
+  runsheetCampuses,
+  onCreated,
   onDeleted,
   onDirtyChange,
   onSaveRef,
@@ -137,6 +188,121 @@ export function RunsheetTableEditor({
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
+  const [rowToDelete, setRowToDelete] = useState<RunsheetItemRow | null>(null);
+
+  // Duplicate Runsheet Modal State
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateCategories, setDuplicateCategories] = useState<ContentChannelCategoryOption[]>([]);
+  const [duplicateSchedules, setDuplicateSchedules] = useState<ScheduleOption[]>([]);
+  const [duplicateCategoryId, setDuplicateCategoryId] = useState<number | ''>('');
+  const [duplicateDate, setDuplicateDate] = useState(() => extractDateFromChannelName(channelName));
+  const [duplicateSession, setDuplicateSession] = useState('');
+  const [duplicateTitle, setDuplicateTitle] = useState('');
+  const [isDuplicating, setIsDuplicating] = useState(false);
+  const [duplicateError, setDuplicateError] = useState('');
+  const [loadingDuplicateOptions, setLoadingDuplicateOptions] = useState(false);
+  const [loadingDuplicateSchedules, setLoadingDuplicateSchedules] = useState(false);
+
+  const isGlobalStaffOrAdmin = React.useMemo(
+    () => !runsheetCampuses || runsheetCampuses.includes(ALL_CAMPUSES),
+    [runsheetCampuses]
+  );
+  const userAllowedCampuses = React.useMemo(
+    () => (runsheetCampuses || []).filter((c) => c !== ALL_CAMPUSES) as RunsheetCampusCode[],
+    [runsheetCampuses]
+  );
+
+  useEffect(() => {
+    if (!showDuplicateModal) return;
+    let cancelled = false;
+
+    async function loadOptions() {
+      setLoadingDuplicateOptions(true);
+      try {
+        const res = await getRockContentChannelOptions();
+        if (cancelled) return;
+        if (res.success) {
+          const isGlobal = !runsheetCampuses || runsheetCampuses.includes(ALL_CAMPUSES);
+          const allowed = (runsheetCampuses || []).filter((c) => c !== ALL_CAMPUSES) as RunsheetCampusCode[];
+
+          let filteredCats = res.categories;
+          if (!isGlobal && allowed.length > 0) {
+            filteredCats = res.categories.filter((cat) => {
+              const catCampus = extractCategoryCampus(cat.name);
+              return catCampus === null || allowed.includes(catCampus);
+            });
+          }
+          setDuplicateCategories(filteredCats);
+
+          const currentCampus = extractRunsheetCampus(channelName);
+          const matchedCat = filteredCats.find((c) => {
+            const catCampus = extractCategoryCampus(c.name);
+            return catCampus === currentCampus;
+          });
+
+          const defaultCatId = matchedCat ? matchedCat.id : filteredCats.length > 0 ? filteredCats[0].id : '';
+          setDuplicateCategoryId((prev) => (prev !== '' ? prev : defaultCatId));
+        }
+      } catch (err) {
+        console.error('Error loading options for duplicate modal:', err);
+      } finally {
+        if (!cancelled) setLoadingDuplicateOptions(false);
+      }
+    }
+
+    loadOptions();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showDuplicateModal]);
+
+  useEffect(() => {
+    if (!showDuplicateModal || !duplicateCategoryId) return;
+    let cancelled = false;
+
+    async function loadSchedules() {
+      setLoadingDuplicateSchedules(true);
+      try {
+        const res = await rockGetScheduleOptions(Number(duplicateCategoryId), duplicateDate);
+        if (cancelled) return;
+        if (res.success && res.schedules) {
+          setDuplicateSchedules(res.schedules);
+          setDuplicateSession((prevSession) => {
+            const exists = res.schedules.some((s) => s.name === prevSession);
+            if (exists) return prevSession;
+            return res.schedules.length > 0 ? res.schedules[0].name : 'AM';
+          });
+        }
+      } catch (err) {
+        console.error('Error loading schedules for duplicate modal:', err);
+      } finally {
+        if (!cancelled) setLoadingDuplicateSchedules(false);
+      }
+    }
+
+    loadSchedules();
+    return () => {
+      cancelled = true;
+    };
+  }, [showDuplicateModal, duplicateCategoryId, duplicateDate]);
+
+  useEffect(() => {
+    if (!showDuplicateModal) return;
+    const selectedCategory = duplicateCategories.find((c) => c.id === duplicateCategoryId);
+    const selectedSchedule = duplicateSchedules.find((s) => s.name === duplicateSession);
+    const autoTitle = generateRunsheetTitle(
+      duplicateSession,
+      duplicateDate,
+      selectedSchedule?.timeLabel,
+      selectedCategory?.name
+    );
+    setDuplicateTitle(autoTitle);
+  }, [showDuplicateModal, duplicateSession, duplicateDate, duplicateCategoryId, duplicateCategories, duplicateSchedules]);
+
+  /** Global Undo / Redo history stacks */
+  const [history, setHistory] = useState<RunsheetSnapshot[]>([]);
+  const [future, setFuture] = useState<RunsheetSnapshot[]>([]);
 
   const [status, setStatus] = useState<{ type: 'idle' | 'saving' | 'success' | 'error'; message?: string }>({
     type: 'idle',
@@ -161,6 +327,90 @@ export function RunsheetTableEditor({
     });
     return map;
   });
+
+  const saveSnapshot = React.useCallback(() => {
+    setHistory((prev) => [
+      ...prev.slice(-49),
+      {
+        items: JSON.parse(JSON.stringify(items)),
+        startTime,
+        musicCellMap: { ...musicCellMap },
+        deletedIds: [...deletedIds],
+      },
+    ]);
+    setFuture([]);
+  }, [items, startTime, musicCellMap, deletedIds]);
+
+  const handleUndo = React.useCallback(() => {
+    if (readOnly || history.length === 0) return;
+    const previous = history[history.length - 1];
+    const newHistory = history.slice(0, history.length - 1);
+
+    setFuture((prev) => [
+      {
+        items: JSON.parse(JSON.stringify(items)),
+        startTime,
+        musicCellMap: { ...musicCellMap },
+        deletedIds: [...deletedIds],
+      },
+      ...prev,
+    ]);
+
+    setHistory(newHistory);
+    setItems(previous.items);
+    setStartTime(previous.startTime);
+    setMusicCellMap(previous.musicCellMap);
+    setDeletedIds(previous.deletedIds);
+    setEditingCell(null);
+    setIsDirty(true);
+  }, [readOnly, history, items, startTime, musicCellMap, deletedIds]);
+
+  const handleRedo = React.useCallback(() => {
+    if (readOnly || future.length === 0) return;
+    const next = future[0];
+    const newFuture = future.slice(1);
+
+    setHistory((prev) => [
+      ...prev,
+      {
+        items: JSON.parse(JSON.stringify(items)),
+        startTime,
+        musicCellMap: { ...musicCellMap },
+        deletedIds: [...deletedIds],
+      },
+    ]);
+
+    setFuture(newFuture);
+    setItems(next.items);
+    setStartTime(next.startTime);
+    setMusicCellMap(next.musicCellMap);
+    setDeletedIds(next.deletedIds);
+    setEditingCell(null);
+    setIsDirty(true);
+  }, [readOnly, future, items, startTime, musicCellMap, deletedIds]);
+
+  useEffect(() => {
+    if (readOnly) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMod = e.metaKey || e.ctrlKey;
+      if (!isMod) return;
+
+      if (e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if (e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [readOnly, handleUndo, handleRedo]);
 
   useEffect(() => {
     onDirtyChange?.(isDirty);
@@ -269,6 +519,7 @@ export function RunsheetTableEditor({
 
   const handleAttrValueChange = (index: number, key: string, value: string) => {
     if (readOnly) return;
+    saveSnapshot();
     setItems((previous) => {
       const updated = [...previous];
       const item = { ...updated[index] };
@@ -296,6 +547,7 @@ export function RunsheetTableEditor({
    */
   const handleSelectSong = (index: number, formattedSong: string, songItemId: number | null) => {
     if (readOnly) return;
+    saveSnapshot();
     setItems((previous) => {
       const updated = [...previous];
       const item = { ...updated[index] };
@@ -311,6 +563,7 @@ export function RunsheetTableEditor({
 
   const handleCommitDurationDrafts = () => {
     if (readOnly || editingDurationBlockIndex === null) return;
+    saveSnapshot();
 
     setItems((previous) => {
       const updated = [...previous];
@@ -329,6 +582,7 @@ export function RunsheetTableEditor({
 
   const handleAddRow = () => {
     if (readOnly) return;
+    saveSnapshot();
     const newRow: RunsheetItemRow = {
       id: `new_${Date.now()}`,
       isNew: true,
@@ -351,6 +605,7 @@ export function RunsheetTableEditor({
   };
 
   const applyDefaultTemplate = () => {
+    saveSnapshot();
     const { templateRows, templateMusicMap } = buildTemplateState();
 
     setDeletedIds((previous) => [...previous, ...items.map((item) => item.id)]);
@@ -373,6 +628,7 @@ export function RunsheetTableEditor({
 
   const handleDeleteRow = (id: number | string) => {
     if (readOnly) return;
+    saveSnapshot();
     setDeletedIds((previous) => [...previous, id]);
     setItems((previous) => previous.filter((item) => item.id !== id));
     setEditingCell(null);
@@ -391,6 +647,7 @@ export function RunsheetTableEditor({
   const handleDrop = (targetIndex: number) => {
     if (readOnly || draggedIndex === null || draggedIndex === targetIndex) return;
 
+    saveSnapshot();
     setItems((previous) => {
       const updated = [...previous];
       const [moved] = updated.splice(draggedIndex, 1);
@@ -401,6 +658,44 @@ export function RunsheetTableEditor({
     setDraggedIndex(null);
     setEditingCell(null);
     setIsDirty(true);
+  };
+
+  const handleConfirmDuplicate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!duplicateTitle.trim()) {
+      setDuplicateError('Please enter a target runsheet title.');
+      return;
+    }
+
+    const finalTitle = duplicateTitle.trim();
+    if (!isGlobalStaffOrAdmin && userAllowedCampuses.length > 0) {
+      const titleCampus = extractRunsheetCampus(finalTitle);
+      if (titleCampus && !userAllowedCampuses.includes(titleCampus)) {
+        setDuplicateError(`You are only authorized to create runsheets for your assigned campus (${userAllowedCampuses.join(', ')}).`);
+        return;
+      }
+    }
+
+    setIsDuplicating(true);
+    setDuplicateError('');
+
+    const res = await rockDuplicateServiceRunsheet(
+      channelId,
+      finalTitle,
+      13,
+      duplicateCategoryId ? Number(duplicateCategoryId) : undefined,
+      processedRows,
+      columns
+    );
+
+    setIsDuplicating(false);
+
+    if (res.success && res.id) {
+      setShowDuplicateModal(false);
+      onCreated?.(res.id, finalTitle, res.data);
+    } else {
+      setDuplicateError(res.error || 'Failed to duplicate runsheet.');
+    }
   };
 
   const handleSave = React.useCallback(async (): Promise<boolean> => {
@@ -574,6 +869,20 @@ export function RunsheetTableEditor({
               </a>
               <RichTextContent value={value ?? ''} />
             </div>
+          ) : isPersonField && value ? (
+            <div className="flex flex-wrap items-center gap-1 font-medium text-slate-900">
+              {parsePeopleString(value).map((person, i, arr) => (
+                <span key={i} className="inline-flex items-center gap-1">
+                  <span>{person.name}</span>
+                  {person.isGuest && (
+                    <span className="rounded bg-amber-100 text-amber-900 px-1 py-0.2 text-[10px] font-bold border border-amber-300">
+                      Guest
+                    </span>
+                  )}
+                  {i < arr.length - 1 && <span className="text-slate-400 mr-0.5">,</span>}
+                </span>
+              ))}
+            </div>
           ) : (
             <RichTextContent value={value ?? ''} />
           )}
@@ -620,6 +929,28 @@ export function RunsheetTableEditor({
           {!readOnly && (
             <>
               <button
+                type="button"
+                onClick={handleUndo}
+                disabled={history.length === 0}
+                className="flex min-h-[36px] cursor-pointer items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Undo (⌘Z)"
+              >
+                <HiArrowUturnLeft className="h-4 w-4 text-slate-700" />
+                <span>Undo</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRedo}
+                disabled={future.length === 0}
+                className="flex min-h-[36px] cursor-pointer items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Redo (⌘⇧Z)"
+              >
+                <HiArrowUturnRight className="h-4 w-4 text-slate-700" />
+                <span>Redo</span>
+              </button>
+
+              <button
                 onClick={handleResetFormClick}
                 className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
                 title="Reset to the standard Favor Runsheet template"
@@ -634,6 +965,19 @@ export function RunsheetTableEditor({
               >
                 <HiPlus className="h-4 w-4 text-blue-600" />
                 <span>Add Row</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDuplicateError('');
+                  setShowDuplicateModal(true);
+                }}
+                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-purple-300 bg-purple-50 px-3 py-2 text-xs font-semibold text-purple-900 hover:bg-purple-100 active:bg-purple-200 transition-colors"
+                title="Duplicate current runsheet as a different service time"
+              >
+                <HiDocumentDuplicate className="h-4 w-4 text-purple-700" />
+                <span>Duplicate Runsheet</span>
               </button>
 
               <button
@@ -658,6 +1002,123 @@ export function RunsheetTableEditor({
         </div>
       </div>
 
+      {/* Duplicate Runsheet Modal */}
+      {showDuplicateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-900">Duplicate Runsheet</h3>
+            <p className="mt-1 text-xs text-slate-600">
+              Duplicate all segments from <span className="font-semibold text-slate-900">&quot;{channelName}&quot;</span> into a new runsheet for a different service time or date.
+            </p>
+
+            {duplicateError && (
+              <div className="mt-3 rounded-lg bg-rose-50 p-3 text-xs font-semibold text-rose-800 border border-rose-200">
+                {duplicateError}
+              </div>
+            )}
+
+            {loadingDuplicateOptions ? (
+              <div className="py-6 text-center text-xs font-medium text-slate-500">
+                Loading options from Rock RMS...
+              </div>
+            ) : (
+              <form onSubmit={handleConfirmDuplicate} className="mt-4 flex flex-col gap-3 text-xs">
+                <div>
+                  <label className="mb-1 block font-semibold text-slate-700">Category</label>
+                  <select
+                    required
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-purple-600 focus:outline-none"
+                    value={duplicateCategoryId}
+                    onChange={(e) => setDuplicateCategoryId(e.target.value ? Number(e.target.value) : '')}
+                  >
+                    {duplicateCategories.length === 0 && <option value="" disabled>No Categories Available</option>}
+                    {duplicateCategories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block font-semibold text-slate-700">Target Date</label>
+                  <input
+                    type="date"
+                    required
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-purple-600 focus:outline-none"
+                    value={duplicateDate}
+                    onChange={(e) => setDuplicateDate(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block font-semibold text-slate-700">
+                    Target Service Schedule / Time Event
+                  </label>
+                  <select
+                    required
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-purple-600 focus:outline-none disabled:bg-slate-100"
+                    value={duplicateSession}
+                    disabled={loadingDuplicateSchedules}
+                    onChange={(e) => setDuplicateSession(e.target.value)}
+                  >
+                    {loadingDuplicateSchedules ? (
+                      <option value="">Loading existing service times from Rock...</option>
+                    ) : duplicateSchedules.length > 0 ? (
+                      duplicateSchedules.map((s) => (
+                        <option key={s.id} value={s.name}>
+                          {s.name} ({s.timeLabel})
+                        </option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                        <option value="All Day">All Day</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block font-semibold text-slate-700">
+                    Duplicated Runsheet Title
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full rounded-lg border border-purple-300 bg-purple-50 p-2.5 text-xs font-bold text-purple-950 focus:border-purple-500 focus:bg-white focus:outline-none"
+                    value={duplicateTitle}
+                    onChange={(e) => setDuplicateTitle(e.target.value)}
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Auto-generated from schedule & date. You can fine-tune this title before duplicating.
+                  </p>
+                </div>
+
+                <div className="mt-3 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowDuplicateModal(false)}
+                    disabled={isDuplicating}
+                    className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isDuplicating}
+                    className="rounded-lg bg-purple-700 px-4 py-2 font-semibold text-white hover:bg-purple-800 cursor-pointer disabled:opacity-50 shadow-xs"
+                  >
+                    {isDuplicating ? 'Duplicating...' : 'Duplicate Runsheet'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Reset Form Confirmation Modal */}
       {showResetModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
@@ -681,6 +1142,37 @@ export function RunsheetTableEditor({
                 className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer"
               >
                 Yes, Reset Form
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Row Confirmation Modal */}
+      {rowToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-900">Delete Row</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Are you sure you want to delete <span className="font-semibold text-slate-900">&quot;{rowToDelete.title || 'this segment'}&quot;</span>? This will remove this row from the runsheet.
+            </p>
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setRowToDelete(null)}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleDeleteRow(rowToDelete.id);
+                  setRowToDelete(null);
+                }}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer"
+              >
+                Yes, Delete Row
               </button>
             </div>
           </div>
@@ -735,30 +1227,30 @@ export function RunsheetTableEditor({
       )}
 
       <div className="w-full overflow-x-auto rounded-lg border border-slate-300">
-        <table className="w-full min-w-[1000px] lg:min-w-full border-collapse bg-white text-xs text-slate-900" style={{ tableLayout: 'fixed' }}>
+        <table className="w-full min-w-[1280px] lg:min-w-full border-collapse bg-white text-xs text-slate-900" style={{ tableLayout: 'fixed' }}>
           <thead>
             <tr className="border-b-2 border-slate-300 bg-slate-100 text-left font-bold text-slate-900">
-              {!readOnly && <th className="border-r border-slate-300 p-1.5 text-center" style={{ width: '2.5%', minWidth: '36px' }} />}
-              <th className="border-r border-slate-300 p-2 text-center font-bold" style={{ width: '7%', minWidth: '85px' }}>
+              {!readOnly && <th className="border-r border-slate-300 p-1.5 text-center" style={{ width: '36px', minWidth: '36px' }} />}
+              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '85px', minWidth: '85px' }}>
                 Start
               </th>
-              <th className="border-r border-slate-300 p-2 text-center font-bold" style={{ width: '7%', minWidth: '85px' }}>
+              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '85px', minWidth: '85px' }}>
                 End
               </th>
-              <th className="border-r border-slate-300 p-2 text-center font-bold" style={{ width: '7%', minWidth: '85px' }}>
+              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '85px', minWidth: '85px' }}>
                 Duration
               </th>
-              <th className="border-r border-slate-300 p-2 font-bold" style={{ width: '15%', minWidth: '200px' }}>
+              <th className="border-r border-slate-300 p-2 font-bold whitespace-nowrap select-none" style={{ width: '220px', minWidth: '200px' }}>
                 Activity Title
               </th>
 
               {dynamicAttrCols.map((col) => (
-                <th key={col.id} className="border-r border-slate-300 p-2 font-bold" style={{ minWidth: '160px' }}>
+                <th key={col.id} className="border-r border-slate-300 p-2 font-bold whitespace-nowrap select-none overflow-hidden text-ellipsis" style={{ minWidth: '160px' }} title={col.name}>
                   {col.name}
                 </th>
               ))}
 
-              {!readOnly && <th className="p-1.5 text-center" style={{ width: '3%', minWidth: '40px' }} />}
+              {!readOnly && <th className="p-1.5 text-center" style={{ width: '40px', minWidth: '40px' }} />}
             </tr>
           </thead>
           <tbody>
@@ -782,7 +1274,7 @@ export function RunsheetTableEditor({
                     <td
                       draggable
                       onDragStart={(event) => handleDragStart(index, event)}
-                      className="cursor-grab select-none border-r border-slate-200 p-1 text-center text-slate-400 hover:text-slate-700 active:cursor-grabbing"
+                      className="cursor-grab select-none border-r border-slate-200 p-1 text-center align-middle text-slate-400 hover:text-slate-700 active:cursor-grabbing"
                       title="Drag handle cell to move whole row"
                     >
                       <HiBars3 className="mx-auto h-5 w-5 pointer-events-none" />
@@ -829,7 +1321,7 @@ export function RunsheetTableEditor({
                       </td>
                     ) : null
                   ) : (
-                    <td className="border-b border-r border-slate-200 bg-slate-100 p-1 text-center">
+                    <td className="border-b border-r border-slate-200 bg-slate-100 p-1 text-center align-middle">
                       <input
                         type="text"
                         autoFocus={index === parentBlockIndex}
@@ -854,20 +1346,20 @@ export function RunsheetTableEditor({
                     </td>
                   )}
 
-                  <td className="border-r border-slate-200 p-1 align-top">
+                  <td className="border-r border-slate-200 p-1 align-middle">
                     {renderCellContent(index, 'title', currentTitleVal, item.id, false, item.songItemId ?? null)}
                   </td>
 
                   {dynamicAttrCols.map((col) => (
-                    <td key={col.id} className="border-r border-slate-200 p-1 align-top">
+                    <td key={col.id} className="border-r border-slate-200 p-1 align-middle">
                       {renderCellContent(index, col.key, readRunsheetCellValue(item, col.key), item.id, isPersonColumn(col))}
                     </td>
                   ))}
 
                   {!readOnly && (
-                    <td className="p-1 text-center">
+                    <td className="p-1 text-center align-middle">
                       <button
-                        onClick={() => handleDeleteRow(item.id)}
+                        onClick={() => setRowToDelete(item)}
                         className="inline-flex min-h-[32px] min-w-[32px] cursor-pointer items-center justify-center rounded p-1.5 text-red-600 hover:bg-red-50"
                         title="Delete Segment"
                       >
