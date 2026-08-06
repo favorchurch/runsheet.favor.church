@@ -141,7 +141,7 @@ export function RunsheetTableEditor({
   channelName,
   columns = FALLBACK_RUNSHEET_COLUMNS,
   initialItems,
-  initialStartTime = '09:00:00 AM',
+  initialStartTime = '08:00:00 AM',
   readOnly = false,
   runsheetCampuses,
   onCreated,
@@ -185,6 +185,7 @@ export function RunsheetTableEditor({
   const [durationDrafts, setDurationDrafts] = useState<{ [index: number]: string }>({});
 
   const [isDirty, setIsDirty] = useState(() => !!initialTemplate);
+  const [mobileViewMode, setMobileViewMode] = useState<'cards' | 'grid'>('cards');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
@@ -790,7 +791,7 @@ export function RunsheetTableEditor({
     }
 
     return (
-      <div className="group relative w-full">
+      <div className="group relative w-full h-full flex flex-col justify-center">
         {!readOnly && isActivityTitleColumn && (
           <button
             type="button"
@@ -812,11 +813,10 @@ export function RunsheetTableEditor({
               });
               setIsDirty(true);
             }}
-            className={`absolute top-1 right-1 z-20 flex h-5 w-5 items-center justify-center rounded transition-all cursor-pointer ${
-              isMusicCell
+            className={`absolute top-1 right-1 z-20 flex h-5 w-5 items-center justify-center rounded transition-all cursor-pointer ${isMusicCell
                 ? 'bg-violet-600 text-white shadow-xs hover:bg-violet-700 ring-1 ring-violet-400'
                 : 'bg-slate-100/90 text-slate-400 hover:bg-violet-100 hover:text-violet-700 opacity-0 group-hover:opacity-100'
-            }`}
+              }`}
             title={isMusicCell ? 'Music Cell (Click to toggle off)' : 'Mark cell as Music / Song'}
           >
             <HiMusicalNote className="h-3 w-3" />
@@ -824,27 +824,20 @@ export function RunsheetTableEditor({
         )}
 
         <div
-          {...{ [CELL_ATTRIBUTE]: '' }}
-          onMouseDown={(event) => {
-            if (readOnly) return;
-            event.preventDefault();
-            setEditingCell({ rowIndex: index, key });
-          }}
-          className={`relative min-h-[28px] w-full rounded px-2.5 py-1 text-slate-900 transition-all ${
-            isMusicCell
+          className={`relative min-h-[28px] w-full h-full flex flex-col justify-center px-2.5 py-1 text-[11px] leading-normal text-slate-900 transition-all ${isMusicCell
               ? 'bg-violet-50/90 border-2 border-violet-400/80 text-violet-950 font-bold ring-1 ring-violet-300 shadow-xs pr-7'
               : readOnly
-              ? 'cursor-default'
-              : 'cursor-text hover:bg-slate-100/80'
-          }`}
+                ? 'cursor-default'
+                : 'cursor-text'
+            }`}
           title={
             readOnly
               ? 'Read-only volunteer view'
               : isMusicCell
-              ? 'Music Cell - Click to search songs & set key'
-              : isPersonField
-              ? 'Click to search Rock for a person'
-              : 'Click to edit'
+                ? 'Music Cell - Click to search songs & set key'
+                : isPersonField
+                  ? 'Click to search Rock for a person'
+                  : 'Click to edit'
           }
         >
           {isMusicCell && value ? (
@@ -853,8 +846,8 @@ export function RunsheetTableEditor({
                 href={
                   songItemId
                     ? // `0` is the "flagged, no song linked" sentinel — falsy, so it
-                      // correctly falls through to the title-based lookup below.
-                      `/api/song?id=${songItemId}`
+                    // correctly falls through to the title-based lookup below.
+                    `/api/song?id=${songItemId}`
                     : `/api/song?title=${encodeURIComponent(cleanSongTitle(value))}`
                 }
                 target="_blank"
@@ -891,8 +884,13 @@ export function RunsheetTableEditor({
     );
   };
 
+  function getColumnStyle(_key: string, _name: string): React.CSSProperties {
+    // All attribute columns share the exact same 100% identical size with generous 180px length!
+    return { width: '180px', minWidth: '160px' };
+  }
+
   return (
-    <div className="flex w-full flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
+    <div className="flex w-full flex-col gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
       {/* Header Bar */}
       <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center">
         <div>
@@ -922,8 +920,31 @@ export function RunsheetTableEditor({
                 setStartTime(event.target.value);
                 setIsDirty(true);
               }}
-              placeholder="09:00:00 AM"
+              placeholder="08:00:00 AM"
             />
+          </div>
+
+          <div className="flex items-center rounded-lg border border-slate-300 bg-slate-100 p-0.5 sm:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileViewMode('cards')}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${mobileViewMode === 'cards'
+                  ? 'bg-white text-slate-900 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+                }`}
+            >
+              Cards
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileViewMode('grid')}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${mobileViewMode === 'grid'
+                  ? 'bg-white text-slate-900 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+                }`}
+            >
+              Table
+            </button>
           </div>
 
           {!readOnly && (
@@ -1094,24 +1115,23 @@ export function RunsheetTableEditor({
                   <p className="mt-1 text-[11px] text-slate-500">
                     Auto-generated from schedule & date. You can fine-tune this title before duplicating.
                   </p>
-                </div>
-
-                <div className="mt-3 flex items-center justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowDuplicateModal(false)}
-                    disabled={isDuplicating}
-                    className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isDuplicating}
-                    className="rounded-lg bg-purple-700 px-4 py-2 font-semibold text-white hover:bg-purple-800 cursor-pointer disabled:opacity-50 shadow-xs"
-                  >
-                    {isDuplicating ? 'Duplicating...' : 'Duplicate Runsheet'}
-                  </button>
+                  <div className="mt-3 flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowDuplicateModal(false)}
+                      disabled={isDuplicating}
+                      className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isDuplicating}
+                      className="rounded-lg bg-purple-700 px-4 py-2 font-semibold text-white hover:bg-purple-800 cursor-pointer disabled:opacity-50 shadow-xs"
+                    >
+                      {isDuplicating ? 'Duplicating...' : 'Duplicate Runsheet'}
+                    </button>
+                  </div>
                 </div>
               </form>
             )}
@@ -1226,31 +1246,100 @@ export function RunsheetTableEditor({
         </div>
       )}
 
-      <div className="w-full overflow-x-auto rounded-lg border border-slate-300">
-        <table className="w-full min-w-[1280px] lg:min-w-full border-collapse bg-white text-xs text-slate-900" style={{ tableLayout: 'fixed' }}>
+      {/* Mobile Card Timeline View for phones (<640px when mobileViewMode === 'cards') */}
+      {mobileViewMode === 'cards' && (
+        <div className="flex flex-col gap-3 sm:hidden">
+          {processedRows.map((item, index) => {
+            const currentTitleVal = item.attributeValues?.ACTIVITYTITLE || item.title || '';
+            const isMusic = !!musicCellMap[String(item.id)];
+
+            return (
+              <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-xs flex flex-col gap-2.5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                      {item.calculatedStart} - {item.calculatedEnd}
+                    </span>
+                    <span className="font-mono text-[11px] font-semibold text-slate-500">
+                      ({item.formattedDuration})
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {isMusic && (
+                      <span className="inline-flex items-center gap-1 rounded bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800 border border-violet-300">
+                        <HiMusicalNote className="h-3 w-3 text-violet-600" />
+                        Song
+                      </span>
+                    )}
+
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => setRowToDelete(item)}
+                        className="rounded p-1 text-rose-600 hover:bg-rose-50 cursor-pointer"
+                        title="Delete Segment"
+                      >
+                        <HiTrash className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="font-bold text-slate-900 text-sm">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-0.5">Activity Title</span>
+                  {renderCellContent(index, 'title', currentTitleVal, item.id, false, item.songItemId ?? null)}
+                </div>
+
+                {dynamicAttrCols.map((col) => {
+                  const val = readRunsheetCellValue(item, col.key);
+                  if (!val) return null;
+                  return (
+                    <div key={col.id} className="text-xs">
+                      <span className="font-bold text-slate-400 text-[10px] uppercase tracking-wider block mb-0.5">{col.name}</span>
+                      <div className="bg-slate-50 p-1.5 rounded border border-slate-200">
+                        {renderCellContent(index, col.key, val, item.id, isPersonColumn(col))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Spreadsheet Table View (Desktop default, togglable on mobile) */}
+      <div className={`w-full overflow-x-auto rounded-lg border border-slate-300 ${mobileViewMode === 'cards' ? 'hidden sm:block' : 'block'}`}>
+        <table className="w-full min-w-[900px] border-collapse bg-white text-xs text-slate-900" style={{ tableLayout: 'fixed' }}>
           <thead>
             <tr className="border-b-2 border-slate-300 bg-slate-100 text-left font-bold text-slate-900">
-              {!readOnly && <th className="border-r border-slate-300 p-1.5 text-center" style={{ width: '36px', minWidth: '36px' }} />}
-              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '85px', minWidth: '85px' }}>
+              {!readOnly && <th className="border-r border-slate-300 p-1.5 text-center" style={{ width: '32px', minWidth: '32px' }} />}
+              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '70px', minWidth: '70px' }}>
                 Start
               </th>
-              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '85px', minWidth: '85px' }}>
+              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '70px', minWidth: '70px' }}>
                 End
               </th>
-              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '85px', minWidth: '85px' }}>
+              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '70px', minWidth: '70px' }}>
                 Duration
               </th>
-              <th className="border-r border-slate-300 p-2 font-bold whitespace-nowrap select-none" style={{ width: '220px', minWidth: '200px' }}>
+              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '180px', minWidth: '160px' }}>
                 Activity Title
               </th>
 
               {dynamicAttrCols.map((col) => (
-                <th key={col.id} className="border-r border-slate-300 p-2 font-bold whitespace-nowrap select-none overflow-hidden text-ellipsis" style={{ minWidth: '160px' }} title={col.name}>
+                <th
+                  key={col.id}
+                  className="border-r border-slate-300 p-2 text-center font-bold select-none overflow-hidden text-ellipsis"
+                  style={getColumnStyle(col.key, col.name)}
+                  title={col.name}
+                >
                   {col.name}
                 </th>
               ))}
 
-              {!readOnly && <th className="p-1.5 text-center" style={{ width: '40px', minWidth: '40px' }} />}
+              {!readOnly && <th className="p-1.5 text-center" style={{ width: '36px', minWidth: '36px' }} />}
             </tr>
           </thead>
           <tbody>
@@ -1266,9 +1355,8 @@ export function RunsheetTableEditor({
                   key={item.id}
                   onDragOver={(event) => !readOnly && event.preventDefault()}
                   onDrop={() => !readOnly && handleDrop(index)}
-                  className={`border-b border-slate-200 transition-colors hover:bg-slate-50/90 ${
-                    isDragOver ? 'border-t-2 border-blue-500 bg-blue-50' : ''
-                  }`}
+                  className={`border-b border-slate-200 transition-colors hover:bg-slate-50/90 ${isDragOver ? 'border-t-2 border-blue-500 bg-blue-50' : ''
+                    }`}
                 >
                   {!readOnly && (
                     <td
@@ -1312,9 +1400,8 @@ export function RunsheetTableEditor({
                           setDurationDrafts(drafts);
                           setEditingDurationBlockIndex(parentBlockIndex);
                         }}
-                        className={`select-none border-b border-r border-slate-300 bg-slate-50/90 p-2 text-center align-middle font-mono font-semibold text-slate-800 ${
-                          readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-slate-200/60'
-                        }`}
+                        className={`select-none border-b border-r border-slate-300 bg-slate-50/90 p-2 text-center align-middle font-mono font-semibold text-slate-800 ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-slate-200/60'
+                          }`}
                         title={readOnly ? 'Duration' : 'Double click to split & edit duration for sub-rows in this block'}
                       >
                         {spanInfo.formattedDuration || '-'}
@@ -1346,12 +1433,35 @@ export function RunsheetTableEditor({
                     </td>
                   )}
 
-                  <td className="border-r border-slate-200 p-1 align-middle">
+                  <td
+                    {...{ [CELL_ATTRIBUTE]: '' }}
+                    onMouseDown={(event) => {
+                      if (readOnly) return;
+                      const target = event.target as HTMLElement;
+                      if (target.closest('a') || target.closest('button')) return;
+                      event.preventDefault();
+                      setEditingCell({ rowIndex: index, key: 'title' });
+                    }}
+                    className="border-r border-slate-200 p-0 align-middle overflow-hidden h-full cursor-text hover:bg-slate-100/80 transition-colors"
+                    style={{ width: '180px', minWidth: '160px' }}
+                  >
                     {renderCellContent(index, 'title', currentTitleVal, item.id, false, item.songItemId ?? null)}
                   </td>
 
                   {dynamicAttrCols.map((col) => (
-                    <td key={col.id} className="border-r border-slate-200 p-1 align-middle">
+                    <td
+                      key={col.id}
+                      {...{ [CELL_ATTRIBUTE]: '' }}
+                      onMouseDown={(event) => {
+                        if (readOnly) return;
+                        const target = event.target as HTMLElement;
+                        if (target.closest('a') || target.closest('button')) return;
+                        event.preventDefault();
+                        setEditingCell({ rowIndex: index, key: col.key });
+                      }}
+                      className="border-r border-slate-200 p-0 align-middle text-slate-900 overflow-hidden h-full cursor-text hover:bg-slate-100/80 transition-colors"
+                      style={getColumnStyle(col.key, col.name)}
+                    >
                       {renderCellContent(index, col.key, readRunsheetCellValue(item, col.key), item.id, isPersonColumn(col))}
                     </td>
                   ))}

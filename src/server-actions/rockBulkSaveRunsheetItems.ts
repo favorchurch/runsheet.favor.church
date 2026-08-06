@@ -149,76 +149,72 @@ export async function rockBulkSaveRunsheetItems(
       ...(songItemIdAttributeId ? [songItemIdAttributeId] : []),
     ];
 
-    // 3. Process items in concurrent batches of 5
-    const ITEM_BATCH_SIZE = 5;
-    for (let i = 0; i < items.length; i += ITEM_BATCH_SIZE) {
-      const itemBatch = items.slice(i, i + ITEM_BATCH_SIZE);
-      await Promise.all(
-        itemBatch.map(async (item) => {
-          const richTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
-          const plainTitle = htmlToPlainText(richTitle) || 'New Segment';
+    // 3. Process all items in parallel for maximum speed
+    await Promise.all(
+      items.map(async (item) => {
+        const richTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
+        const plainTitle = htmlToPlainText(richTitle) || 'New Segment';
 
-          let itemId: number;
-          const isNewItem = typeof item.id === 'string' || item.isNew;
+        let itemId: number;
+        const isNewItem = typeof item.id === 'string' || item.isNew;
 
-          if (isNewItem) {
-            const created = await rockPost('/ContentChannelItems', {
-              ContentChannelId: channelId,
-              ContentChannelTypeId: channel.contentChannelTypeId,
-              Title: plainTitle,
-              Order: item.order,
-              Status: CONTENT_CHANNEL_ITEM_STATUS_APPROVED,
-              StartDateTime: item.startDateTime || null,
-            });
+        if (isNewItem) {
+          const created = await rockPost('/ContentChannelItems', {
+            ContentChannelId: channelId,
+            ContentChannelTypeId: channel.contentChannelTypeId,
+            Title: plainTitle,
+            Order: item.order,
+            Status: CONTENT_CHANNEL_ITEM_STATUS_APPROVED,
+            StartDateTime: item.startDateTime || null,
+          });
 
-            itemId = typeof created === 'number' ? created : created?.Id || created?.id || Number(created);
-          } else {
-            itemId = Number(item.id);
-            await rockPatch(`/ContentChannelItems/${itemId}`, {
-              Title: plainTitle,
-              Order: item.order,
-              StartDateTime: item.startDateTime || null,
-            });
-          }
+          itemId = typeof created === 'number' ? created : created?.Id || created?.id || Number(created);
+        } else {
+          itemId = Number(item.id);
+          await rockPatch(`/ContentChannelItems/${itemId}`, {
+            Title: plainTitle,
+            Order: item.order,
+            StartDateTime: item.startDateTime || null,
+          });
+        }
 
-          if (!itemId || Number.isNaN(itemId) || itemId <= 0) return;
+        if (!itemId || Number.isNaN(itemId) || itemId <= 0) return;
 
-          // For brand new items, we know no attribute values exist yet — skip the extra GET query
-          const existingValueIds = isNewItem
-            ? new Map<number, number>()
-            : await fetchExistingValueIds(itemId, attributeIds);
+        // For brand new items, we know no attribute values exist yet — skip the extra GET query
+        const existingValueIds = isNewItem
+          ? new Map<number, number>()
+          : await fetchExistingValueIds(itemId, attributeIds);
 
-          // Save all attribute values for this item concurrently
-          const savePromises: Promise<void>[] = [];
+        // Save all attribute values for this item concurrently
+        const savePromises: Promise<void>[] = [];
 
-          for (const col of attributeColumns) {
-            const value =
-              col.key === 'ACTIVITYTITLE' && item.attributeValues?.ACTIVITYTITLE === undefined
-                ? richTitle
-                : readRunsheetCellValue(item, col.key);
+        for (const col of attributeColumns) {
+          const value =
+            col.key === 'ACTIVITYTITLE' && item.attributeValues?.ACTIVITYTITLE === undefined
+              ? richTitle
+              : readRunsheetCellValue(item, col.key);
 
-            savePromises.push(saveAttributeValue(existingValueIds, col.id, itemId, value));
-          }
+          savePromises.push(saveAttributeValue(existingValueIds, col.id, itemId, value));
+        }
 
+        savePromises.push(
+          saveAttributeValue(existingValueIds, durationAttributeId, itemId, String(item.duration || 0))
+        );
+
+        if (songItemIdAttributeId) {
           savePromises.push(
-            saveAttributeValue(existingValueIds, durationAttributeId, itemId, String(item.duration || 0))
+            saveAttributeValue(
+              existingValueIds,
+              songItemIdAttributeId,
+              itemId,
+              item.songItemId != null ? String(item.songItemId) : '',
+            )
           );
+        }
 
-          if (songItemIdAttributeId) {
-            savePromises.push(
-              saveAttributeValue(
-                existingValueIds,
-                songItemIdAttributeId,
-                itemId,
-                item.songItemId != null ? String(item.songItemId) : '',
-              )
-            );
-          }
-
-          await Promise.all(savePromises);
-        })
-      );
-    }
+        await Promise.all(savePromises);
+      })
+    );
 
     return { success: true };
   } catch (err: any) {

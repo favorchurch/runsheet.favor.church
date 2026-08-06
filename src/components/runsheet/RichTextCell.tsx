@@ -76,7 +76,7 @@ export function RichTextCell({ value, onChange, onCommit, onEditorChange }: Rich
     editorProps: {
       attributes: {
         class:
-          'runsheet-rich-text w-full min-h-[36px] px-2 py-1 text-xs font-medium text-slate-900 focus:outline-none',
+          'runsheet-rich-text w-full min-h-[28px] px-2.5 py-1 text-[11px] font-medium leading-normal text-slate-900 focus:outline-none',
       },
       handleKeyDown: (_view, event) => {
         if (event.key === 'Escape') {
@@ -140,7 +140,7 @@ export function RichTextCell({ value, onChange, onCommit, onEditorChange }: Rich
   }, []);
 
   return (
-    <div ref={containerRef} className="w-full rounded border border-pink-600 bg-white focus-within:ring-1 focus-within:ring-pink-600">
+    <div ref={containerRef} className="w-full h-full min-h-[28px] rounded-none border-2 border-blue-600 bg-white shadow-xs focus-within:outline-none flex flex-col justify-center">
       <EditorContent editor={editor} />
     </div>
   );

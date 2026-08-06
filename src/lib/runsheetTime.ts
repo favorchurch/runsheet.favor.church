@@ -6,7 +6,7 @@
  * are meaningful and round-tripped rather than truncated.
  */
 
-const DEFAULT_START_MINUTES = 9 * 60;
+const DEFAULT_START_MINUTES = 8 * 60;
 
 /** Parses a `9:00:00 AM`-style clock string into minutes past midnight. */
 export function parseTimeToMinutes(timeStr: string): number {
@@ -27,13 +27,11 @@ export function parseTimeToMinutes(timeStr: string): number {
 
 /**
  * Reads the starting clock time off a runsheet's own name, so a new session
- * opens with its Start already set instead of always defaulting to 9:00 AM.
+ * opens with its Start set 1 hour before the service time (e.g. 10AM schedule -> 9:00 AM start).
  *
  * Runsheet titles follow `{prefix} // {date} // {time}` (see
  * `generateRunsheetTitle`), with `{time}` compact and space-free — `10AM`,
- * `11:30AM`, `5:30PM`. Falls back to the 9:00 AM default for titles that
- * don't end in a recognizable time (hand-typed titles, "All Day", etc.), so
- * the Start field is still always editable regardless.
+ * `11:30AM`, `5:30PM`. Falls back to 8:00 AM default for titles without a time slot.
  */
 export function parseStartTimeFromRunsheetName(name: string): string {
   if (!name) return formatMinutesToTimeWithSeconds(DEFAULT_START_MINUTES);
@@ -46,7 +44,11 @@ export function parseStartTimeFromRunsheetName(name: string): string {
   const minutes = match[2] ?? '00';
   const period = match[3].toUpperCase();
 
-  return formatMinutesToTimeWithSeconds(parseTimeToMinutes(`${hours}:${minutes}:00 ${period}`));
+  const scheduleMinutes = parseTimeToMinutes(`${hours}:${minutes}:00 ${period}`);
+  // Subtract 1 hour (60 minutes) so runsheet starts 1 hour before service time
+  const startMinutes = (scheduleMinutes - 60 + 24 * 60) % (24 * 60);
+
+  return formatMinutesToTimeWithSeconds(startMinutes);
 }
 
 /** Renders minutes past midnight as `9:00:00 AM`. */
