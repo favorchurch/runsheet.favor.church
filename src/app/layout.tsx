@@ -2,9 +2,15 @@ import { UserProvider } from '@auth0/nextjs-auth0/client';
 import './globals.css';
 
 export const metadata = {
-  title: 'Favor Runsheet',
+  title: 'Favor Runsheet Platform',
   description: 'Favor Church Service Runsheet Application',
+  icons: {
+    icon: '/favicon.png',
+    shortcut: '/favicon.png',
+    apple: '/favicon.png',
+  },
 };
+
 
 export default function RootLayout({
   children,

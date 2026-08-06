@@ -228,7 +228,8 @@ export async function rockGetRunsheetDetails(channelId: number) {
         const attrs = item.AttributeValues || {};
         const getAttrVal = (key: string) => attrs[key]?.Value || '';
 
-        const durationNum = parseInt(getAttrVal('DURATION'), 10);
+        const durationNum = parseFloat(getAttrVal('DURATION'));
+
         const attributeValues: Record<string, string> = {};
 
         for (const col of columns) {

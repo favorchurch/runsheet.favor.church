@@ -1488,13 +1488,13 @@ export function RunsheetTableEditor({
           <thead>
             <tr className="border-b-2 border-slate-300 bg-slate-100 text-left font-bold text-slate-900">
               {!readOnly && <th className="border-r border-slate-300 p-1.5 text-center" style={{ width: '32px', minWidth: '32px' }} />}
-              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '70px', minWidth: '70px' }}>
+              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '90px', minWidth: '90px' }}>
                 Start
               </th>
-              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '70px', minWidth: '70px' }}>
+              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '90px', minWidth: '90px' }}>
                 End
               </th>
-              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '70px', minWidth: '70px' }}>
+              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '90px', minWidth: '90px' }}>
                 Duration
               </th>
               <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '180px', minWidth: '160px' }}>
@@ -1564,7 +1564,7 @@ export function RunsheetTableEditor({
                     spanInfo ? (
                       <td
                         rowSpan={spanInfo.count}
-                        onDoubleClick={() => {
+                       onClick={() => {
                           if (readOnly) return;
                           const drafts: { [index: number]: string } = {};
                           for (let i = parentBlockIndex; i < parentBlockIndex + spanInfo.count; i++) {
@@ -1575,13 +1575,13 @@ export function RunsheetTableEditor({
                         }}
                         className={`select-none border-b border-r border-slate-300 bg-slate-50/90 p-2 text-center align-middle font-mono font-semibold text-slate-800 ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-slate-200/60'
                           }`}
-                        title={readOnly ? 'Duration' : 'Double click to split & edit duration for sub-rows in this block'}
+                        title={readOnly ? 'Duration' : 'Click to edit duration'}
                       >
                         {spanInfo.formattedDuration || '-'}
                       </td>
                     ) : null
                   ) : (
-                    <td className="border-b border-r border-slate-200 bg-slate-100 p-1 text-center align-middle">
+                    <td className="relative z-10 border-b border-r border-slate-200 bg-slate-100 p-1 text-center align-middle overflow-visible">
                       <input
                         type="text"
                         autoFocus={index === parentBlockIndex}
@@ -1589,7 +1589,7 @@ export function RunsheetTableEditor({
                           const end = event.currentTarget.value.length;
                           event.currentTarget.setSelectionRange(end, end);
                         }}
-                        className="w-20 rounded border border-pink-600 bg-white px-1 py-0.5 text-center font-mono text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-pink-600"
+                        className="w-full min-w-0 rounded border border-pink-600 bg-white px-1 py-0.5 text-center font-mono text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-pink-600"
                         value={durationDrafts[index] ?? '00:00:00'}
                         onChange={(event) =>
                           setDurationDrafts((previous) => ({ ...previous, [index]: event.target.value }))
