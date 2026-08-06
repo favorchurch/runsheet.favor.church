@@ -221,7 +221,24 @@ export async function rockGetAvailableRunsheetChannels(includeArchived = false):
         }
       }
 
-      const allKnownTimes = ['9:00 am', '9am', '10:00 am', '10am', '11:30 am', '11:30am', '1:00 pm', '1pm', '3:00 pm', '3pm', '4:00 pm', '4pm', '5:30 pm', '5:30pm', '5:00 pm', '5pm', '7:00 pm', '7pm', 'am', 'pm'];
+      // Standalone 'am'/'pm' are intentionally excluded — they match almost every channel name
+      // and produce false positives that let view-only users see the wrong service time.
+      const allKnownTimes = [
+        '9:00 am', '9am', '9:00am',
+        '10:00 am', '10am', '10:00am',
+        '11:00 am', '11am', '11:00am',
+        '11:30 am', '11:30am',
+        '12:00 pm', '12pm', '12noon', 'noon',
+        '1:00 pm', '1pm', '1:00pm',
+        '2:00 pm', '2pm', '2:00pm',
+        '3:00 pm', '3pm', '3:00pm',
+        '4:00 pm', '4pm', '4:00pm',
+        '5:00 pm', '5pm', '5:00pm',
+        '5:30 pm', '5:30pm',
+        '6:00 pm', '6pm', '6:00pm',
+        '7:00 pm', '7pm', '7:00pm',
+        '8:00 pm', '8pm', '8:00pm',
+      ];
 
       // Filter channels matching rostered date AND schedule time
       if (allRosteredDateTokens.size > 0) {
@@ -239,20 +256,21 @@ export async function rockGetAvailableRunsheetChannels(includeArchived = false):
             return true;
           }
 
-          // If channel specifies a time, user must be rostered for a matching time on that date
+          // If channel specifies a time, user must be rostered for a matching time on that date.
+          // Use strict equality — substring matching ("am" inside "10:00 am") caused false positives.
           for (const [isoDate, times] of rosteredDateMap.entries()) {
             const dateTokens = buildDateMatchingTokens(isoDate);
             const channelMatchesThisDate = dateTokens.some((tok) => nameLower.includes(tok));
             if (channelMatchesThisDate) {
               const hasMatchingTime = Array.from(times).some((userTime) =>
-                channelTimes.some((ct) => userTime.includes(ct) || ct.includes(userTime))
+                channelTimes.some((ct) => ct === userTime)
               );
               if (hasMatchingTime) return true;
             }
           }
 
-          // Fallback: If date matches and no time conflict
-          return true;
+          // Channel has a specific time but none of the user's rostered times match — exclude it.
+          return false;
         });
       } else {
         // If user has no rostered attendances, return empty list for view-only user
