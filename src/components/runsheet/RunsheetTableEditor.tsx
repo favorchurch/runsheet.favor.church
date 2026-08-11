@@ -965,8 +965,7 @@ export function RunsheetTableEditor({
   };
 
   function getColumnStyle(_key: string, _name: string): React.CSSProperties {
-    // All attribute columns share the exact same 100% identical size with generous 180px length!
-    return { width: '180px', minWidth: '160px' };
+    return { width: '100px', minWidth: '85px' };
   }
 
   return (
@@ -1297,11 +1296,11 @@ export function RunsheetTableEditor({
       {rowToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-200">
-            <h3 className="text-lg font-bold text-slate-900">Delete Row</h3>
-            <p className="mt-2 text-sm text-slate-600">
-              Are you sure you want to delete <span className="font-semibold text-slate-900">&quot;{rowToDelete.title || 'this segment'}&quot;</span>? This will remove this row from the runsheet.
+            <h3 className="text-lg font-bold text-slate-900">Delete Row?</h3>
+            <p className="mt-2 text-xs text-slate-600 leading-relaxed">
+              Are you sure you want to delete <span className="font-semibold text-slate-900">&quot;{rowToDelete.title || 'Untitled Segment'}&quot;</span>? This action can be undone with Undo (⌘Z).
             </p>
-            <div className="mt-6 flex items-center justify-end gap-3">
+            <div className="mt-5 flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setRowToDelete(null)}
@@ -1312,19 +1311,19 @@ export function RunsheetTableEditor({
               <button
                 type="button"
                 onClick={() => {
-                  handleDeleteRow(rowToDelete.id);
-                  setRowToDelete(null);
+                  if (rowToDelete) {
+                    handleDeleteRow(rowToDelete.id);
+                    setRowToDelete(null);
+                  }
                 }}
-                className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer"
+                className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer shadow-xs"
               >
-                Yes, Delete Row
+                Delete Row
               </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Event Team Roster Card */}
 
       {status.type === 'success' && (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-800">
@@ -1368,6 +1367,217 @@ export function RunsheetTableEditor({
           );
         }}
       />
+
+      {/* Spreadsheet Table View */}
+      <div className={`w-full flex flex-col gap-1.5 ${mobileViewMode === 'cards' ? 'hidden' : 'block'}`}>
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-extrabold uppercase tracking-wider text-white shadow-xs">
+              <HiTableCells className="h-3.5 w-3.5 text-slate-300" />
+              Runsheet Schedule
+            </span>
+            <span className="text-xs font-semibold text-slate-500">
+              ({processedRows.length} segments)
+            </span>
+          </div>
+        </div>
+
+        <div className="w-full overflow-x-auto rounded-xl border-2 border-slate-800 shadow-md max-h-[calc(100vh-160px)] overflow-y-auto bg-white">
+          <table className="w-full min-w-full border-collapse bg-white text-[11px] text-slate-900" style={{ tableLayout: 'fixed' }}>
+            <thead className="sticky top-0 z-30 bg-slate-900 text-white shadow-md">
+              <tr className="border-b-2 border-slate-950 text-left font-bold text-white uppercase text-[10px] tracking-wider">
+                {!readOnly && <th className="border-r border-slate-800 p-1 text-center" style={{ width: '28px', minWidth: '28px' }} />}
+                <th className="border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
+                  Start
+                </th>
+                <th className="border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
+                  End
+                </th>
+                <th className="border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
+                  Duration
+                </th>
+                <th className="border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '140px', minWidth: '110px' }}>
+                  Activity Title
+                </th>
+
+                {dynamicAttrCols.map((col) => (
+                  <th
+                    key={col.id}
+                    className="border-r border-slate-800 p-1.5 text-center font-bold select-none overflow-hidden text-ellipsis text-slate-100"
+                    style={getColumnStyle(col.key, col.name)}
+                    title={col.name}
+                  >
+                    {col.name}
+                  </th>
+                ))}
+
+                {!readOnly && <th className="p-1 text-center" style={{ width: '48px', minWidth: '48px' }} />}
+              </tr>
+            </thead>
+            <tbody>
+              {processedRows.map((item, index) => {
+                const spanInfo = timeSpanMap[index];
+                const parentBlockIndex = parentBlockMap[index];
+                const isDragOver = draggedIndex === index;
+                const isBlockEditing = !readOnly && editingDurationBlockIndex === parentBlockIndex;
+                const currentTitleVal = item.attributeValues?.ACTIVITYTITLE || item.title || '';
+
+                return (
+                  <tr
+                    key={item.id}
+                    onDragOver={(event) => !readOnly && event.preventDefault()}
+                    onDrop={() => !readOnly && handleDrop(index)}
+                    className={`border-b border-slate-200 transition-colors hover:bg-slate-50/90 ${isDragOver ? 'border-t-2 border-blue-500 bg-blue-50' : ''
+                      }`}
+                  >
+                    {!readOnly && (
+                      <td
+                        draggable
+                        onDragStart={(event) => handleDragStart(index, event)}
+                        className="cursor-grab select-none border-r border-slate-200 p-0.5 text-center align-middle text-slate-400 hover:text-slate-700 active:cursor-grabbing"
+                        title="Drag handle cell to move whole row"
+                      >
+                        <HiBars3 className="mx-auto h-4 w-4 pointer-events-none" />
+                      </td>
+                    )}
+
+                    {spanInfo ? (
+                      <td
+                        rowSpan={spanInfo.count}
+                        className="select-none border-b border-r border-slate-300 bg-slate-50/90 p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px]"
+                      >
+                        {spanInfo.startStr}
+                      </td>
+                    ) : null}
+
+                    {spanInfo ? (
+                      <td
+                        rowSpan={spanInfo.count}
+                        className="select-none border-b border-r border-slate-300 bg-slate-50/90 p-1 text-center align-middle font-mono font-semibold text-slate-700 text-[11px]"
+                      >
+                        {spanInfo.endStr}
+                      </td>
+                    ) : null}
+
+                    {!isBlockEditing ? (
+                      spanInfo ? (
+                        <td
+                          rowSpan={spanInfo.count}
+                          onClick={() => {
+                            if (readOnly) return;
+                            const drafts: { [index: number]: string } = {};
+                            for (let i = parentBlockIndex; i < parentBlockIndex + spanInfo.count; i++) {
+                              drafts[i] = formatDurationToHMS(Number(items[i].duration) || 0);
+                            }
+                            setDurationDrafts(drafts);
+                            setEditingDurationBlockIndex(parentBlockIndex);
+                          }}
+                          className={`select-none border-b border-r border-slate-300 bg-slate-50/90 p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px] ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-slate-200/60'
+                            }`}
+                          title={readOnly ? 'Duration' : 'Click to edit duration'}
+                        >
+                          {spanInfo.formattedDuration || '-'}
+                        </td>
+                      ) : null
+                    ) : (
+                      <td className="relative z-10 border-b border-r border-slate-200 bg-slate-100 p-0.5 text-center align-middle overflow-visible">
+                        <input
+                          type="text"
+                          autoFocus={index === parentBlockIndex}
+                          onFocus={(event) => {
+                            const end = event.currentTarget.value.length;
+                            event.currentTarget.setSelectionRange(end, end);
+                          }}
+                          className="w-full min-w-0 rounded border border-pink-600 bg-white px-1 py-0.5 text-center font-mono text-[11px] font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-pink-600"
+                          value={durationDrafts[index] ?? '00:00:00'}
+                          onChange={(event) =>
+                            setDurationDrafts((previous) => ({ ...previous, [index]: event.target.value }))
+                          }
+                          onBlur={(event) => {
+                            if ((event.relatedTarget as HTMLElement | null)?.tagName === 'INPUT') return;
+                            handleCommitDurationDrafts();
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === 'Escape') handleCommitDurationDrafts();
+                          }}
+                          placeholder="00:00:00"
+                        />
+                      </td>
+                    )}
+
+                    <td
+                      {...{ [CELL_ATTRIBUTE]: '' }}
+                      onMouseDown={(event) => {
+                        if (readOnly) return;
+                        if (editingCell?.rowIndex === index && editingCell?.key === 'title') return;
+                        const target = event.target as HTMLElement;
+                        if (target.closest('a') || target.closest('button')) return;
+                        event.preventDefault();
+                        setEditingCell({ rowIndex: index, key: 'title' });
+                      }}
+                      className={`border-r border-slate-200 p-0 align-middle h-full cursor-text hover:bg-slate-100/80 transition-colors ${
+                        editingCell?.rowIndex === index && editingCell?.key === 'title'
+                          ? 'relative z-50 overflow-visible'
+                          : 'overflow-hidden'
+                      }`}
+                      style={{ width: '140px', minWidth: '110px' }}
+                    >
+                      {renderCellContent(index, 'title', currentTitleVal, item.id, false, item.songItemId ?? null)}
+                    </td>
+
+                    {dynamicAttrCols.map((col) => {
+                      const isCellEditing = editingCell?.rowIndex === index && editingCell?.key === col.key;
+                      return (
+                        <td
+                          key={col.id}
+                          {...{ [CELL_ATTRIBUTE]: '' }}
+                          onMouseDown={(event) => {
+                            if (readOnly) return;
+                            if (editingCell?.rowIndex === index && editingCell?.key === col.key) return;
+                            const target = event.target as HTMLElement;
+                            if (target.closest('a') || target.closest('button')) return;
+                            event.preventDefault();
+                            setEditingCell({ rowIndex: index, key: col.key });
+                          }}
+                          className={`border-r border-slate-200 p-0 align-middle text-slate-900 h-full cursor-text hover:bg-slate-100/80 transition-colors ${
+                            isCellEditing ? 'relative z-50 overflow-visible' : 'overflow-hidden'
+                          }`}
+                          style={getColumnStyle(col.key, col.name)}
+                        >
+                          {renderCellContent(index, col.key, readRunsheetCellValue(item, col.key), item.id, isPersonColumn(col))}
+                        </td>
+                      );
+                    })}
+
+                    {!readOnly && (
+                      <td className="p-0.5 text-center align-middle">
+                        <div className="flex items-center justify-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleInsertRow(index, 'above')}
+                            className="inline-flex h-5 w-5 cursor-pointer items-center justify-center rounded text-blue-600 hover:bg-blue-50"
+                            title="Insert Row Above (Excel style)"
+                          >
+                            <HiPlus className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRowToDelete(item)}
+                            className="inline-flex h-5 w-5 cursor-pointer items-center justify-center rounded text-rose-600 hover:bg-rose-50"
+                            title="Delete Row"
+                          >
+                            <HiTrash className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* Card Timeline View for phones and iPads/tablets (when mobileViewMode === 'cards') */}
       {mobileViewMode === 'cards' && (
@@ -1559,217 +1769,6 @@ export function RunsheetTableEditor({
           </div>
         </div>
       )}
-
-      {/* Spreadsheet Table View */}
-      <div className={`w-full flex flex-col gap-1.5 ${mobileViewMode === 'cards' ? 'hidden' : 'block'}`}>
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-extrabold uppercase tracking-wider text-white shadow-xs">
-              <HiTableCells className="h-3.5 w-3.5 text-slate-300" />
-              Runsheet Schedule
-            </span>
-            <span className="text-xs font-semibold text-slate-500">
-              ({processedRows.length} segments)
-            </span>
-          </div>
-        </div>
-
-        <div className="w-full overflow-x-auto rounded-xl border-2 border-slate-800 shadow-md max-h-[calc(100vh-160px)] overflow-y-auto bg-white">
-          <table className="w-full min-w-[900px] border-collapse bg-white text-xs text-slate-900" style={{ tableLayout: 'fixed' }}>
-            <thead className="sticky top-0 z-30 bg-slate-900 text-white shadow-md">
-              <tr className="border-b-2 border-slate-950 text-left font-bold text-white uppercase text-[11px] tracking-wider">
-                {!readOnly && <th className="border-r border-slate-800 p-1.5 text-center" style={{ width: '32px', minWidth: '32px' }} />}
-                <th className="border-r border-slate-800 p-2 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '90px', minWidth: '90px' }}>
-                  Start
-                </th>
-                <th className="border-r border-slate-800 p-2 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '90px', minWidth: '90px' }}>
-                  End
-                </th>
-                <th className="border-r border-slate-800 p-2 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '90px', minWidth: '90px' }}>
-                  Duration
-                </th>
-                <th className="border-r border-slate-800 p-2 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '180px', minWidth: '160px' }}>
-                  Activity Title
-                </th>
-
-                {dynamicAttrCols.map((col) => (
-                  <th
-                    key={col.id}
-                    className="border-r border-slate-800 p-2 text-center font-bold select-none overflow-hidden text-ellipsis text-slate-100"
-                    style={getColumnStyle(col.key, col.name)}
-                    title={col.name}
-                  >
-                    {col.name}
-                  </th>
-                ))}
-
-                {!readOnly && <th className="p-1.5 text-center" style={{ width: '64px', minWidth: '64px' }} />}
-              </tr>
-            </thead>
-          <tbody>
-            {processedRows.map((item, index) => {
-              const spanInfo = timeSpanMap[index];
-              const parentBlockIndex = parentBlockMap[index];
-              const isDragOver = draggedIndex === index;
-              const isBlockEditing = !readOnly && editingDurationBlockIndex === parentBlockIndex;
-              const currentTitleVal = item.attributeValues?.ACTIVITYTITLE || item.title || '';
-
-              return (
-                <tr
-                  key={item.id}
-                  onDragOver={(event) => !readOnly && event.preventDefault()}
-                  onDrop={() => !readOnly && handleDrop(index)}
-                  className={`border-b border-slate-200 transition-colors hover:bg-slate-50/90 ${isDragOver ? 'border-t-2 border-blue-500 bg-blue-50' : ''
-                    }`}
-                >
-                  {!readOnly && (
-                    <td
-                      draggable
-                      onDragStart={(event) => handleDragStart(index, event)}
-                      className="cursor-grab select-none border-r border-slate-200 p-1 text-center align-middle text-slate-400 hover:text-slate-700 active:cursor-grabbing"
-                      title="Drag handle cell to move whole row"
-                    >
-                      <HiBars3 className="mx-auto h-5 w-5 pointer-events-none" />
-                    </td>
-                  )}
-
-                  {spanInfo ? (
-                    <td
-                      rowSpan={spanInfo.count}
-                      className="select-none border-b border-r border-slate-300 bg-slate-50/90 p-2 text-center align-middle font-mono font-semibold text-slate-800"
-                    >
-                      {spanInfo.startStr}
-                    </td>
-                  ) : null}
-
-                  {spanInfo ? (
-                    <td
-                      rowSpan={spanInfo.count}
-                      className="select-none border-b border-r border-slate-300 bg-slate-50/90 p-2 text-center align-middle font-mono font-semibold text-slate-700"
-                    >
-                      {spanInfo.endStr}
-                    </td>
-                  ) : null}
-
-                  {!isBlockEditing ? (
-                    spanInfo ? (
-                      <td
-                        rowSpan={spanInfo.count}
-                       onClick={() => {
-                          if (readOnly) return;
-                          const drafts: { [index: number]: string } = {};
-                          for (let i = parentBlockIndex; i < parentBlockIndex + spanInfo.count; i++) {
-                            drafts[i] = formatDurationToHMS(Number(items[i].duration) || 0);
-                          }
-                          setDurationDrafts(drafts);
-                          setEditingDurationBlockIndex(parentBlockIndex);
-                        }}
-                        className={`select-none border-b border-r border-slate-300 bg-slate-50/90 p-2 text-center align-middle font-mono font-semibold text-slate-800 ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-slate-200/60'
-                          }`}
-                        title={readOnly ? 'Duration' : 'Click to edit duration'}
-                      >
-                        {spanInfo.formattedDuration || '-'}
-                      </td>
-                    ) : null
-                  ) : (
-                    <td className="relative z-10 border-b border-r border-slate-200 bg-slate-100 p-1 text-center align-middle overflow-visible">
-                      <input
-                        type="text"
-                        autoFocus={index === parentBlockIndex}
-                        onFocus={(event) => {
-                          const end = event.currentTarget.value.length;
-                          event.currentTarget.setSelectionRange(end, end);
-                        }}
-                        className="w-full min-w-0 rounded border border-pink-600 bg-white px-1 py-0.5 text-center font-mono text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-pink-600"
-                        value={durationDrafts[index] ?? '00:00:00'}
-                        onChange={(event) =>
-                          setDurationDrafts((previous) => ({ ...previous, [index]: event.target.value }))
-                        }
-                        onBlur={(event) => {
-                          if ((event.relatedTarget as HTMLElement | null)?.tagName === 'INPUT') return;
-                          handleCommitDurationDrafts();
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === 'Escape') handleCommitDurationDrafts();
-                        }}
-                        placeholder="00:00:00"
-                      />
-                    </td>
-                  )}
-
-                  <td
-                    {...{ [CELL_ATTRIBUTE]: '' }}
-                    onMouseDown={(event) => {
-                      if (readOnly) return;
-                      if (editingCell?.rowIndex === index && editingCell?.key === 'title') return;
-                      const target = event.target as HTMLElement;
-                      if (target.closest('a') || target.closest('button')) return;
-                      event.preventDefault();
-                      setEditingCell({ rowIndex: index, key: 'title' });
-                    }}
-                    className={`border-r border-slate-200 p-0 align-middle h-full cursor-text hover:bg-slate-100/80 transition-colors ${
-                      editingCell?.rowIndex === index && editingCell?.key === 'title'
-                        ? 'relative z-50 overflow-visible'
-                        : 'overflow-hidden'
-                    }`}
-                    style={{ width: '180px', minWidth: '160px' }}
-                  >
-                    {renderCellContent(index, 'title', currentTitleVal, item.id, false, item.songItemId ?? null)}
-                  </td>
-
-                  {dynamicAttrCols.map((col) => {
-                    const isCellEditing = editingCell?.rowIndex === index && editingCell?.key === col.key;
-                    return (
-                      <td
-                        key={col.id}
-                        {...{ [CELL_ATTRIBUTE]: '' }}
-                        onMouseDown={(event) => {
-                          if (readOnly) return;
-                          if (editingCell?.rowIndex === index && editingCell?.key === col.key) return;
-                          const target = event.target as HTMLElement;
-                          if (target.closest('a') || target.closest('button')) return;
-                          event.preventDefault();
-                          setEditingCell({ rowIndex: index, key: col.key });
-                        }}
-                        className={`border-r border-slate-200 p-0 align-middle text-slate-900 h-full cursor-text hover:bg-slate-100/80 transition-colors ${
-                          isCellEditing ? 'relative z-50 overflow-visible' : 'overflow-hidden'
-                        }`}
-                        style={getColumnStyle(col.key, col.name)}
-                      >
-                        {renderCellContent(index, col.key, readRunsheetCellValue(item, col.key), item.id, isPersonColumn(col))}
-                      </td>
-                    );
-                  })}
-
-                  {!readOnly && (
-                    <td className="p-1 text-center align-middle">
-                      <div className="flex items-center justify-center gap-0.5">
-                        <button
-                          type="button"
-                          onClick={() => handleInsertRow(index, 'above')}
-                          className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-blue-600 hover:bg-blue-50"
-                          title="Insert Row Above (Excel style)"
-                        >
-                          <HiPlus className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setRowToDelete(item)}
-                          className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-rose-600 hover:bg-rose-50"
-                          title="Delete Row"
-                        >
-                          <HiTrash className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
     </div>
   );
 }

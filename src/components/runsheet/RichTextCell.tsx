@@ -144,7 +144,7 @@ export function RichTextCell({ value, onChange, onCommit, onEditorChange }: Rich
       ref={containerRef}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
-      className="w-full h-full min-h-[28px] rounded-none border-2 border-blue-600 bg-white shadow-xs focus-within:outline-none flex flex-col justify-center"
+      className="w-full h-full min-h-[24px] rounded-none border-2 border-blue-600 bg-white shadow-xs focus-within:outline-none flex flex-col justify-center"
     >
       <EditorContent editor={editor} />
     </div>
