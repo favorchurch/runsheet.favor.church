@@ -1650,6 +1650,7 @@ export function RunsheetTableEditor({
                     {...{ [CELL_ATTRIBUTE]: '' }}
                     onMouseDown={(event) => {
                       if (readOnly) return;
+                      if (editingCell?.rowIndex === index && editingCell?.key === 'title') return;
                       const target = event.target as HTMLElement;
                       if (target.closest('a') || target.closest('button')) return;
                       event.preventDefault();
@@ -1673,6 +1674,7 @@ export function RunsheetTableEditor({
                         {...{ [CELL_ATTRIBUTE]: '' }}
                         onMouseDown={(event) => {
                           if (readOnly) return;
+                          if (editingCell?.rowIndex === index && editingCell?.key === col.key) return;
                           const target = event.target as HTMLElement;
                           if (target.closest('a') || target.closest('button')) return;
                           event.preventDefault();
