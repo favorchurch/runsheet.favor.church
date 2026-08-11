@@ -982,22 +982,17 @@ export function RunsheetTableEditor({
                 </span>
               )}
             </div>
-            <div className="mt-1 flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50/90 px-2.5 py-1 text-xs font-bold text-amber-950 shadow-2xs focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-400">
-              <span className="shrink-0 text-[10px] font-extrabold uppercase tracking-wider text-amber-800 bg-amber-200/80 px-1.5 py-0.5 rounded select-none">
-                Highlight
-              </span>
-              <input
-                type="text"
-                disabled={readOnly}
-                value={subtitle}
-                onChange={(e) => {
-                  setSubtitle(e.target.value);
-                  setIsDirty(true);
-                }}
-                placeholder="Add service highlight (e.g. Communion Sunday, Vision Sunday)..."
-                className="w-full sm:w-80 bg-transparent text-xs sm:text-sm font-extrabold text-amber-950 placeholder:text-amber-700/60 focus:outline-none disabled:bg-transparent"
-              />
-            </div>
+            <input
+              type="text"
+              disabled={readOnly}
+              value={subtitle}
+              onChange={(e) => {
+                setSubtitle(e.target.value);
+                setIsDirty(true);
+              }}
+              placeholder="Add runsheet subtitle / highlights (e.g. Communion Sunday)..."
+              className="mt-0.5 w-full sm:w-80 text-xs sm:text-sm font-bold text-slate-800 placeholder:text-slate-500 bg-transparent border-b border-dashed border-slate-300 focus:border-slate-800 focus:outline-none py-0.5 transition-colors disabled:border-transparent"
+            />
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
