@@ -870,8 +870,8 @@ export function RunsheetTableEditor({
               setIsDirty(true);
             }}
             className={`absolute top-1 right-1 z-20 flex h-5 w-5 items-center justify-center rounded transition-all cursor-pointer ${isMusicCell
-                ? 'bg-indigo-600 text-white shadow-xs hover:bg-indigo-700 ring-1 ring-indigo-400'
-                : 'bg-slate-100/90 text-slate-400 hover:bg-indigo-100 hover:text-indigo-700 opacity-0 group-hover:opacity-100'
+                ? 'bg-slate-900 text-white shadow-xs hover:bg-black ring-1 ring-slate-700'
+                : 'bg-slate-100/90 text-slate-400 hover:bg-slate-200 hover:text-slate-900 opacity-0 group-hover:opacity-100'
               }`}
             title={isMusicCell ? 'Music Cell (Click to toggle off)' : 'Mark cell as Music / Song'}
           >
@@ -881,7 +881,7 @@ export function RunsheetTableEditor({
 
         <div
           className={`relative min-h-[28px] w-full h-full flex flex-col justify-center px-2.5 py-1 text-[11px] leading-normal text-slate-900 transition-all ${isMusicCell
-              ? 'bg-indigo-50/90 border-2 border-indigo-400/80 text-indigo-950 font-bold ring-1 ring-indigo-300 shadow-xs pr-7'
+              ? 'bg-slate-100/90 border-2 border-slate-400/80 text-slate-950 font-bold ring-1 ring-slate-300 shadow-xs pr-7'
               : readOnly
                 ? 'cursor-default'
                 : 'cursor-text'
@@ -897,7 +897,7 @@ export function RunsheetTableEditor({
           }
         >
           {isMusicCell && value ? (
-            <div className="flex items-center gap-1.5 font-semibold text-indigo-950">
+            <div className="flex items-center gap-1.5 font-semibold text-slate-950">
               <a
                 href={
                   songItemId
@@ -910,10 +910,10 @@ export function RunsheetTableEditor({
                 rel="noopener noreferrer"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center rounded bg-indigo-200/90 px-1.5 py-0.5 text-[10px] font-bold text-indigo-800 uppercase tracking-wider hover:bg-indigo-300 hover:text-indigo-950 transition-colors cursor-pointer"
+                className="inline-flex items-center rounded bg-slate-200/90 px-1.5 py-0.5 text-[10px] font-bold text-slate-900 uppercase tracking-wider hover:bg-slate-300 hover:text-slate-950 transition-colors cursor-pointer"
                 title="Click to view song JSON details in new tab"
               >
-                <HiMusicalNote className="mr-0.5 h-3 w-3 text-indigo-700" />
+                <HiMusicalNote className="mr-0.5 h-3 w-3 text-slate-700" />
                 Song
               </a>
               <RichTextContent value={value ?? ''} />
@@ -1050,10 +1050,10 @@ export function RunsheetTableEditor({
                   setDuplicateError('');
                   setShowDuplicateModal(true);
                 }}
-                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-900 hover:bg-indigo-100 active:bg-indigo-200 transition-colors"
+                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-200 active:bg-slate-300 transition-colors"
                 title="Duplicate current runsheet as a different service time"
               >
-                <HiDocumentDuplicate className="h-4 w-4 text-indigo-700" />
+                <HiDocumentDuplicate className="h-4 w-4 text-slate-700" />
                 <span>Duplicate Runsheet</span>
               </button>
 
@@ -1104,7 +1104,7 @@ export function RunsheetTableEditor({
                   <label className="mb-1 block font-semibold text-slate-700">Category</label>
                   <select
                     required
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-indigo-600 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-slate-900 focus:outline-none"
                     value={duplicateCategoryId}
                     onChange={(e) => setDuplicateCategoryId(e.target.value ? Number(e.target.value) : '')}
                   >
@@ -1122,7 +1122,7 @@ export function RunsheetTableEditor({
                   <input
                     type="date"
                     required
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-indigo-600 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-slate-900 focus:outline-none"
                     value={duplicateDate}
                     onChange={(e) => setDuplicateDate(e.target.value)}
                   />
@@ -1134,7 +1134,7 @@ export function RunsheetTableEditor({
                   </label>
                   <select
                     required
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-indigo-600 focus:outline-none disabled:bg-slate-100"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-slate-900 focus:outline-none disabled:bg-slate-100"
                     value={duplicateSession}
                     disabled={loadingDuplicateSchedules}
                     onChange={(e) => setDuplicateSession(e.target.value)}
@@ -1164,7 +1164,7 @@ export function RunsheetTableEditor({
                   <input
                     type="text"
                     required
-                    className="w-full rounded-lg border border-indigo-300 bg-indigo-50 p-2.5 text-xs font-bold text-indigo-950 focus:border-indigo-500 focus:bg-white focus:outline-none"
+                    className="w-full rounded-lg border border-slate-300 bg-slate-100 p-2.5 text-xs font-bold text-slate-950 focus:border-slate-900 focus:bg-white focus:outline-none"
                     value={duplicateTitle}
                     onChange={(e) => setDuplicateTitle(e.target.value)}
                   />
@@ -1183,7 +1183,7 @@ export function RunsheetTableEditor({
                     <button
                       type="submit"
                       disabled={isDuplicating}
-                      className="rounded-lg bg-indigo-700 px-4 py-2 font-semibold text-white hover:bg-indigo-800 cursor-pointer disabled:opacity-50 shadow-xs"
+                      className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-black cursor-pointer disabled:opacity-50 shadow-xs"
                     >
                       {isDuplicating ? 'Duplicating...' : 'Duplicate Runsheet'}
                     </button>
@@ -1358,8 +1358,8 @@ export function RunsheetTableEditor({
 
                   <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                     {isMusic && (
-                      <span className="inline-flex items-center gap-1 rounded bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800 border border-indigo-300">
-                        <HiMusicalNote className="h-3 w-3 text-indigo-600" />
+                      <span className="inline-flex items-center gap-1 rounded bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-900 border border-slate-300">
+                        <HiMusicalNote className="h-3 w-3 text-slate-700" />
                         Song
                       </span>
                     )}
@@ -1453,8 +1453,8 @@ export function RunsheetTableEditor({
                     }}
                     className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer ${
                       musicCellMap[String(processedRows[editingCardIndex].id)]
-                        ? 'bg-indigo-600 text-white font-bold'
-                        : 'bg-slate-200 text-slate-700 hover:bg-indigo-100 hover:text-indigo-900'
+                        ? 'bg-slate-900 text-white font-bold'
+                        : 'bg-slate-200 text-slate-700 hover:bg-slate-300 hover:text-slate-900'
                     }`}
                   >
                     <HiMusicalNote className="h-3 w-3" />

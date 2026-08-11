@@ -106,7 +106,7 @@ export function EventTeamRosterCard({
     <div className="w-full rounded-xl border border-slate-200 bg-slate-50/80 p-3 sm:p-4 shadow-xs mb-3">
       {/* Card Header */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2 mb-3">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-xs">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 text-white shadow-xs">
           <HiUserGroup className="h-4 w-4" />
         </div>
         <div>
@@ -117,7 +117,7 @@ export function EventTeamRosterCard({
 
       {/* Vital Event Roles Grid */}
       <div className="mb-4">
-        <span className="block text-[10px] font-extrabold uppercase tracking-wider text-indigo-700 mb-2">
+        <span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-800 mb-2">
           Vital Roles (Assigned Team)
         </span>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
@@ -131,8 +131,8 @@ export function EventTeamRosterCard({
                 onClick={() => !readOnly && onOpenRolePicker(`Roster: ${role}`)}
                 className={`relative flex flex-col justify-between rounded-lg border p-2.5 transition-all ${
                   isEditing
-                    ? 'border-indigo-600 bg-indigo-50/90 ring-2 ring-indigo-500 shadow-sm z-30'
-                    : 'border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/30'
+                    ? 'border-slate-900 bg-slate-100 ring-2 ring-slate-800 shadow-sm z-30'
+                    : 'border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-100/50'
                 } ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
               >
                 <div className="flex items-center justify-between gap-1 mb-1">
@@ -146,7 +146,7 @@ export function EventTeamRosterCard({
                 ) : (
                   <div className="text-xs font-semibold text-slate-900 break-words">
                     {val ? (
-                      <span className="inline-flex flex-wrap items-center gap-1 font-bold text-indigo-950">
+                      <span className="inline-flex flex-wrap items-center gap-1 font-bold text-slate-950">
                         {val}
                       </span>
                     ) : (
@@ -165,8 +165,8 @@ export function EventTeamRosterCard({
       {/* Platform & Schedule Contacts Grid */}
       <div>
         <div className="flex items-center gap-1 mb-2">
-          <HiSparkles className="h-3.5 w-3.5 text-indigo-600" />
-          <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700">
+          <HiSparkles className="h-3.5 w-3.5 text-slate-800" />
+          <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-800">
             Platform Roles (Auto-populated from Schedule)
           </span>
         </div>
