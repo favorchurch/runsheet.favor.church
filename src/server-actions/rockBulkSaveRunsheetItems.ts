@@ -158,24 +158,37 @@ export async function rockBulkSaveRunsheetItems(
         let itemId: number;
         const isNewItem = typeof item.id === 'string' || item.isNew;
 
+        const validStartDateTime =
+          item.startDateTime && (item.startDateTime.includes('T') || item.startDateTime.includes('-'))
+            ? new Date(item.startDateTime).toISOString()
+            : undefined;
+
         if (isNewItem) {
-          const created = await rockPost('/ContentChannelItems', {
+          const postPayload: Record<string, any> = {
             ContentChannelId: channelId,
             ContentChannelTypeId: channel.contentChannelTypeId,
             Title: plainTitle,
             Order: item.order,
             Status: CONTENT_CHANNEL_ITEM_STATUS_APPROVED,
-            StartDateTime: item.startDateTime || null,
-          });
+          };
+          if (validStartDateTime) {
+            postPayload.StartDateTime = validStartDateTime;
+          }
+
+          const created = await rockPost('/ContentChannelItems', postPayload);
 
           itemId = typeof created === 'number' ? created : created?.Id || created?.id || Number(created);
         } else {
           itemId = Number(item.id);
-          await rockPatch(`/ContentChannelItems/${itemId}`, {
+          const patchPayload: Record<string, any> = {
             Title: plainTitle,
             Order: item.order,
-            StartDateTime: item.startDateTime || null,
-          });
+          };
+          if (validStartDateTime) {
+            patchPayload.StartDateTime = validStartDateTime;
+          }
+
+          await rockPatch(`/ContentChannelItems/${itemId}`, patchPayload);
         }
 
         if (!itemId || Number.isNaN(itemId) || itemId <= 0) return;
