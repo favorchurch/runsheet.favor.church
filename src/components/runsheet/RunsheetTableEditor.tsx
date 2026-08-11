@@ -982,23 +982,30 @@ export function RunsheetTableEditor({
                 </span>
               )}
             </div>
-            <div className="mt-1 inline-flex max-w-full items-center rounded-md border border-amber-300 bg-amber-100/90 px-2.5 py-0.5 text-xs sm:text-sm font-extrabold text-amber-950 shadow-2xs transition-all focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-400">
-              <input
-                type="text"
-                disabled={readOnly}
-                value={subtitle}
-                onChange={(e) => {
-                  setSubtitle(e.target.value);
-                  setIsDirty(true);
-                }}
-                placeholder="Add service highlight (e.g. Communion Sunday)..."
-                className="max-w-full bg-transparent text-xs sm:text-sm font-extrabold text-amber-950 placeholder:text-amber-700/60 focus:outline-none disabled:bg-transparent"
-                style={{
-                  width: subtitle
-                    ? `${Math.max(subtitle.length + 1, 10)}ch`
-                    : '34ch',
-                }}
-              />
+            <div className="mt-1 flex flex-col items-start gap-0.5">
+              <div className="inline-flex max-w-full items-center rounded-md border border-amber-300 bg-amber-100/90 px-2 py-0.5 text-xs font-extrabold text-amber-950 shadow-2xs transition-all focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-400">
+                <input
+                  type="text"
+                  disabled={readOnly}
+                  value={subtitle}
+                  onChange={(e) => {
+                    setSubtitle(e.target.value);
+                    setIsDirty(true);
+                  }}
+                  placeholder="Communion Sunday, Vision Sunday..."
+                  className="max-w-full bg-transparent text-xs font-extrabold text-amber-950 placeholder:text-amber-700/60 focus:outline-none disabled:bg-transparent"
+                  style={{
+                    width: subtitle
+                      ? `${Math.max(subtitle.length + 1, 6)}ch`
+                      : '26ch',
+                  }}
+                />
+              </div>
+              {!readOnly && (
+                <span className="text-[9px] font-semibold text-slate-500 select-none">
+                  (Click to edit subtitle)
+                </span>
+              )}
             </div>
           </div>
 
