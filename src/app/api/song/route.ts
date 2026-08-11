@@ -109,12 +109,12 @@ function renderSongHtml(songItem: any) {
     body { font-family: 'Inter', sans-serif; }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-screen antialiased selection:bg-violet-200">
+<body class="bg-slate-50 text-slate-900 min-h-screen antialiased selection:bg-indigo-200">
 
   <!-- Header Navigation Bar -->
   <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/80 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-xs">
     <div class="flex items-center gap-3">
-      <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-white font-bold text-base shadow-xs">
+      <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white font-bold text-base shadow-xs">
         🎵
       </span>
       <div>
@@ -144,7 +144,7 @@ function renderSongHtml(songItem: any) {
         </h1>
 
         <div class="flex flex-wrap items-center gap-2 mt-4">
-          ${meta.Key ? `<span class="inline-flex items-center gap-1.5 rounded-lg bg-violet-100 px-3 py-1 text-xs font-bold text-violet-900 border border-violet-200 shadow-2xs">🎹 Key: ${escapeHtml(meta.Key)}</span>` : ''}
+          ${meta.Key ? `<span class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-100 px-3 py-1 text-xs font-bold text-indigo-900 border border-indigo-200 shadow-2xs">🎹 Key: ${escapeHtml(meta.Key)}</span>` : ''}
           ${meta.Artist ? `<span class="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 border border-slate-200">🎤 ${escapeHtml(meta.Artist)}</span>` : ''}
           ${meta.CCLI ? `<span class="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 border border-slate-200">📄 CCLI: ${escapeHtml(meta.CCLI)}</span>` : ''}
           ${meta.Themes ? `<span class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-800 border border-indigo-200">🏷️ ${escapeHtml(meta.Themes)}</span>` : ''}
@@ -173,15 +173,15 @@ function renderSection(title: string, text: string) {
       const linksHtml = linkMatches
         .map(
           (m) =>
-            `<a href="${m[2]}" target="_blank" rel="noopener noreferrer" class="flex items-center justify-between rounded-xl border border-violet-200 bg-violet-50/60 px-4 py-3 text-xs font-bold text-violet-900 hover:bg-violet-100 transition-all shadow-2xs">
+            `<a href="${m[2]}" target="_blank" rel="noopener noreferrer" class="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 text-xs font-bold text-indigo-900 hover:bg-indigo-100 transition-all shadow-2xs">
               <span class="flex items-center gap-2">📄 ${escapeHtml(m[1])}</span>
-              <span class="text-violet-600 font-semibold">Download ↗</span>
+              <span class="text-indigo-600 font-semibold">Download ↗</span>
             </a>`
         )
         .join('');
 
-      return `<div class="rounded-2xl border border-violet-200 bg-violet-50/30 p-5 my-6">
-        <h3 class="text-xs font-extrabold text-violet-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+      return `<div class="rounded-2xl border border-indigo-200 bg-indigo-50/30 p-5 my-6">
+        <h3 class="text-xs font-extrabold text-indigo-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
           <span>🎵</span> Sheet Music & Chord Charts
         </h3>
         <div class="grid sm:grid-cols-2 gap-2.5">
@@ -192,15 +192,15 @@ function renderSection(title: string, text: string) {
   }
 
   const formattedText = escapeHtml(text)
-    .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 font-semibold text-violet-700 hover:text-violet-900 underline underline-offset-2">$1 ↗</a>')
+    .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:text-indigo-900 underline underline-offset-2">$1 ↗</a>')
     .replace(/\n/g, '<br>');
 
   const cardStyle = isChorus
-    ? 'bg-violet-50/80 border-l-4 border-violet-600 rounded-r-2xl p-5 my-6 shadow-2xs'
+    ? 'bg-indigo-50/80 border-l-4 border-indigo-600 rounded-r-2xl p-5 my-6 shadow-2xs'
     : 'bg-slate-50/70 border border-slate-200/70 rounded-2xl p-5 my-4';
 
   const titleHeader = title
-    ? `<h3 class="text-xs font-extrabold ${isChorus ? 'text-violet-900' : 'text-slate-500'} uppercase tracking-wider mb-2">
+    ? `<h3 class="text-xs font-extrabold ${isChorus ? 'text-indigo-900' : 'text-slate-500'} uppercase tracking-wider mb-2">
         ${escapeHtml(title)}
       </h3>`
     : '';

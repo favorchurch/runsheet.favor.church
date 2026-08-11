@@ -21,7 +21,7 @@ const TEXT_COLORS = [
   { label: 'Amber', value: '#b45309' },
   { label: 'Green', value: '#15803d' },
   { label: 'Blue', value: '#1d4ed8' },
-  { label: 'Violet', value: '#6d28d9' },
+  { label: 'Indigo', value: '#4f46e5' },
   { label: 'Pink', value: '#be185d' },
 ];
 
@@ -33,7 +33,7 @@ const FILL_COLORS = [
   { label: 'Blue', value: '#bfdbfe' },
   { label: 'Pink', value: '#fbcfe8' },
   { label: 'Orange', value: '#fed7aa' },
-  { label: 'Violet', value: '#e9d5ff' },
+  { label: 'Indigo', value: '#c7d2fe' },
   { label: 'Grey', value: '#e2e8f0' },
 ];
 

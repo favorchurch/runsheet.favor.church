@@ -40,6 +40,7 @@ import { CELL_ATTRIBUTE, RichTextCell } from './RichTextCell';
 import { RichTextContent } from './RichTextContent';
 import { RichTextToolbar } from './RichTextToolbar';
 import { SongSearchDropdown } from './SongSearchDropdown';
+import { EventTeamRosterCard, ensureRosterItems } from './EventTeamRosterCard';
 
 function extractCategoryCampus(catName: string): RunsheetCampusCode | null {
   if (!catName) return null;
@@ -167,7 +168,7 @@ export function RunsheetTableEditor({
   const initialTemplate = initialTemplateRef.current;
 
   const [items, setItems] = useState<RunsheetItemRow[]>(() =>
-    initialTemplate ? initialTemplate.templateRows : initialItems
+    ensureRosterItems(initialTemplate ? initialTemplate.templateRows : initialItems)
   );
   const [deletedIds, setDeletedIds] = useState<(number | string)[]>([]);
   const [startTime, setStartTime] = useState(initialStartTime);
@@ -464,10 +465,12 @@ export function RunsheetTableEditor({
     const parents: { [itemIndex: number]: number } = {};
     const processed: ProcessedRow[] = [];
 
+    const runsheetItemsOnly = items.filter((item) => !(item.title && item.title.startsWith('Roster:')));
+
     let index = 0;
-    while (index < items.length) {
+    while (index < runsheetItemsOnly.length) {
       const blockStartIndex = index;
-      const duration = Number(items[index].duration) || 0;
+      const duration = Number(runsheetItemsOnly[index].duration) || 0;
       const startStr = formatMinutesToTimeWithSeconds(currentMinutes);
 
       if (duration > 0) {
@@ -476,7 +479,7 @@ export function RunsheetTableEditor({
         const durStr = formatDurationToHMS(duration);
 
         processed.push({
-          ...items[index],
+          ...runsheetItemsOnly[index],
           order: index + 1,
           calculatedStart: startStr,
           calculatedEnd: endStr,
@@ -486,9 +489,9 @@ export function RunsheetTableEditor({
         index++;
 
         // Zero-duration rows are sub-items of the segment above them.
-        while (index < items.length && (Number(items[index].duration) || 0) === 0) {
+        while (index < runsheetItemsOnly.length && (Number(runsheetItemsOnly[index].duration) || 0) === 0) {
           processed.push({
-            ...items[index],
+            ...runsheetItemsOnly[index],
             order: index + 1,
             calculatedStart: startStr,
             calculatedEnd: endStr,
@@ -501,9 +504,9 @@ export function RunsheetTableEditor({
         spans[blockStartIndex] = { count: index - blockStartIndex, startStr, endStr, formattedDuration: durStr };
       } else {
         // Leading zero-duration rows have no segment to attach to.
-        while (index < items.length && (Number(items[index].duration) || 0) === 0) {
+        while (index < runsheetItemsOnly.length && (Number(runsheetItemsOnly[index].duration) || 0) === 0) {
           processed.push({
-            ...items[index],
+            ...runsheetItemsOnly[index],
             order: index + 1,
             calculatedStart: startStr,
             calculatedEnd: startStr,
@@ -626,9 +629,10 @@ export function RunsheetTableEditor({
   const applyDefaultTemplate = () => {
     saveSnapshot();
     const { templateRows, templateMusicMap } = buildTemplateState();
+    const rosterItems = items.filter((item) => item.title && item.title.startsWith('Roster:'));
 
-    setDeletedIds((previous) => [...previous, ...items.map((item) => item.id)]);
-    setItems(templateRows);
+    setDeletedIds((previous) => [...previous, ...items.filter((item) => !(item.title && item.title.startsWith('Roster:'))).map((item) => item.id)]);
+    setItems(ensureRosterItems([...templateRows, ...rosterItems]));
     setMusicCellMap(templateMusicMap);
     setEditingCell(null);
     setIsDirty(true);
@@ -698,12 +702,16 @@ export function RunsheetTableEditor({
     setIsDuplicating(true);
     setDuplicateError('');
 
+    const runsheetPreparedItems = processedRows.map((row) => ({ ...row, startDateTime: row.calculatedStart }));
+    const rosterPreparedItems = items.filter((item) => item.title && item.title.startsWith('Roster:'));
+    const allPreparedItems = [...runsheetPreparedItems, ...rosterPreparedItems];
+
     const res = await rockDuplicateServiceRunsheet(
       channelId,
       finalTitle,
       13,
       duplicateCategoryId ? Number(duplicateCategoryId) : undefined,
-      processedRows,
+      allPreparedItems,
       columns
     );
 
@@ -722,7 +730,10 @@ export function RunsheetTableEditor({
     setStatus({ type: 'saving' });
     setEditingCell(null);
 
-    const preparedItems = processedRows.map((row) => ({ ...row, startDateTime: row.calculatedStart }));
+    const runsheetPreparedItems = processedRows.map((row) => ({ ...row, startDateTime: row.calculatedStart }));
+    const rosterPreparedItems = items.filter((item) => item.title && item.title.startsWith('Roster:'));
+    const preparedItems = [...runsheetPreparedItems, ...rosterPreparedItems];
+
     const result = await rockBulkSaveRunsheetItems(channelId, preparedItems, deletedIds, columns);
 
     if (result.success) {
@@ -734,7 +745,7 @@ export function RunsheetTableEditor({
       setStatus({ type: 'error', message: result.error || 'Failed to save changes.' });
       return false;
     }
-  }, [readOnly, processedRows, channelId, deletedIds, columns]);
+  }, [readOnly, processedRows, items, channelId, deletedIds, columns]);
 
   useEffect(() => {
     onSaveRef?.(handleSave);
@@ -859,8 +870,8 @@ export function RunsheetTableEditor({
               setIsDirty(true);
             }}
             className={`absolute top-1 right-1 z-20 flex h-5 w-5 items-center justify-center rounded transition-all cursor-pointer ${isMusicCell
-                ? 'bg-violet-600 text-white shadow-xs hover:bg-violet-700 ring-1 ring-violet-400'
-                : 'bg-slate-100/90 text-slate-400 hover:bg-violet-100 hover:text-violet-700 opacity-0 group-hover:opacity-100'
+                ? 'bg-indigo-600 text-white shadow-xs hover:bg-indigo-700 ring-1 ring-indigo-400'
+                : 'bg-slate-100/90 text-slate-400 hover:bg-indigo-100 hover:text-indigo-700 opacity-0 group-hover:opacity-100'
               }`}
             title={isMusicCell ? 'Music Cell (Click to toggle off)' : 'Mark cell as Music / Song'}
           >
@@ -870,7 +881,7 @@ export function RunsheetTableEditor({
 
         <div
           className={`relative min-h-[28px] w-full h-full flex flex-col justify-center px-2.5 py-1 text-[11px] leading-normal text-slate-900 transition-all ${isMusicCell
-              ? 'bg-violet-50/90 border-2 border-violet-400/80 text-violet-950 font-bold ring-1 ring-violet-300 shadow-xs pr-7'
+              ? 'bg-indigo-50/90 border-2 border-indigo-400/80 text-indigo-950 font-bold ring-1 ring-indigo-300 shadow-xs pr-7'
               : readOnly
                 ? 'cursor-default'
                 : 'cursor-text'
@@ -886,7 +897,7 @@ export function RunsheetTableEditor({
           }
         >
           {isMusicCell && value ? (
-            <div className="flex items-center gap-1.5 font-semibold text-violet-950">
+            <div className="flex items-center gap-1.5 font-semibold text-indigo-950">
               <a
                 href={
                   songItemId
@@ -899,10 +910,10 @@ export function RunsheetTableEditor({
                 rel="noopener noreferrer"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center rounded bg-violet-200/90 px-1.5 py-0.5 text-[10px] font-bold text-violet-800 uppercase tracking-wider hover:bg-violet-300 hover:text-violet-950 transition-colors cursor-pointer"
+                className="inline-flex items-center rounded bg-indigo-200/90 px-1.5 py-0.5 text-[10px] font-bold text-indigo-800 uppercase tracking-wider hover:bg-indigo-300 hover:text-indigo-950 transition-colors cursor-pointer"
                 title="Click to view song JSON details in new tab"
               >
-                <HiMusicalNote className="mr-0.5 h-3 w-3 text-violet-700" />
+                <HiMusicalNote className="mr-0.5 h-3 w-3 text-indigo-700" />
                 Song
               </a>
               <RichTextContent value={value ?? ''} />
@@ -1039,10 +1050,10 @@ export function RunsheetTableEditor({
                   setDuplicateError('');
                   setShowDuplicateModal(true);
                 }}
-                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-purple-300 bg-purple-50 px-3 py-2 text-xs font-semibold text-purple-900 hover:bg-purple-100 active:bg-purple-200 transition-colors"
+                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-900 hover:bg-indigo-100 active:bg-indigo-200 transition-colors"
                 title="Duplicate current runsheet as a different service time"
               >
-                <HiDocumentDuplicate className="h-4 w-4 text-purple-700" />
+                <HiDocumentDuplicate className="h-4 w-4 text-indigo-700" />
                 <span>Duplicate Runsheet</span>
               </button>
 
@@ -1093,7 +1104,7 @@ export function RunsheetTableEditor({
                   <label className="mb-1 block font-semibold text-slate-700">Category</label>
                   <select
                     required
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-purple-600 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-indigo-600 focus:outline-none"
                     value={duplicateCategoryId}
                     onChange={(e) => setDuplicateCategoryId(e.target.value ? Number(e.target.value) : '')}
                   >
@@ -1111,7 +1122,7 @@ export function RunsheetTableEditor({
                   <input
                     type="date"
                     required
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-purple-600 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-indigo-600 focus:outline-none"
                     value={duplicateDate}
                     onChange={(e) => setDuplicateDate(e.target.value)}
                   />
@@ -1123,7 +1134,7 @@ export function RunsheetTableEditor({
                   </label>
                   <select
                     required
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-purple-600 focus:outline-none disabled:bg-slate-100"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-indigo-600 focus:outline-none disabled:bg-slate-100"
                     value={duplicateSession}
                     disabled={loadingDuplicateSchedules}
                     onChange={(e) => setDuplicateSession(e.target.value)}
@@ -1153,7 +1164,7 @@ export function RunsheetTableEditor({
                   <input
                     type="text"
                     required
-                    className="w-full rounded-lg border border-purple-300 bg-purple-50 p-2.5 text-xs font-bold text-purple-950 focus:border-purple-500 focus:bg-white focus:outline-none"
+                    className="w-full rounded-lg border border-indigo-300 bg-indigo-50 p-2.5 text-xs font-bold text-indigo-950 focus:border-indigo-500 focus:bg-white focus:outline-none"
                     value={duplicateTitle}
                     onChange={(e) => setDuplicateTitle(e.target.value)}
                   />
@@ -1172,7 +1183,7 @@ export function RunsheetTableEditor({
                     <button
                       type="submit"
                       disabled={isDuplicating}
-                      className="rounded-lg bg-purple-700 px-4 py-2 font-semibold text-white hover:bg-purple-800 cursor-pointer disabled:opacity-50 shadow-xs"
+                      className="rounded-lg bg-indigo-700 px-4 py-2 font-semibold text-white hover:bg-indigo-800 cursor-pointer disabled:opacity-50 shadow-xs"
                     >
                       {isDuplicating ? 'Duplicating...' : 'Duplicate Runsheet'}
                     </button>
@@ -1291,6 +1302,35 @@ export function RunsheetTableEditor({
         </div>
       )}
 
+      {/* Event Team Roster Card */}
+      <EventTeamRosterCard
+        items={items}
+        columns={dynamicAttrCols}
+        readOnly={readOnly}
+        editingRoleTitle={editingCell ? items[editingCell.rowIndex]?.title || null : null}
+        onOpenRolePicker={(roleTitle) => {
+          const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
+          const itemIndex = items.findIndex((item) => item.title === roleTitle);
+          if (itemIndex !== -1) {
+            setEditingCell({ rowIndex: itemIndex, key: personKey });
+          }
+        }}
+        renderPeoplePicker={(roleTitle) => {
+          const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
+          const itemIndex = items.findIndex((item) => item.title === roleTitle);
+          if (itemIndex === -1) return null;
+          const currentVal = readRunsheetCellValue(items[itemIndex], personKey);
+
+          return (
+            <PeopleSearchDropdown
+              initialValue={currentVal}
+              onSelectPerson={(selectedName) => handleAttrValueChange(itemIndex, personKey, selectedName)}
+              onClose={() => closeCell(itemIndex, personKey)}
+            />
+          );
+        }}
+      />
+
       {/* Card Timeline View for phones and iPads/tablets (when mobileViewMode === 'cards') */}
       {mobileViewMode === 'cards' && (
         <div className="flex flex-col gap-2.5">
@@ -1318,8 +1358,8 @@ export function RunsheetTableEditor({
 
                   <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                     {isMusic && (
-                      <span className="inline-flex items-center gap-1 rounded bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800 border border-violet-300">
-                        <HiMusicalNote className="h-3 w-3 text-violet-600" />
+                      <span className="inline-flex items-center gap-1 rounded bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800 border border-indigo-300">
+                        <HiMusicalNote className="h-3 w-3 text-indigo-600" />
                         Song
                       </span>
                     )}
@@ -1413,8 +1453,8 @@ export function RunsheetTableEditor({
                     }}
                     className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer ${
                       musicCellMap[String(processedRows[editingCardIndex].id)]
-                        ? 'bg-violet-600 text-white font-bold'
-                        : 'bg-slate-200 text-slate-700 hover:bg-violet-100 hover:text-violet-900'
+                        ? 'bg-indigo-600 text-white font-bold'
+                        : 'bg-slate-200 text-slate-700 hover:bg-indigo-100 hover:text-indigo-900'
                     }`}
                   >
                     <HiMusicalNote className="h-3 w-3" />

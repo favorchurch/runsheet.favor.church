@@ -138,11 +138,11 @@ export function SongSearchDropdown({
   return (
     <div
       ref={containerRef}
-      className="absolute left-0 top-full z-50 mt-1 w-80 rounded-xl border border-violet-200 bg-white p-3 shadow-2xl ring-1 ring-black/5"
+      className="absolute left-0 top-full z-50 mt-1 w-80 rounded-xl border border-indigo-200 bg-white p-3 shadow-2xl ring-1 ring-black/5"
     >
       <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
-        <div className="flex items-center gap-1.5 text-xs font-bold text-violet-900">
-          <HiMusicalNote className="h-4 w-4 text-violet-600" />
+        <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-900">
+          <HiMusicalNote className="h-4 w-4 text-indigo-600" />
           <span>Select Song & Key</span>
         </div>
         <button
@@ -171,7 +171,7 @@ export function SongSearchDropdown({
             if (e.key === 'Escape') onClose();
           }}
           placeholder="Search songs in Rock..."
-          className="w-full rounded-lg border border-slate-300 bg-white pl-8 pr-3 py-1.5 text-xs font-medium text-slate-900 focus:border-violet-600 focus:outline-none focus:ring-1 focus:ring-violet-600"
+          className="w-full rounded-lg border border-slate-300 bg-white pl-8 pr-3 py-1.5 text-xs font-medium text-slate-900 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
         />
       </div>
 
@@ -187,13 +187,13 @@ export function SongSearchDropdown({
               onClick={() => handlePickSong(song)}
               className={`w-full rounded px-2 py-1.5 text-left text-xs font-medium transition-colors cursor-pointer flex items-center justify-between ${
                 selectedSongTitle.toLowerCase() === song.cleanTitle.toLowerCase()
-                  ? 'bg-violet-100 text-violet-900 font-bold'
-                  : 'text-slate-800 hover:bg-violet-50'
+                  ? 'bg-indigo-100 text-indigo-900 font-bold'
+                  : 'text-slate-800 hover:bg-indigo-50'
               }`}
             >
               <span>{song.cleanTitle}</span>
               {selectedSongTitle.toLowerCase() === song.cleanTitle.toLowerCase() && (
-                <HiCheck className="h-3.5 w-3.5 text-violet-700" />
+                <HiCheck className="h-3.5 w-3.5 text-indigo-700" />
               )}
             </button>
           ))
@@ -230,8 +230,8 @@ export function SongSearchDropdown({
               onClick={() => setSelectedKey(selectedKey === k ? '' : k)}
               className={`rounded px-1.5 py-0.5 text-[11px] font-bold transition-all cursor-pointer ${
                 selectedKey === k
-                  ? 'bg-violet-600 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-700 hover:bg-violet-100 hover:text-violet-900'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-indigo-100 hover:text-indigo-900'
               }`}
             >
               {k}
@@ -243,17 +243,17 @@ export function SongSearchDropdown({
       {/* Live Preview & Apply Button */}
       <div
         className={`mb-3 rounded-lg border p-2 text-center ${
-          selectedSongId ? 'border-violet-200 bg-violet-50/80' : 'border-slate-200 bg-slate-50'
+          selectedSongId ? 'border-indigo-200 bg-indigo-50/80' : 'border-slate-200 bg-slate-50'
         }`}
       >
         <span
           className={`block text-[10px] font-bold uppercase tracking-wider ${
-            selectedSongId ? 'text-violet-600' : 'text-slate-500'
+            selectedSongId ? 'text-indigo-600' : 'text-slate-500'
           }`}
         >
           {selectedSongId ? 'Preview' : 'No song selected — will save as'}
         </span>
-        <span className={`text-xs font-bold ${selectedSongId ? 'text-violet-950' : 'text-slate-600'}`}>
+        <span className={`text-xs font-bold ${selectedSongId ? 'text-indigo-950' : 'text-slate-600'}`}>
           {computedPreview}
         </span>
       </div>
@@ -269,7 +269,7 @@ export function SongSearchDropdown({
         <button
           type="button"
           onClick={handleConfirm}
-          className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-800 cursor-pointer shadow-xs"
+          className="rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 cursor-pointer shadow-xs"
         >
           Apply Song
         </button>
