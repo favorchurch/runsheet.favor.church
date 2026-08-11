@@ -193,11 +193,35 @@ export function RunsheetTableEditor({
     // Touch devices (phones, iPads, tablets) get Cards; laptops/desktops with mouse get Table
     return window.matchMedia('(pointer: coarse)').matches ? 'cards' : 'grid';
   });
+  const [subtitle, setSubtitle] = useState<string>('');
   const [editingCardIndex, setEditingCardIndex] = useState<number | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [rowToDelete, setRowToDelete] = useState<RunsheetItemRow | null>(null);
+
+  const handleInsertRow = (targetIndex: number, position: 'above' | 'below') => {
+    if (readOnly) return;
+    saveSnapshot();
+    const insertIndex = position === 'above' ? targetIndex : targetIndex + 1;
+    const newRow: RunsheetItemRow = {
+      id: `new_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      isNew: true,
+      title: 'New Segment',
+      order: insertIndex + 1,
+      duration: 5,
+      attributeValues: { ACTIVITYTITLE: 'New Segment' },
+      detail: '',
+    };
+
+    setItems((previous) => {
+      const updated = [...previous];
+      updated.splice(insertIndex, 0, newRow);
+      return updated;
+    });
+    setIsDirty(true);
+    setEditingCell({ rowIndex: insertIndex, key: 'title' });
+  };
 
   // Duplicate Runsheet Modal State
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
@@ -947,136 +971,152 @@ export function RunsheetTableEditor({
 
   return (
     <div className="flex w-full flex-col gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
-      {/* Header Bar */}
-      <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold leading-tight text-slate-900 sm:text-xl">{channelName}</h2>
-            {readOnly && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-0.5 text-xs font-bold text-amber-900 border border-amber-300 shadow-xs">
-                <HiLockClosed className="h-3.5 w-3.5 text-amber-700" />
-                Read Only (Volunteer Access)
-              </span>
+      {/* Sticky Locked Header & Toolbar Container */}
+      <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 p-2.5 sm:p-3 shadow-xs space-y-2 rounded-t-xl -mx-2.5 -mt-2.5 sm:-mx-4 sm:-mt-4">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold leading-tight text-slate-900 sm:text-xl">{channelName}</h2>
+              {readOnly && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-0.5 text-xs font-bold text-amber-900 border border-amber-300 shadow-xs">
+                  <HiLockClosed className="h-3.5 w-3.5 text-amber-700" />
+                  Read Only (Volunteer Access)
+                </span>
+              )}
+            </div>
+            <input
+              type="text"
+              disabled={readOnly}
+              value={subtitle}
+              onChange={(e) => {
+                setSubtitle(e.target.value);
+                setIsDirty(true);
+              }}
+              placeholder="Add runsheet subtitle / highlights (e.g. Communion Sunday, Water Baptism)..."
+              className="mt-0.5 w-full sm:w-96 text-xs font-medium text-slate-700 placeholder:text-slate-400 bg-transparent border-b border-dashed border-slate-300 focus:border-slate-800 focus:outline-none py-0.5 transition-colors disabled:border-transparent"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1">
+              <label className="whitespace-nowrap text-xs font-semibold text-slate-700" htmlFor="runsheet-start-time">
+                Start:
+              </label>
+              <input
+                id="runsheet-start-time"
+                type="text"
+                disabled={readOnly}
+                className="w-24 rounded border border-slate-300 bg-white px-2 py-0.5 font-mono text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
+                value={startTime}
+                onChange={(event) => {
+                  setStartTime(event.target.value);
+                  setIsDirty(true);
+                }}
+                placeholder="08:00:00 AM"
+              />
+            </div>
+
+            <div className="flex items-center rounded-lg border border-slate-300 bg-slate-100 p-0.5">
+              <button
+                type="button"
+                onClick={() => setMobileViewMode('cards')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${mobileViewMode === 'cards'
+                    ? 'bg-white text-slate-900 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                  }`}
+              >
+                Cards
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileViewMode('grid')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${mobileViewMode === 'grid'
+                    ? 'bg-white text-slate-900 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                  }`}
+              >
+                Table
+              </button>
+            </div>
+
+            {!readOnly && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleUndo}
+                  disabled={history.length === 0}
+                  className="flex min-h-[36px] cursor-pointer items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Undo (⌘Z)"
+                >
+                  <HiArrowUturnLeft className="h-4 w-4 text-slate-700" />
+                  <span>Undo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRedo}
+                  disabled={future.length === 0}
+                  className="flex min-h-[36px] cursor-pointer items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Redo (⌘⇧Z)"
+                >
+                  <HiArrowUturnRight className="h-4 w-4 text-slate-700" />
+                  <span>Redo</span>
+                </button>
+
+                <button
+                  onClick={handleResetFormClick}
+                  className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+                  title="Reset to the standard Favor Runsheet template"
+                >
+                  <HiArrowPath className="h-4 w-4 text-blue-600" />
+                  <span>Reset Form</span>
+                </button>
+
+                <button
+                  onClick={handleAddRow}
+                  className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+                >
+                  <HiPlus className="h-4 w-4 text-blue-600" />
+                  <span>Add Row</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDuplicateError('');
+                    setShowDuplicateModal(true);
+                  }}
+                  className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-200 active:bg-slate-300 transition-colors"
+                  title="Duplicate current runsheet as a different service time"
+                >
+                  <HiDocumentDuplicate className="h-4 w-4 text-slate-700" />
+                  <span>Duplicate Runsheet</span>
+                </button>
+
+                <button
+                  onClick={() => setShowDeleteModal(true)}
+                  className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800 hover:bg-rose-100 focus:outline-none"
+                  title="Delete this Runsheet"
+                >
+                  <HiTrash className="h-4 w-4 text-rose-600" />
+                  <span>Delete Runsheet</span>
+                </button>
+
+                <button
+                  onClick={handleSave}
+                  disabled={status.type === 'saving' || !isDirty}
+                  className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg bg-pink-700 px-4 py-2 text-xs font-semibold text-white hover:bg-pink-800 focus:outline-none active:bg-pink-900 disabled:opacity-40"
+                >
+                  <HiCheck className="h-4 w-4" />
+                  <span>{status.type === 'saving' ? 'Saving...' : 'Save Runsheet'}</span>
+                </button>
+              </>
             )}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1">
-            <label className="whitespace-nowrap text-xs font-semibold text-slate-700" htmlFor="runsheet-start-time">
-              Start:
-            </label>
-            <input
-              id="runsheet-start-time"
-              type="text"
-              disabled={readOnly}
-              className="w-24 rounded border border-slate-300 bg-white px-2 py-0.5 font-mono text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
-              value={startTime}
-              onChange={(event) => {
-                setStartTime(event.target.value);
-                setIsDirty(true);
-              }}
-              placeholder="08:00:00 AM"
-            />
-          </div>
-
-          <div className="flex items-center rounded-lg border border-slate-300 bg-slate-100 p-0.5">
-            <button
-              type="button"
-              onClick={() => setMobileViewMode('cards')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${mobileViewMode === 'cards'
-                  ? 'bg-white text-slate-900 shadow-xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-                }`}
-            >
-              Cards
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileViewMode('grid')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${mobileViewMode === 'grid'
-                  ? 'bg-white text-slate-900 shadow-xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-                }`}
-            >
-              Table
-            </button>
-          </div>
-
-          {!readOnly && (
-            <>
-              <button
-                type="button"
-                onClick={handleUndo}
-                disabled={history.length === 0}
-                className="flex min-h-[36px] cursor-pointer items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                title="Undo (⌘Z)"
-              >
-                <HiArrowUturnLeft className="h-4 w-4 text-slate-700" />
-                <span>Undo</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleRedo}
-                disabled={future.length === 0}
-                className="flex min-h-[36px] cursor-pointer items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                title="Redo (⌘⇧Z)"
-              >
-                <HiArrowUturnRight className="h-4 w-4 text-slate-700" />
-                <span>Redo</span>
-              </button>
-
-              <button
-                onClick={handleResetFormClick}
-                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
-                title="Reset to the standard Favor Runsheet template"
-              >
-                <HiArrowPath className="h-4 w-4 text-blue-600" />
-                <span>Reset Form</span>
-              </button>
-
-              <button
-                onClick={handleAddRow}
-                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
-              >
-                <HiPlus className="h-4 w-4 text-blue-600" />
-                <span>Add Row</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setDuplicateError('');
-                  setShowDuplicateModal(true);
-                }}
-                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-200 active:bg-slate-300 transition-colors"
-                title="Duplicate current runsheet as a different service time"
-              >
-                <HiDocumentDuplicate className="h-4 w-4 text-slate-700" />
-                <span>Duplicate Runsheet</span>
-              </button>
-
-              <button
-                onClick={() => setShowDeleteModal(true)}
-                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800 hover:bg-rose-100 focus:outline-none"
-                title="Delete this Runsheet"
-              >
-                <HiTrash className="h-4 w-4 text-rose-600" />
-                <span>Delete Runsheet</span>
-              </button>
-
-              <button
-                onClick={handleSave}
-                disabled={status.type === 'saving' || !isDirty}
-                className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg bg-pink-700 px-4 py-2 text-xs font-semibold text-white hover:bg-pink-800 focus:outline-none active:bg-pink-900 disabled:opacity-40"
-              >
-                <HiCheck className="h-4 w-4" />
-                <span>{status.type === 'saving' ? 'Saving...' : 'Save Runsheet'}</span>
-              </button>
-            </>
-          )}
-        </div>
+        {/* Formatting bar for whichever cell is open (hidden in read-only mode) */}
+        {!readOnly && <RichTextToolbar editor={activeEditor} />}
       </div>
 
       {/* Duplicate Runsheet Modal */}
@@ -1285,8 +1325,7 @@ export function RunsheetTableEditor({
         </div>
       )}
 
-      {/* Formatting bar for whichever cell is open (hidden in read-only mode) */}
-      {!readOnly && <RichTextToolbar editor={activeEditor} />}
+      {/* Event Team Roster Card */}
 
       {status.type === 'success' && (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-800">
@@ -1525,7 +1564,7 @@ export function RunsheetTableEditor({
       {/* Spreadsheet Table View */}
       <div className={`w-full overflow-x-auto rounded-lg border border-slate-300 ${mobileViewMode === 'cards' ? 'hidden' : 'block'}`}>
         <table className="w-full min-w-[900px] border-collapse bg-white text-xs text-slate-900" style={{ tableLayout: 'fixed' }}>
-          <thead>
+          <thead className="sticky top-[108px] z-30 bg-slate-100 shadow-2xs">
             <tr className="border-b-2 border-slate-300 bg-slate-100 text-left font-bold text-slate-900">
               {!readOnly && <th className="border-r border-slate-300 p-1.5 text-center" style={{ width: '32px', minWidth: '32px' }} />}
               <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '90px', minWidth: '90px' }}>
@@ -1552,7 +1591,7 @@ export function RunsheetTableEditor({
                 </th>
               ))}
 
-              {!readOnly && <th className="p-1.5 text-center" style={{ width: '36px', minWidth: '36px' }} />}
+              {!readOnly && <th className="p-1.5 text-center" style={{ width: '64px', minWidth: '64px' }} />}
             </tr>
           </thead>
           <tbody>
@@ -1692,13 +1731,24 @@ export function RunsheetTableEditor({
 
                   {!readOnly && (
                     <td className="p-1 text-center align-middle">
-                      <button
-                        onClick={() => setRowToDelete(item)}
-                        className="inline-flex min-h-[32px] min-w-[32px] cursor-pointer items-center justify-center rounded p-1.5 text-red-600 hover:bg-red-50"
-                        title="Delete Segment"
-                      >
-                        <HiTrash className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center justify-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleInsertRow(index, 'above')}
+                          className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-blue-600 hover:bg-blue-50"
+                          title="Insert Row Above (Excel style)"
+                        >
+                          <HiPlus className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRowToDelete(item)}
+                          className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-rose-600 hover:bg-rose-50"
+                          title="Delete Row"
+                        >
+                          <HiTrash className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </td>
                   )}
                 </tr>
