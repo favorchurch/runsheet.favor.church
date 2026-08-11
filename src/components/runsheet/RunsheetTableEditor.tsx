@@ -1615,29 +1615,38 @@ export function RunsheetTableEditor({
                       event.preventDefault();
                       setEditingCell({ rowIndex: index, key: 'title' });
                     }}
-                    className="border-r border-slate-200 p-0 align-middle overflow-hidden h-full cursor-text hover:bg-slate-100/80 transition-colors"
+                    className={`border-r border-slate-200 p-0 align-middle h-full cursor-text hover:bg-slate-100/80 transition-colors ${
+                      editingCell?.rowIndex === index && editingCell?.key === 'title'
+                        ? 'relative z-50 overflow-visible'
+                        : 'overflow-hidden'
+                    }`}
                     style={{ width: '180px', minWidth: '160px' }}
                   >
                     {renderCellContent(index, 'title', currentTitleVal, item.id, false, item.songItemId ?? null)}
                   </td>
 
-                  {dynamicAttrCols.map((col) => (
-                    <td
-                      key={col.id}
-                      {...{ [CELL_ATTRIBUTE]: '' }}
-                      onMouseDown={(event) => {
-                        if (readOnly) return;
-                        const target = event.target as HTMLElement;
-                        if (target.closest('a') || target.closest('button')) return;
-                        event.preventDefault();
-                        setEditingCell({ rowIndex: index, key: col.key });
-                      }}
-                      className="border-r border-slate-200 p-0 align-middle text-slate-900 overflow-hidden h-full cursor-text hover:bg-slate-100/80 transition-colors"
-                      style={getColumnStyle(col.key, col.name)}
-                    >
-                      {renderCellContent(index, col.key, readRunsheetCellValue(item, col.key), item.id, isPersonColumn(col))}
-                    </td>
-                  ))}
+                  {dynamicAttrCols.map((col) => {
+                    const isCellEditing = editingCell?.rowIndex === index && editingCell?.key === col.key;
+                    return (
+                      <td
+                        key={col.id}
+                        {...{ [CELL_ATTRIBUTE]: '' }}
+                        onMouseDown={(event) => {
+                          if (readOnly) return;
+                          const target = event.target as HTMLElement;
+                          if (target.closest('a') || target.closest('button')) return;
+                          event.preventDefault();
+                          setEditingCell({ rowIndex: index, key: col.key });
+                        }}
+                        className={`border-r border-slate-200 p-0 align-middle text-slate-900 h-full cursor-text hover:bg-slate-100/80 transition-colors ${
+                          isCellEditing ? 'relative z-50 overflow-visible' : 'overflow-hidden'
+                        }`}
+                        style={getColumnStyle(col.key, col.name)}
+                      >
+                        {renderCellContent(index, col.key, readRunsheetCellValue(item, col.key), item.id, isPersonColumn(col))}
+                      </td>
+                    );
+                  })}
 
                   {!readOnly && (
                     <td className="p-1 text-center align-middle">
