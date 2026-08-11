@@ -991,7 +991,7 @@ export function RunsheetTableEditor({
                 setIsDirty(true);
               }}
               placeholder="Add runsheet subtitle / highlights (e.g. Communion Sunday)..."
-              className="mt-0.5 w-full sm:w-80 text-xs sm:text-sm font-bold text-slate-800 placeholder:text-slate-500 bg-transparent border-b border-dashed border-slate-300 focus:border-slate-800 focus:outline-none py-0.5 transition-colors disabled:border-transparent"
+              className="mt-0.5 w-full sm:w-80 text-xs sm:text-sm font-extrabold text-amber-800 placeholder:text-amber-600/70 bg-transparent border-b border-dashed border-amber-300 focus:border-amber-600 focus:outline-none py-0.5 transition-colors disabled:border-transparent"
             />
           </div>
 
