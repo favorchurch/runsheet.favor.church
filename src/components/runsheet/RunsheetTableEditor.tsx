@@ -971,7 +971,7 @@ export function RunsheetTableEditor({
   return (
     <div className="flex w-full flex-col gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
       {/* Sticky Locked Header & Toolbar Container */}
-      <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 p-2 sm:p-2.5 shadow-xs space-y-1.5 rounded-t-xl -mx-2.5 -mt-2.5 sm:-mx-4 sm:-mt-4">
+      <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-300 p-2 sm:p-2.5 shadow-sm space-y-1.5 rounded-t-xl -mx-2.5 -mt-2.5 sm:-mx-4 sm:-mt-4">
         <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
           <div>
             <div className="flex items-center gap-2">
@@ -992,7 +992,7 @@ export function RunsheetTableEditor({
                 setIsDirty(true);
               }}
               placeholder="Add runsheet subtitle / highlights (e.g. Communion Sunday)..."
-              className="mt-0.5 w-full sm:w-80 text-[11px] font-medium text-slate-700 placeholder:text-slate-400 bg-transparent border-b border-dashed border-slate-300 focus:border-slate-800 focus:outline-none py-0.5 transition-colors disabled:border-transparent"
+              className="mt-0.5 w-full sm:w-80 text-[11px] font-medium text-slate-800 placeholder:text-slate-500 bg-transparent border-b border-dashed border-slate-300 focus:border-slate-800 focus:outline-none py-0.5 transition-colors disabled:border-transparent"
             />
           </div>
 
@@ -1376,7 +1376,7 @@ export function RunsheetTableEditor({
               <HiTableCells className="h-3.5 w-3.5 text-slate-300" />
               Runsheet Schedule
             </span>
-            <span className="text-xs font-semibold text-slate-500">
+            <span className="text-xs font-semibold text-slate-600">
               ({processedRows.length} segments)
             </span>
           </div>
@@ -1385,25 +1385,25 @@ export function RunsheetTableEditor({
         <div className="w-full rounded-xl border border-slate-300 bg-white shadow-xs">
           <table className="w-full min-w-full border-collapse bg-white text-[11px] text-slate-900" style={{ tableLayout: 'fixed' }}>
             <thead className="sticky top-0 z-30 bg-slate-900 text-white shadow-xs">
-              <tr className="border-b-2 border-slate-950 text-left font-bold text-white uppercase text-[10px] tracking-wider">
+              <tr className="border-b-2 border-slate-950 text-left font-semibold text-white text-xs tracking-normal">
                 {!readOnly && <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center" style={{ width: '28px', minWidth: '28px' }} />}
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
                   Start
                 </th>
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
                   End
                 </th>
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
                   Duration
                 </th>
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '140px', minWidth: '110px' }}>
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '140px', minWidth: '110px' }}>
                   Activity Title
                 </th>
 
                 {dynamicAttrCols.map((col) => (
                   <th
                     key={col.id}
-                    className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-bold select-none overflow-hidden text-ellipsis text-slate-100"
+                    className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold select-none overflow-hidden text-ellipsis text-slate-100"
                     style={getColumnStyle(col.key, col.name)}
                     title={col.name}
                   >
