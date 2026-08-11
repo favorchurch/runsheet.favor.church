@@ -1382,28 +1382,28 @@ export function RunsheetTableEditor({
           </div>
         </div>
 
-        <div className="w-full overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-xs">
+        <div className="w-full rounded-xl border border-slate-300 bg-white shadow-xs">
           <table className="w-full min-w-full border-collapse bg-white text-[11px] text-slate-900" style={{ tableLayout: 'fixed' }}>
-            <thead className="sticky top-[64px] z-30 bg-slate-900 text-white shadow-xs">
+            <thead className="sticky top-0 z-30 bg-slate-900 text-white shadow-xs">
               <tr className="border-b-2 border-slate-950 text-left font-bold text-white uppercase text-[10px] tracking-wider">
-                {!readOnly && <th className="border-r border-slate-800 p-1 text-center" style={{ width: '28px', minWidth: '28px' }} />}
-                <th className="border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
+                {!readOnly && <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center" style={{ width: '28px', minWidth: '28px' }} />}
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
                   Start
                 </th>
-                <th className="border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
                   End
                 </th>
-                <th className="border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
                   Duration
                 </th>
-                <th className="border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '140px', minWidth: '110px' }}>
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '140px', minWidth: '110px' }}>
                   Activity Title
                 </th>
 
                 {dynamicAttrCols.map((col) => (
                   <th
                     key={col.id}
-                    className="border-r border-slate-800 p-1.5 text-center font-bold select-none overflow-hidden text-ellipsis text-slate-100"
+                    className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-bold select-none overflow-hidden text-ellipsis text-slate-100"
                     style={getColumnStyle(col.key, col.name)}
                     title={col.name}
                   >
@@ -1411,7 +1411,7 @@ export function RunsheetTableEditor({
                   </th>
                 ))}
 
-                {!readOnly && <th className="p-1 text-center" style={{ width: '48px', minWidth: '48px' }} />}
+                {!readOnly && <th className="sticky top-0 z-30 bg-slate-900 p-1 text-center" style={{ width: '48px', minWidth: '48px' }} />}
               </tr>
             </thead>
             <tbody>
