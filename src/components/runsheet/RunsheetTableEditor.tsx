@@ -1382,9 +1382,9 @@ export function RunsheetTableEditor({
           </div>
         </div>
 
-        <div className="w-full overflow-x-auto rounded-xl border-2 border-slate-800 shadow-md max-h-[calc(100vh-160px)] overflow-y-auto bg-white">
+        <div className="w-full overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-xs">
           <table className="w-full min-w-full border-collapse bg-white text-[11px] text-slate-900" style={{ tableLayout: 'fixed' }}>
-            <thead className="sticky top-0 z-30 bg-slate-900 text-white shadow-md">
+            <thead className="sticky top-[64px] z-30 bg-slate-900 text-white shadow-xs">
               <tr className="border-b-2 border-slate-950 text-left font-bold text-white uppercase text-[10px] tracking-wider">
                 {!readOnly && <th className="border-r border-slate-800 p-1 text-center" style={{ width: '28px', minWidth: '28px' }} />}
                 <th className="border-r border-slate-800 p-1.5 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
