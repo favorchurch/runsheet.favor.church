@@ -44,6 +44,7 @@ export interface RunsheetItemRow {
 export interface RunsheetDetails {
   channelId: number;
   name: string;
+  subtitle?: string;
   contentChannelTypeId: number;
   columns: DynamicAttributeColumn[];
   items: RunsheetItemRow[];

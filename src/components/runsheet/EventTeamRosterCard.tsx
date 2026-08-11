@@ -97,6 +97,7 @@ export function EventTeamRosterCard({
   renderPeoplePicker,
 }: EventTeamRosterCardProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const roleMouseDownRef = React.useRef<string | null>(null);
   const platform = computePlatformRoles(items, columns);
   const personCol = columns.find(isPersonColumn) || columns[0] || { key: 'PLATFORM' };
 
@@ -148,9 +149,9 @@ export function EventTeamRosterCard({
           {/* Vital Event Roles Grid */}
           <div>
             <span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
-              Vital Roles
+              Service Roles
             </span>
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-1.5 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-1.5 text-xs">
               {VITAL_ROLES.map((role) => {
                 const val = getRosterValue(role);
                 const isEditing = editingRoleTitle === `Roster: ${role}`;
@@ -158,15 +159,22 @@ export function EventTeamRosterCard({
                 return (
                   <div
                     key={role}
-                    onClick={() => !readOnly && onOpenRolePicker(`Roster: ${role}`)}
-                    className={`relative flex flex-col justify-between rounded-lg border p-1.5 sm:p-2 transition-all min-h-[44px] ${
-                      isEditing
+                    onMouseDown={() => {
+                      roleMouseDownRef.current = role;
+                    }}
+                    onClick={() => {
+                      if (readOnly) return;
+                      if (roleMouseDownRef.current !== role) return;
+                      roleMouseDownRef.current = null;
+                      onOpenRolePicker(`Roster: ${role}`);
+                    }}
+                    className={`relative flex flex-col justify-between rounded-lg border p-1.5 sm:p-2 min-h-[46px] transition-all ${isEditing
                         ? 'border-slate-900 bg-slate-100 ring-2 ring-slate-800 shadow-sm z-30'
                         : 'border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-100/50'
-                    } ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+                      } ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
                   >
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider truncate">
                         {role}
                       </span>
                       {!readOnly && <HiPencilSquare className="h-3 w-3 text-slate-400 shrink-0" />}
@@ -176,9 +184,9 @@ export function EventTeamRosterCard({
                         {renderPeoplePicker(`Roster: ${role}`)}
                       </div>
                     ) : (
-                      <div className="text-[11px] sm:text-xs font-semibold text-slate-900 break-words leading-tight mt-0.5">
+                      <div className="text-[11px] font-semibold text-slate-900 truncate block mt-0.5" title={val}>
                         {val ? (
-                          <span className="font-bold text-slate-950">{val}</span>
+                          <span className="font-semibold text-slate-950">{val}</span>
                         ) : (
                           <span className="text-[10px] italic font-normal text-slate-400">
                             {readOnly ? 'Unassigned' : '+ Assign'}
@@ -198,25 +206,25 @@ export function EventTeamRosterCard({
               Platform Roles (From Schedule)
             </span>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 text-xs mb-2">
-              <div className="rounded-lg border border-slate-200 bg-white p-1.5">
+              <div className="flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-1.5 sm:p-2 min-h-[46px]">
                 <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider truncate">Runsheet Huddle</span>
-                <span className="font-semibold text-slate-900 text-[11px] truncate block">{platform.runsheetHuddle || <em className="text-slate-400 font-normal text-[10px]">None</em>}</span>
+                <span className="font-semibold text-slate-900 text-[11px] truncate block mt-0.5" title={platform.runsheetHuddle}>{platform.runsheetHuddle || <em className="text-slate-400 font-normal text-[10px] not-italic">None</em>}</span>
               </div>
-              <div className="rounded-lg border border-slate-200 bg-white p-1.5">
+              <div className="flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-1.5 sm:p-2 min-h-[46px]">
                 <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider truncate">Huddle Hype</span>
-                <span className="font-semibold text-slate-900 text-[11px] truncate block">{platform.huddleHype || <em className="text-slate-400 font-normal text-[10px]">None</em>}</span>
+                <span className="font-semibold text-slate-900 text-[11px] truncate block mt-0.5" title={platform.huddleHype}>{platform.huddleHype || <em className="text-slate-400 font-normal text-[10px] not-italic">None</em>}</span>
               </div>
-              <div className="rounded-lg border border-slate-200 bg-white p-1.5">
+              <div className="flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-1.5 sm:p-2 min-h-[46px]">
                 <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider truncate">MC 1</span>
-                <span className="font-semibold text-slate-900 text-[11px] truncate block">{platform.mc1 || <em className="text-slate-400 font-normal text-[10px]">None</em>}</span>
+                <span className="font-semibold text-slate-900 text-[11px] truncate block mt-0.5" title={platform.mc1}>{platform.mc1 || <em className="text-slate-400 font-normal text-[10px] not-italic">None</em>}</span>
               </div>
-              <div className="rounded-lg border border-slate-200 bg-white p-1.5">
+              <div className="flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-1.5 sm:p-2 min-h-[46px]">
                 <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider truncate">MC 2</span>
-                <span className="font-semibold text-slate-900 text-[11px] truncate block">{platform.mc2 || <em className="text-slate-400 font-normal text-[10px]">None</em>}</span>
+                <span className="font-semibold text-slate-900 text-[11px] truncate block mt-0.5" title={platform.mc2}>{platform.mc2 || <em className="text-slate-400 font-normal text-[10px] not-italic">None</em>}</span>
               </div>
-              <div className="rounded-lg border border-slate-200 bg-white p-1.5 col-span-2 sm:col-span-1">
+              <div className="flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-1.5 sm:p-2 min-h-[46px]">
                 <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider truncate">Preacher</span>
-                <span className="font-semibold text-slate-900 text-[11px] truncate block">{platform.preacher || <em className="text-slate-400 font-normal text-[10px]">None</em>}</span>
+                <span className="font-semibold text-slate-900 text-[11px] truncate block mt-0.5" title={platform.preacher}>{platform.preacher || <em className="text-slate-400 font-normal text-[10px] not-italic">None</em>}</span>
               </div>
             </div>
 

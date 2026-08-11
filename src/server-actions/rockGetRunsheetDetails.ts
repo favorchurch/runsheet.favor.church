@@ -155,9 +155,10 @@ export async function rockGetRunsheetDetails(channelId: number) {
   try {
     const session = await getRockSession();
 
-    const channel = (await rockGet(`/ContentChannels/${channelId}`)) as {
+    const channel = (await rockGet(`/ContentChannels/${channelId}`, undefined, true)) as {
       Id: number;
       Name: string;
+      Description?: string;
       ContentChannelTypeId: number;
     } | null;
 
@@ -280,6 +281,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
       data: {
         channelId: channel.Id,
         name: channel.Name,
+        subtitle: channel.Description || '',
         contentChannelTypeId: typeId,
         columns,
         items,

@@ -467,6 +467,7 @@ export function RunsheetManager({
           columns={runsheetData.columns}
           initialItems={runsheetData.items}
           initialStartTime={parseStartTimeFromRunsheetName(runsheetData.name)}
+          initialSubtitle={runsheetData.subtitle}
           readOnly={!canEdit}
           runsheetCampuses={user?.access?.runsheetCampuses}
           onCreated={handleRunsheetCreated}

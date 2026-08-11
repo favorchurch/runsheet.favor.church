@@ -142,12 +142,16 @@ export async function rockGetAvailableRunsheetChannels(includeArchived = false):
     const canEdit = canUserEditRunsheet(session);
 
     // Fetch Content Channels from Rock RMS for ContentChannelTypeId 13 ("Service Runsheet")
-    const channels = (await rockGet('/ContentChannels', {
-      $filter: 'ContentChannelTypeId eq 13',
-      $select: 'Id,Name,ContentChannelTypeId',
-      $orderby: 'Id desc',
-      $top: 200,
-    })) as Array<{ Id: number; Name: string }> | null;
+    const channels = (await rockGet(
+      '/ContentChannels',
+      {
+        $filter: 'ContentChannelTypeId eq 13',
+        $select: 'Id,Name,ContentChannelTypeId',
+        $orderby: 'Id desc',
+        $top: 200,
+      },
+      true
+    )) as Array<{ Id: number; Name: string }> | null;
 
     let available = channels || [];
 

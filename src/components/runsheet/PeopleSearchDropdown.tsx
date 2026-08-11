@@ -117,7 +117,7 @@ export function PeopleSearchDropdown({ initialValue, onSelectPerson, onClose }: 
   }, [searchTerm]);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    inputRef.current?.focus({ preventScroll: true });
   }, []);
 
   useEffect(() => {

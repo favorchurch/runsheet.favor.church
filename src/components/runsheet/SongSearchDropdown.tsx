@@ -75,7 +75,7 @@ export function SongSearchDropdown({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    inputRef.current?.focus({ preventScroll: true });
   }, []);
 
   // Search Rock RMS songs with debouncing

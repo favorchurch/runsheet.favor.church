@@ -26,7 +26,7 @@ interface ResolvedChannel {
 
 /** Reads a channel's type and item attributes straight from Rock. */
 async function resolveChannel(channelId: number): Promise<ResolvedChannel> {
-  const channel = (await rockGet(`/ContentChannels/${channelId}`)) as {
+  const channel = (await rockGet(`/ContentChannels/${channelId}`, undefined, true)) as {
     ContentChannelTypeId: number;
     ItemsManuallyOrdered: boolean;
   } | null;
@@ -120,9 +120,14 @@ export async function rockBulkSaveRunsheetItems(
   items: RunsheetItemRow[],
   deletedItemIds: (number | string)[],
   columns?: DynamicAttributeColumn[],
+  subtitle?: string,
 ) {
   try {
     await getRockSession();
+
+    if (subtitle !== undefined) {
+      await rockPatch(`/ContentChannels/${channelId}`, { Description: subtitle });
+    }
 
     // 1. Delete removed items in parallel
     const deletePromises = deletedItemIds

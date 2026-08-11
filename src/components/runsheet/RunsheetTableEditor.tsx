@@ -83,6 +83,7 @@ interface RunsheetTableEditorProps {
   columns?: DynamicAttributeColumn[];
   initialItems: RunsheetItemRow[];
   initialStartTime?: string;
+  initialSubtitle?: string;
   readOnly?: boolean;
   runsheetCampuses?: string[];
   onCreated?: (channelId: number, title: string, createdData?: RunsheetDetails) => void;
@@ -145,6 +146,7 @@ export function RunsheetTableEditor({
   columns = FALLBACK_RUNSHEET_COLUMNS,
   initialItems,
   initialStartTime = '08:00:00 AM',
+  initialSubtitle = '',
   readOnly = false,
   runsheetCampuses,
   onCreated,
@@ -174,8 +176,8 @@ export function RunsheetTableEditor({
   const [startTime, setStartTime] = useState(initialStartTime);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
-  /** The cell currently open for editing. */
-  const [editingCell, setEditingCell] = useState<{ rowIndex: number; key: string } | null>(null);
+  /** The cell currently open for editing, tracked by item ID to avoid index mismatch with roster items. */
+  const [editingCell, setEditingCell] = useState<{ itemId: number | string; key: string } | null>(null);
 
   /**
    * Editor behind the open cell, lifted so the one formatting bar above the
@@ -193,7 +195,11 @@ export function RunsheetTableEditor({
     // Touch devices (phones, iPads, tablets) get Cards; laptops/desktops with mouse get Table
     return window.matchMedia('(pointer: coarse)').matches ? 'cards' : 'grid';
   });
-  const [subtitle, setSubtitle] = useState<string>('');
+  const [subtitle, setSubtitle] = useState<string>(initialSubtitle || 'Sunday Service');
+
+  useEffect(() => {
+    setSubtitle(initialSubtitle || 'Sunday Service');
+  }, [initialSubtitle]);
   const [editingCardIndex, setEditingCardIndex] = useState<number | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -220,7 +226,7 @@ export function RunsheetTableEditor({
       return updated;
     });
     setIsDirty(true);
-    setEditingCell({ rowIndex: insertIndex, key: 'title' });
+    setEditingCell({ itemId: newRow.id, key: 'title' });
   };
 
   // Duplicate Runsheet Modal State
@@ -563,11 +569,13 @@ export function RunsheetTableEditor({
     });
   }, [dynamicAttrCols]);
 
-  const handleAttrValueChange = (index: number, key: string, value: string) => {
+  const handleAttrValueChange = (itemId: number | string, key: string, value: string) => {
     if (readOnly) return;
     saveSnapshot();
     setItems((previous) => {
       const updated = [...previous];
+      const index = updated.findIndex((it) => it.id === itemId);
+      if (index === -1) return previous;
       const item = { ...updated[index] };
 
       if (key === 'title' || key === 'ACTIVITYTITLE') {
@@ -591,11 +599,13 @@ export function RunsheetTableEditor({
    * `0` — flagged as music, just not tied to a specific song — rather than
    * `null`, which would silently drop the row's music status.
    */
-  const handleSelectSong = (index: number, formattedSong: string, songItemId: number | null) => {
+  const handleSelectSong = (itemId: number | string, formattedSong: string, songItemId: number | null) => {
     if (readOnly) return;
     saveSnapshot();
     setItems((previous) => {
       const updated = [...previous];
+      const index = updated.findIndex((it) => it.id === itemId);
+      if (index === -1) return previous;
       const item = { ...updated[index] };
       item.title = formattedSong;
       item.attributeValues = { ...(item.attributeValues || {}), ACTIVITYTITLE: formattedSong };
@@ -647,7 +657,7 @@ export function RunsheetTableEditor({
 
     setItems((previous) => [...previous, newRow]);
     setIsDirty(true);
-    setEditingCell({ rowIndex: items.length, key: 'title' });
+    setEditingCell({ itemId: newRow.id, key: 'title' });
   };
 
   const applyDefaultTemplate = () => {
@@ -758,7 +768,7 @@ export function RunsheetTableEditor({
     const rosterPreparedItems = items.filter((item) => item.title && item.title.startsWith('Roster:'));
     const preparedItems = [...runsheetPreparedItems, ...rosterPreparedItems];
 
-    const result = await rockBulkSaveRunsheetItems(channelId, preparedItems, deletedIds, columns);
+    const result = await rockBulkSaveRunsheetItems(channelId, preparedItems, deletedIds, columns, subtitle);
 
     if (result.success) {
       setStatus({ type: 'success', message: 'Favor Runsheet successfully saved to Rock RMS!' });
@@ -769,7 +779,7 @@ export function RunsheetTableEditor({
       setStatus({ type: 'error', message: result.error || 'Failed to save changes.' });
       return false;
     }
-  }, [readOnly, processedRows, items, channelId, deletedIds, columns]);
+  }, [readOnly, processedRows, items, channelId, deletedIds, columns, subtitle]);
 
   useEffect(() => {
     onSaveRef?.(handleSave);
@@ -812,8 +822,8 @@ export function RunsheetTableEditor({
     [processedRows, isDirty]
   );
 
-  const closeCell = (index: number, key: string) => {
-    setEditingCell((current) => (current?.rowIndex === index && current?.key === key ? null : current));
+  const closeCell = (itemId: number | string, key: string) => {
+    setEditingCell((current) => (current?.itemId === itemId && current?.key === key ? null : current));
     if (mobileViewMode === 'cards') {
       setTimeout(() => {
         handleSaveRef.current();
@@ -822,17 +832,16 @@ export function RunsheetTableEditor({
   };
 
   const renderCellContent = (
-    index: number,
+    rowId: number | string,
     key: string,
     value: string,
-    rowId: number | string,
     isPersonField = false,
     songItemId: number | null = null,
   ) => {
     const isActivityTitleColumn = key === 'title';
     const musicCellId = String(rowId);
     const isMusicCell = isActivityTitleColumn && !!musicCellMap[musicCellId];
-    const isEditing = !readOnly && editingCell?.rowIndex === index && editingCell?.key === key;
+    const isEditing = !readOnly && editingCell?.itemId === rowId && editingCell?.key === key;
 
     if (isEditing) {
       if (isMusicCell) {
@@ -842,9 +851,9 @@ export function RunsheetTableEditor({
               initialValue={value ?? ''}
               initialSongItemId={songItemId}
               onSelectSong={(formattedSong, selectedSongId) =>
-                handleSelectSong(index, formattedSong, selectedSongId)
+                handleSelectSong(rowId, formattedSong, selectedSongId)
               }
-              onClose={() => closeCell(index, key)}
+              onClose={() => closeCell(rowId, key)}
             />
           </div>
         );
@@ -854,8 +863,8 @@ export function RunsheetTableEditor({
         return (
           <PeopleSearchDropdown
             initialValue={value ?? ''}
-            onSelectPerson={(selectedName) => handleAttrValueChange(index, key, selectedName)}
-            onClose={() => closeCell(index, key)}
+            onSelectPerson={(selectedName) => handleAttrValueChange(rowId, key, selectedName)}
+            onClose={() => closeCell(rowId, key)}
           />
         );
       }
@@ -863,8 +872,8 @@ export function RunsheetTableEditor({
       return (
         <RichTextCell
           value={value ?? ''}
-          onChange={(html) => handleAttrValueChange(index, key, html)}
-          onCommit={() => closeCell(index, key)}
+          onChange={(html) => handleAttrValueChange(rowId, key, html)}
+          onCommit={() => closeCell(rowId, key)}
           onEditorChange={setActiveEditor}
         />
       );
@@ -888,7 +897,10 @@ export function RunsheetTableEditor({
               // as one — `0` means "flagged, no specific song linked yet".
               setItems((previous) => {
                 const updated = [...previous];
-                updated[index] = { ...updated[index], songItemId: turningOff ? null : 0 };
+                const targetIdx = updated.findIndex((it) => it.id === rowId);
+                if (targetIdx !== -1) {
+                  updated[targetIdx] = { ...updated[targetIdx], songItemId: turningOff ? null : 0 };
+                }
                 return updated;
               });
               setIsDirty(true);
@@ -983,9 +995,9 @@ export function RunsheetTableEditor({
               )}
             </div>
             <div className="mt-1 flex flex-col items-start gap-0.5">
-              <div className="inline-grid grid-cols-1 items-center rounded-md border border-amber-300 bg-amber-100/90 px-2.5 py-0.5 text-xs sm:text-sm font-extrabold text-amber-950 shadow-2xs transition-all focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-400">
-                <span className="col-start-1 row-start-1 text-xs sm:text-sm font-extrabold text-transparent select-none whitespace-pre pointer-events-none px-0.5">
-                  {subtitle || 'Add service highlight (e.g. Communion Sunday)...'}
+              <div className="inline-grid grid-cols-1 items-center rounded-md border border-slate-800 bg-slate-900 px-2.5 py-1 text-xs sm:text-sm font-medium text-white shadow-xs transition-all focus-within:border-slate-600 focus-within:ring-2 focus-within:ring-slate-700">
+                <span className="col-start-1 row-start-1 text-xs sm:text-sm font-medium text-transparent select-none whitespace-pre pointer-events-none px-0.5">
+                  {subtitle || 'Sunday Service'}
                 </span>
                 <input
                   type="text"
@@ -995,8 +1007,8 @@ export function RunsheetTableEditor({
                     setSubtitle(e.target.value);
                     setIsDirty(true);
                   }}
-                  placeholder="Add service highlight (e.g. Communion Sunday)..."
-                  className="col-start-1 row-start-1 w-full bg-transparent text-xs sm:text-sm font-extrabold text-amber-950 placeholder:text-amber-700/60 focus:outline-none disabled:bg-transparent px-0.5"
+                  placeholder="Sunday Service"
+                  className="col-start-1 row-start-1 w-full bg-transparent text-xs sm:text-sm font-medium text-white placeholder:text-white focus:outline-none disabled:bg-transparent px-0.5"
                 />
               </div>
               {!readOnly && (
@@ -1355,25 +1367,31 @@ export function RunsheetTableEditor({
         items={items}
         columns={dynamicAttrCols}
         readOnly={readOnly}
-        editingRoleTitle={editingCell ? items[editingCell.rowIndex]?.title || null : null}
+        editingRoleTitle={
+          editingCell
+            ? items.find((it) => it.id === editingCell.itemId)?.title?.startsWith('Roster:')
+              ? items.find((it) => it.id === editingCell.itemId)?.title || null
+              : null
+            : null
+        }
         onOpenRolePicker={(roleTitle) => {
           const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
-          const itemIndex = items.findIndex((item) => item.title === roleTitle);
-          if (itemIndex !== -1) {
-            setEditingCell({ rowIndex: itemIndex, key: personKey });
+          const targetItem = items.find((item) => item.title === roleTitle);
+          if (targetItem) {
+            setEditingCell({ itemId: targetItem.id, key: personKey });
           }
         }}
         renderPeoplePicker={(roleTitle) => {
           const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
-          const itemIndex = items.findIndex((item) => item.title === roleTitle);
-          if (itemIndex === -1) return null;
-          const currentVal = readRunsheetCellValue(items[itemIndex], personKey);
+          const targetItem = items.find((item) => item.title === roleTitle);
+          if (!targetItem) return null;
+          const currentVal = readRunsheetCellValue(targetItem, personKey);
 
           return (
             <PeopleSearchDropdown
               initialValue={currentVal}
-              onSelectPerson={(selectedName) => handleAttrValueChange(itemIndex, personKey, selectedName)}
-              onClose={() => closeCell(itemIndex, personKey)}
+              onSelectPerson={(selectedName) => handleAttrValueChange(targetItem.id, personKey, selectedName)}
+              onClose={() => closeCell(targetItem.id, personKey)}
             />
           );
         }}
@@ -1520,42 +1538,42 @@ export function RunsheetTableEditor({
                       {...{ [CELL_ATTRIBUTE]: '' }}
                       onMouseDown={(event) => {
                         if (readOnly) return;
-                        if (editingCell?.rowIndex === index && editingCell?.key === 'title') return;
+                        if (editingCell?.itemId === item.id && editingCell?.key === 'title') return;
                         const target = event.target as HTMLElement;
                         if (target.closest('a') || target.closest('button')) return;
                         event.preventDefault();
-                        setEditingCell({ rowIndex: index, key: 'title' });
+                        setEditingCell({ itemId: item.id, key: 'title' });
                       }}
                       className={`border-r border-slate-200 p-0 align-middle h-full cursor-text hover:bg-slate-100/80 transition-colors ${
-                        editingCell?.rowIndex === index && editingCell?.key === 'title'
+                        editingCell?.itemId === item.id && editingCell?.key === 'title'
                           ? 'relative z-50 overflow-visible'
                           : 'overflow-hidden'
                       }`}
                       style={{ width: '140px', minWidth: '110px' }}
                     >
-                      {renderCellContent(index, 'title', currentTitleVal, item.id, false, item.songItemId ?? null)}
+                      {renderCellContent(item.id, 'title', currentTitleVal, false, item.songItemId ?? null)}
                     </td>
 
                     {dynamicAttrCols.map((col) => {
-                      const isCellEditing = editingCell?.rowIndex === index && editingCell?.key === col.key;
+                      const isCellEditing = editingCell?.itemId === item.id && editingCell?.key === col.key;
                       return (
                         <td
                           key={col.id}
                           {...{ [CELL_ATTRIBUTE]: '' }}
                           onMouseDown={(event) => {
                             if (readOnly) return;
-                            if (editingCell?.rowIndex === index && editingCell?.key === col.key) return;
+                            if (editingCell?.itemId === item.id && editingCell?.key === col.key) return;
                             const target = event.target as HTMLElement;
                             if (target.closest('a') || target.closest('button')) return;
                             event.preventDefault();
-                            setEditingCell({ rowIndex: index, key: col.key });
+                            setEditingCell({ itemId: item.id, key: col.key });
                           }}
                           className={`border-r border-slate-200 p-0 align-middle text-slate-900 h-full cursor-text hover:bg-slate-100/80 transition-colors ${
                             isCellEditing ? 'relative z-50 overflow-visible' : 'overflow-hidden'
                           }`}
                           style={getColumnStyle(col.key, col.name)}
                         >
-                          {renderCellContent(index, col.key, readRunsheetCellValue(item, col.key), item.id, isPersonColumn(col))}
+                          {renderCellContent(item.id, col.key, readRunsheetCellValue(item, col.key), isPersonColumn(col))}
                         </td>
                       );
                     })}
@@ -1647,7 +1665,7 @@ export function RunsheetTableEditor({
                           {col.name}
                         </span>
                         <div className="break-words whitespace-normal text-slate-800 text-xs leading-normal">
-                          {renderCellContent(index, col.key, val, item.id, isPersonColumn(col))}
+                          {renderCellContent(item.id, col.key, val, isPersonColumn(col))}
                         </div>
                       </div>
                     );
@@ -1699,12 +1717,16 @@ export function RunsheetTableEditor({
                   <button
                     type="button"
                     onClick={() => {
-                      const musicCellId = String(processedRows[editingCardIndex].id);
+                      const targetId = processedRows[editingCardIndex].id;
+                      const musicCellId = String(targetId);
                       const turningOff = !!musicCellMap[musicCellId];
                       setMusicCellMap((prev) => ({ ...prev, [musicCellId]: !prev[musicCellId] }));
                       setItems((previous) => {
                         const updated = [...previous];
-                        updated[editingCardIndex] = { ...updated[editingCardIndex], songItemId: turningOff ? null : 0 };
+                        const idx = updated.findIndex((it) => it.id === targetId);
+                        if (idx !== -1) {
+                          updated[idx] = { ...updated[idx], songItemId: turningOff ? null : 0 };
+                        }
                         return updated;
                       });
                       setIsDirty(true);
@@ -1721,10 +1743,9 @@ export function RunsheetTableEditor({
                 </div>
                 <div className="bg-white rounded border border-slate-300 p-1">
                   {renderCellContent(
-                    editingCardIndex,
+                    processedRows[editingCardIndex].id,
                     'title',
                     processedRows[editingCardIndex].attributeValues?.ACTIVITYTITLE || processedRows[editingCardIndex].title || '',
-                    processedRows[editingCardIndex].id,
                     false,
                     processedRows[editingCardIndex].songItemId ?? null
                   )}
@@ -1738,7 +1759,7 @@ export function RunsheetTableEditor({
                   <div key={col.id} className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-white p-3">
                     <label className="font-bold text-slate-700 text-xs uppercase tracking-wider text-[10px]">{col.name}</label>
                     <div className="bg-slate-50/80 rounded border border-slate-200 p-1">
-                      {renderCellContent(editingCardIndex, col.key, val, processedRows[editingCardIndex].id, isPersonColumn(col))}
+                      {renderCellContent(processedRows[editingCardIndex].id, col.key, val, isPersonColumn(col))}
                     </div>
                   </div>
                 );

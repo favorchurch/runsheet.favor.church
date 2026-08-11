@@ -69,11 +69,12 @@ export function RichTextCell({ value, onChange, onCommit, onEditorChange }: Rich
   const editor = useEditor({
     extensions: CELL_EXTENSIONS,
     content: legacyValueToHtml(value),
-    autofocus: 'end',
+    autofocus: false,
     // The grid is client-rendered, but Next.js still prerenders client
     // components; deferring the first render keeps Tiptap out of SSR.
     immediatelyRender: false,
     editorProps: {
+      handleScrollToSelection: () => true,
       attributes: {
         class:
           'runsheet-rich-text w-full min-h-[28px] px-2.5 py-1 text-[11px] font-medium leading-normal text-slate-900 focus:outline-none',
@@ -110,6 +111,16 @@ export function RichTextCell({ value, onChange, onCommit, onEditorChange }: Rich
   });
 
   editorRef.current = editor;
+
+  // Focus the editor on mount without auto-scrolling the browser window
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    const domEl = editor.view?.dom as HTMLElement | undefined;
+    if (domEl && typeof domEl.focus === 'function') {
+      domEl.focus({ preventScroll: true });
+    }
+    editor.commands.focus('end', { scrollIntoView: false });
+  }, [editor]);
 
   // Hand the live editor to the shared formatting bar, and take it back on unmount.
   useEffect(() => {
