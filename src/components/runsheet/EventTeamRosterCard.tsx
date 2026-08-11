@@ -226,7 +226,7 @@ export function EventTeamRosterCard({
                 Wrap/Up Announcements
               </span>
               {platform.wrapText ? (
-                <div className="text-[11px] sm:text-xs text-slate-900 leading-relaxed max-h-32 overflow-y-auto pr-1">
+                <div className="text-[11px] sm:text-xs text-slate-900 leading-relaxed max-h-32 overflow-y-auto pl-1.5 pr-1">
                   <RichTextContent value={platform.wrapText} />
                 </div>
               ) : (
