@@ -937,7 +937,6 @@ export function RunsheetTableEditor({
                 className="inline-flex items-center rounded bg-slate-200/90 px-1.5 py-0.5 text-[10px] font-bold text-slate-900 uppercase tracking-wider hover:bg-slate-300 hover:text-slate-950 transition-colors cursor-pointer"
                 title="Click to view song JSON details in new tab"
               >
-                <HiMusicalNote className="mr-0.5 h-3 w-3 text-slate-700" />
                 Song
               </a>
               <RichTextContent value={value ?? ''} />
@@ -1611,8 +1610,7 @@ export function RunsheetTableEditor({
 
                   <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                     {isMusic && (
-                      <span className="inline-flex items-center gap-1 rounded bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-900 border border-slate-300">
-                        <HiMusicalNote className="h-3 w-3 text-slate-700" />
+                      <span className="inline-flex items-center rounded bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-900 border border-slate-300">
                         Song
                       </span>
                     )}
