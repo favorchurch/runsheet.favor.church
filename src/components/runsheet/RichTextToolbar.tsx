@@ -211,7 +211,7 @@ export function RichTextToolbar({ editor }: RichTextToolbarProps) {
       data-runsheet-format-bar=""
       role="toolbar"
       aria-label="Cell formatting"
-      className="sticky top-0 z-30 flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50/95 px-2 py-1.5 backdrop-blur"
+      className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50/95 px-2 py-1"
     >
       <ToolbarButton
         label="Bold (Cmd/Ctrl+B)"

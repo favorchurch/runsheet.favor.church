@@ -2,7 +2,7 @@
 
 import type { Editor } from '@tiptap/react';
 import React, { useEffect, useMemo, useState } from 'react';
-import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiTrash } from 'react-icons/hi2';
+import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiTableCells, HiTrash } from 'react-icons/hi2';
 
 import { htmlToPlainText } from '@/lib/richText';
 
@@ -972,15 +972,15 @@ export function RunsheetTableEditor({
   return (
     <div className="flex w-full flex-col gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
       {/* Sticky Locked Header & Toolbar Container */}
-      <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 p-2.5 sm:p-3 shadow-xs space-y-2 rounded-t-xl -mx-2.5 -mt-2.5 sm:-mx-4 sm:-mt-4">
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+      <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 p-2 sm:p-2.5 shadow-xs space-y-1.5 rounded-t-xl -mx-2.5 -mt-2.5 sm:-mx-4 sm:-mt-4">
+        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold leading-tight text-slate-900 sm:text-xl">{channelName}</h2>
+              <h2 className="text-base sm:text-lg font-bold leading-tight text-slate-900">{channelName}</h2>
               {readOnly && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-0.5 text-xs font-bold text-amber-900 border border-amber-300 shadow-xs">
-                  <HiLockClosed className="h-3.5 w-3.5 text-amber-700" />
-                  Read Only (Volunteer Access)
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.2 text-[10px] font-bold text-amber-900 border border-amber-300">
+                  <HiLockClosed className="h-3 w-3 text-amber-700" />
+                  Read Only
                 </span>
               )}
             </div>
@@ -992,21 +992,21 @@ export function RunsheetTableEditor({
                 setSubtitle(e.target.value);
                 setIsDirty(true);
               }}
-              placeholder="Add runsheet subtitle / highlights (e.g. Communion Sunday, Water Baptism)..."
-              className="mt-0.5 w-full sm:w-96 text-xs font-medium text-slate-700 placeholder:text-slate-400 bg-transparent border-b border-dashed border-slate-300 focus:border-slate-800 focus:outline-none py-0.5 transition-colors disabled:border-transparent"
+              placeholder="Add runsheet subtitle / highlights (e.g. Communion Sunday)..."
+              className="mt-0.5 w-full sm:w-80 text-[11px] font-medium text-slate-700 placeholder:text-slate-400 bg-transparent border-b border-dashed border-slate-300 focus:border-slate-800 focus:outline-none py-0.5 transition-colors disabled:border-transparent"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1">
-              <label className="whitespace-nowrap text-xs font-semibold text-slate-700" htmlFor="runsheet-start-time">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
+              <label className="whitespace-nowrap text-[11px] font-semibold text-slate-700" htmlFor="runsheet-start-time">
                 Start:
               </label>
               <input
                 id="runsheet-start-time"
                 type="text"
                 disabled={readOnly}
-                className="w-24 rounded border border-slate-300 bg-white px-2 py-0.5 font-mono text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
+                className="w-20 rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
                 value={startTime}
                 onChange={(event) => {
                   setStartTime(event.target.value);
@@ -1016,11 +1016,11 @@ export function RunsheetTableEditor({
               />
             </div>
 
-            <div className="flex items-center rounded-lg border border-slate-300 bg-slate-100 p-0.5">
+            <div className="flex items-center rounded-md border border-slate-300 bg-slate-100 p-0.5">
               <button
                 type="button"
                 onClick={() => setMobileViewMode('cards')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${mobileViewMode === 'cards'
+                className={`px-2 py-0.5 text-[11px] font-semibold rounded transition-all cursor-pointer ${mobileViewMode === 'cards'
                     ? 'bg-white text-slate-900 shadow-xs font-bold'
                     : 'text-slate-600 hover:text-slate-900'
                   }`}
@@ -1030,7 +1030,7 @@ export function RunsheetTableEditor({
               <button
                 type="button"
                 onClick={() => setMobileViewMode('grid')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${mobileViewMode === 'grid'
+                className={`px-2 py-0.5 text-[11px] font-semibold rounded transition-all cursor-pointer ${mobileViewMode === 'grid'
                     ? 'bg-white text-slate-900 shadow-xs font-bold'
                     : 'text-slate-600 hover:text-slate-900'
                   }`}
@@ -1045,10 +1045,10 @@ export function RunsheetTableEditor({
                   type="button"
                   onClick={handleUndo}
                   disabled={history.length === 0}
-                  className="flex min-h-[36px] cursor-pointer items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
                   title="Undo (⌘Z)"
                 >
-                  <HiArrowUturnLeft className="h-4 w-4 text-slate-700" />
+                  <HiArrowUturnLeft className="h-3.5 w-3.5 text-slate-700" />
                   <span>Undo</span>
                 </button>
 
@@ -1056,27 +1056,27 @@ export function RunsheetTableEditor({
                   type="button"
                   onClick={handleRedo}
                   disabled={future.length === 0}
-                  className="flex min-h-[36px] cursor-pointer items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
                   title="Redo (⌘⇧Z)"
                 >
-                  <HiArrowUturnRight className="h-4 w-4 text-slate-700" />
+                  <HiArrowUturnRight className="h-3.5 w-3.5 text-slate-700" />
                   <span>Redo</span>
                 </button>
 
                 <button
                   onClick={handleResetFormClick}
-                  className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
                   title="Reset to the standard Favor Runsheet template"
                 >
-                  <HiArrowPath className="h-4 w-4 text-blue-600" />
+                  <HiArrowPath className="h-3.5 w-3.5 text-blue-600" />
                   <span>Reset Form</span>
                 </button>
 
                 <button
                   onClick={handleAddRow}
-                  className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
                 >
-                  <HiPlus className="h-4 w-4 text-blue-600" />
+                  <HiPlus className="h-3.5 w-3.5 text-blue-600" />
                   <span>Add Row</span>
                 </button>
 
@@ -1086,28 +1086,28 @@ export function RunsheetTableEditor({
                     setDuplicateError('');
                     setShowDuplicateModal(true);
                   }}
-                  className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-200 active:bg-slate-300 transition-colors"
+                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-slate-100 px-2.5 text-[11px] font-semibold text-slate-900 hover:bg-slate-200 active:bg-slate-300 transition-colors"
                   title="Duplicate current runsheet as a different service time"
                 >
-                  <HiDocumentDuplicate className="h-4 w-4 text-slate-700" />
-                  <span>Duplicate Runsheet</span>
+                  <HiDocumentDuplicate className="h-3.5 w-3.5 text-slate-700" />
+                  <span>Duplicate</span>
                 </button>
 
                 <button
                   onClick={() => setShowDeleteModal(true)}
-                  className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800 hover:bg-rose-100 focus:outline-none"
+                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-semibold text-rose-800 hover:bg-rose-100 focus:outline-none"
                   title="Delete this Runsheet"
                 >
-                  <HiTrash className="h-4 w-4 text-rose-600" />
-                  <span>Delete Runsheet</span>
+                  <HiTrash className="h-3.5 w-3.5 text-rose-600" />
+                  <span>Delete</span>
                 </button>
 
                 <button
                   onClick={handleSave}
                   disabled={status.type === 'saving' || !isDirty}
-                  className="flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-lg bg-pink-700 px-4 py-2 text-xs font-semibold text-white hover:bg-pink-800 focus:outline-none active:bg-pink-900 disabled:opacity-40"
+                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-pink-700 px-3 text-[11px] font-semibold text-white hover:bg-pink-800 focus:outline-none active:bg-pink-900 disabled:opacity-40"
                 >
-                  <HiCheck className="h-4 w-4" />
+                  <HiCheck className="h-3.5 w-3.5" />
                   <span>{status.type === 'saving' ? 'Saving...' : 'Save Runsheet'}</span>
                 </button>
               </>
@@ -1235,29 +1235,58 @@ export function RunsheetTableEditor({
         </div>
       )}
 
-      {/* Reset Form Confirmation Modal */}
+      {/* Confirmation Modal for Resetting Form */}
       {showResetModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-200">
-            <h3 className="text-lg font-bold text-slate-900">Reset Form</h3>
-            <p className="mt-2 text-sm text-slate-600">
-              Are you sure you want to reset? This will replace every segment currently in the
-              grid with the standard Favor Runsheet template and cannot be undone.
+            <h3 className="text-lg font-bold text-slate-900">Reset Runsheet Form?</h3>
+            <p className="mt-2 text-xs text-slate-600 leading-relaxed">
+              Are you sure you want to reset this runsheet to the standard Favor Church template? Any unsaved edits to your segments will be lost.
             </p>
-            <div className="mt-6 flex items-center justify-end gap-3">
+            <div className="mt-5 flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setShowResetModal(false)}
                 className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
               >
-                No
+                Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmResetForm}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer shadow-xs"
               >
                 Yes, Reset Form
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Deleting Runsheet */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-900">Delete Entire Runsheet?</h3>
+            <p className="mt-2 text-xs text-slate-600 leading-relaxed">
+              Are you sure you want to delete <span className="font-semibold text-slate-900">&quot;{channelName}&quot;</span> from Rock RMS? This action cannot be undone.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeleting}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteRunsheet}
+                disabled={isDeleting}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? 'Deleting...' : 'Yes, Delete Runsheet'}
               </button>
             </div>
           </div>
@@ -1289,36 +1318,6 @@ export function RunsheetTableEditor({
                 className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer"
               >
                 Yes, Delete Row
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Runsheet Confirmation Modal */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-200">
-            <h3 className="text-lg font-bold text-slate-900">Delete Runsheet</h3>
-            <p className="mt-2 text-sm text-slate-600">
-              Are you sure you want to delete <span className="font-semibold text-slate-900">&quot;{channelName}&quot;</span>? This action will permanently remove the runsheet and cannot be undone.
-            </p>
-            <div className="mt-6 flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowDeleteModal(false)}
-                disabled={isDeleting}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteRunsheet}
-                disabled={isDeleting}
-                className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer disabled:opacity-50"
-              >
-                {isDeleting ? 'Deleting...' : 'Yes, Delete Runsheet'}
               </button>
             </div>
           </div>
@@ -1562,38 +1561,51 @@ export function RunsheetTableEditor({
       )}
 
       {/* Spreadsheet Table View */}
-      <div className={`w-full overflow-x-auto rounded-lg border border-slate-300 ${mobileViewMode === 'cards' ? 'hidden' : 'block'}`}>
-        <table className="w-full min-w-[900px] border-collapse bg-white text-xs text-slate-900" style={{ tableLayout: 'fixed' }}>
-          <thead className="sticky top-[108px] z-30 bg-slate-100 shadow-2xs">
-            <tr className="border-b-2 border-slate-300 bg-slate-100 text-left font-bold text-slate-900">
-              {!readOnly && <th className="border-r border-slate-300 p-1.5 text-center" style={{ width: '32px', minWidth: '32px' }} />}
-              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '90px', minWidth: '90px' }}>
-                Start
-              </th>
-              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '90px', minWidth: '90px' }}>
-                End
-              </th>
-              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '90px', minWidth: '90px' }}>
-                Duration
-              </th>
-              <th className="border-r border-slate-300 p-2 text-center font-bold whitespace-nowrap select-none" style={{ width: '180px', minWidth: '160px' }}>
-                Activity Title
-              </th>
+      <div className={`w-full flex flex-col gap-1.5 ${mobileViewMode === 'cards' ? 'hidden' : 'block'}`}>
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-extrabold uppercase tracking-wider text-white shadow-xs">
+              <HiTableCells className="h-3.5 w-3.5 text-slate-300" />
+              Runsheet Schedule
+            </span>
+            <span className="text-xs font-semibold text-slate-500">
+              ({processedRows.length} segments)
+            </span>
+          </div>
+        </div>
 
-              {dynamicAttrCols.map((col) => (
-                <th
-                  key={col.id}
-                  className="border-r border-slate-300 p-2 text-center font-bold select-none overflow-hidden text-ellipsis"
-                  style={getColumnStyle(col.key, col.name)}
-                  title={col.name}
-                >
-                  {col.name}
+        <div className="w-full overflow-x-auto rounded-xl border-2 border-slate-800 shadow-md max-h-[calc(100vh-160px)] overflow-y-auto bg-white">
+          <table className="w-full min-w-[900px] border-collapse bg-white text-xs text-slate-900" style={{ tableLayout: 'fixed' }}>
+            <thead className="sticky top-0 z-30 bg-slate-900 text-white shadow-md">
+              <tr className="border-b-2 border-slate-950 text-left font-bold text-white uppercase text-[11px] tracking-wider">
+                {!readOnly && <th className="border-r border-slate-800 p-1.5 text-center" style={{ width: '32px', minWidth: '32px' }} />}
+                <th className="border-r border-slate-800 p-2 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '90px', minWidth: '90px' }}>
+                  Start
                 </th>
-              ))}
+                <th className="border-r border-slate-800 p-2 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '90px', minWidth: '90px' }}>
+                  End
+                </th>
+                <th className="border-r border-slate-800 p-2 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '90px', minWidth: '90px' }}>
+                  Duration
+                </th>
+                <th className="border-r border-slate-800 p-2 text-center font-bold whitespace-nowrap select-none text-slate-100" style={{ width: '180px', minWidth: '160px' }}>
+                  Activity Title
+                </th>
 
-              {!readOnly && <th className="p-1.5 text-center" style={{ width: '64px', minWidth: '64px' }} />}
-            </tr>
-          </thead>
+                {dynamicAttrCols.map((col) => (
+                  <th
+                    key={col.id}
+                    className="border-r border-slate-800 p-2 text-center font-bold select-none overflow-hidden text-ellipsis text-slate-100"
+                    style={getColumnStyle(col.key, col.name)}
+                    title={col.name}
+                  >
+                    {col.name}
+                  </th>
+                ))}
+
+                {!readOnly && <th className="p-1.5 text-center" style={{ width: '64px', minWidth: '64px' }} />}
+              </tr>
+            </thead>
           <tbody>
             {processedRows.map((item, index) => {
               const spanInfo = timeSpanMap[index];
@@ -1757,6 +1769,7 @@ export function RunsheetTableEditor({
           </tbody>
         </table>
       </div>
+    </div>
     </div>
   );
 }
