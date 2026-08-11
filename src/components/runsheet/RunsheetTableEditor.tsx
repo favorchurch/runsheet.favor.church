@@ -983,7 +983,10 @@ export function RunsheetTableEditor({
               )}
             </div>
             <div className="mt-1 flex flex-col items-start gap-0.5">
-              <div className="inline-flex max-w-full items-center rounded-md border border-amber-300 bg-amber-100/90 px-2 py-0.5 text-xs font-extrabold text-amber-950 shadow-2xs transition-all focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-400">
+              <div className="inline-grid grid-cols-1 items-center rounded-md border border-amber-300 bg-amber-100/90 px-2.5 py-0.5 text-xs sm:text-sm font-extrabold text-amber-950 shadow-2xs transition-all focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-400">
+                <span className="col-start-1 row-start-1 text-xs sm:text-sm font-extrabold text-transparent select-none whitespace-pre pointer-events-none px-0.5">
+                  {subtitle || 'Add service highlight (e.g. Communion Sunday)...'}
+                </span>
                 <input
                   type="text"
                   disabled={readOnly}
@@ -992,13 +995,8 @@ export function RunsheetTableEditor({
                     setSubtitle(e.target.value);
                     setIsDirty(true);
                   }}
-                  placeholder="Communion Sunday, Vision Sunday..."
-                  className="max-w-full bg-transparent text-xs font-extrabold text-amber-950 placeholder:text-amber-700/60 focus:outline-none disabled:bg-transparent"
-                  style={{
-                    width: subtitle
-                      ? `${Math.max(subtitle.length + 1, 6)}ch`
-                      : '26ch',
-                  }}
+                  placeholder="Add service highlight (e.g. Communion Sunday)..."
+                  className="col-start-1 row-start-1 w-full bg-transparent text-xs sm:text-sm font-extrabold text-amber-950 placeholder:text-amber-700/60 focus:outline-none disabled:bg-transparent px-0.5"
                 />
               </div>
               {!readOnly && (
