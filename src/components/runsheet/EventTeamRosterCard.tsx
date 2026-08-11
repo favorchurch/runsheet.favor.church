@@ -4,7 +4,8 @@ import React from 'react';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 import { isPersonColumn } from '@/constants/runsheetColumns';
 import { parsePeopleString } from './PeopleSearchDropdown';
-import { HiUserGroup, HiSparkles, HiPencilSquare } from 'react-icons/hi2';
+import { HiUserGroup, HiPencilSquare } from 'react-icons/hi2';
+import { RichTextContent } from './RichTextContent';
 
 export const VITAL_ROLES = [
   'Service Director',
@@ -42,18 +43,20 @@ export function computePlatformRoles(items: RunsheetItemRow[], columns: DynamicA
     });
   };
 
-  const huddleRow = findRow(['all-in huddle']);
+  const runsheetHuddleRow = findRow(['runsheet huddle']);
+  const huddleRow = findRow(['all-in huddle', 'huddle hype']);
   const mc1Row = findRow(['mc1', 'mc 1']);
   const mc2Row = findRow(['mc2', 'mc 2']);
   const preacherRow = findRow(['sermon', 'preacher']);
   const wrapRow = findRow(['wrap-up', 'wrap/up', 'announcements']);
 
   return {
+    runsheetHuddle: runsheetHuddleRow ? extractPeopleFromRow(runsheetHuddleRow, columns).join(', ') : '',
     huddleHype: huddleRow ? extractPeopleFromRow(huddleRow, columns).join(', ') : '',
     mc1: mc1Row ? extractPeopleFromRow(mc1Row, columns).join(', ') : '',
     mc2: mc2Row ? extractPeopleFromRow(mc2Row, columns).join(', ') : '',
     preacher: preacherRow ? extractPeopleFromRow(preacherRow, columns).join(', ') : '',
-    wrapText: wrapRow ? (wrapRow.detail || '').replace(/<[^>]*>/g, '').trim() : '',
+    wrapText: wrapRow ? (wrapRow.detail || wrapRow.title || '').trim() : '',
   };
 }
 
@@ -164,13 +167,16 @@ export function EventTeamRosterCard({
 
       {/* Platform & Schedule Contacts Grid */}
       <div>
-        <div className="flex items-center gap-1 mb-2">
-          <HiSparkles className="h-3.5 w-3.5 text-slate-800" />
+        <div className="mb-2">
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-800">
             Platform Roles (Auto-populated from Schedule)
           </span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs mb-3">
+          <div className="rounded-lg border border-slate-200 bg-white p-2">
+            <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Runsheet Huddle</span>
+            <span className="font-semibold text-slate-900">{platform.runsheetHuddle || <em className="text-slate-400 font-normal text-[11px]">None in Runsheet Huddle</em>}</span>
+          </div>
           <div className="rounded-lg border border-slate-200 bg-white p-2">
             <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Huddle Hype</span>
             <span className="font-semibold text-slate-900">{platform.huddleHype || <em className="text-slate-400 font-normal text-[11px]">None in All-In Huddle</em>}</span>
@@ -187,10 +193,20 @@ export function EventTeamRosterCard({
             <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Preacher</span>
             <span className="font-semibold text-slate-900">{platform.preacher || <em className="text-slate-400 font-normal text-[11px]">None in Sermon</em>}</span>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-2">
-            <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Wrap/Up Announcements</span>
-            <span className="font-semibold text-slate-900 truncate block">{platform.wrapText || <em className="text-slate-400 font-normal text-[11px]">None in Wrap-up</em>}</span>
-          </div>
+        </div>
+
+        {/* Full-width Wrap/Up Announcements WYSIWYG Box */}
+        <div className="rounded-lg border border-slate-200 bg-white p-3">
+          <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+            Wrap/Up Announcements
+          </span>
+          {platform.wrapText ? (
+            <div className="text-xs text-slate-900 leading-relaxed max-h-48 overflow-y-auto pr-1">
+              <RichTextContent value={platform.wrapText} />
+            </div>
+          ) : (
+            <em className="text-slate-400 font-normal text-xs">None in Wrap-up</em>
+          )}
         </div>
       </div>
     </div>
