@@ -8,6 +8,7 @@ import { canAccessRunsheetChannel } from '@/lib/runsheetCampus';
 export interface RunsheetChannelOption {
   id: number;
   name: string;
+  time: string;
 }
 
 /** Helper to format a Date into multiple matching representations */
@@ -48,7 +49,7 @@ function buildDateMatchingTokens(dateStr: string): string[] {
   ];
 }
 
-function extractChannelDate(name: string): Date | null {
+export function extractChannelDate(name: string): Date | null {
   const months: Record<string, number> = {
     january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
     july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
@@ -89,6 +90,12 @@ function extractChannelDate(name: string): Date | null {
   }
 
   return null;
+}
+
+/** Reads the trailing `{time}` segment off a channel name, e.g. `"...// 11:30AM"` → `"11:30AM"`. */
+export function extractChannelTime(name: string): string {
+  const lastSegment = name.split('//').pop()?.trim() ?? '';
+  return lastSegment;
 }
 
 function getTimezoneForChannelName(name: string): string {
@@ -285,6 +292,7 @@ export async function rockGetAvailableRunsheetChannels(includeArchived = false):
     const formattedChannels: RunsheetChannelOption[] = available.map((c) => ({
       id: c.Id,
       name: c.Name,
+      time: extractChannelTime(c.Name),
     }));
 
     return {
