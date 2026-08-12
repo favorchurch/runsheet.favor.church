@@ -21,6 +21,12 @@ export const FALLBACK_RUNSHEET_COLUMNS: DynamicAttributeColumn[] = [
  */
 export const ROCK_PERSON_FIELD_TYPE_ID = 18;
 
+/** Shared row-lineage key used to match rows across sibling runsheets. Never rendered as a grid column. */
+export const SIBLINGKEY_ATTRIBUTE_KEY = 'SIBLINGKEY';
+
+/** Attribute keys that exist in Rock but are never rendered as a dynamic grid column. */
+export const HIDDEN_ATTRIBUTE_KEYS = ['DURATION', 'SONGITEMID', SIBLINGKEY_ATTRIBUTE_KEY];
+
 /** Keys that hold a person's name even when the Rock field type is plain text. */
 const PERSON_KEY_FRAGMENTS = ['PLATFORM', 'ANCHOR', 'PREACHER'];
 

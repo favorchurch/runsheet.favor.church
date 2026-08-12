@@ -3,7 +3,7 @@
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
-import { isPersonColumn } from '@/constants/runsheetColumns';
+import { isPersonColumn, HIDDEN_ATTRIBUTE_KEYS } from '@/constants/runsheetColumns';
 import { canAccessRunsheetChannel } from '@/lib/runsheetCampus';
 
 /** Rock's `ContentChannelItem` entity type, used to find item attributes. */
@@ -187,10 +187,10 @@ export async function rockGetRunsheetDetails(channelId: number) {
       true,
     )) as any[];
 
-    // DURATION drives the dedicated Start/End/Duration columns, and SONGITEMID
-    // is an internal reference to the linked Song — neither is its own text cell.
+    // DURATION drives the dedicated Start/End/Duration columns, SONGITEMID
+    // is an internal reference to the linked Song, and SIBLINGKEY is the shared row key.
     const columns: DynamicAttributeColumn[] = (rawAttrs || [])
-      .filter((attr) => attr.Key !== 'DURATION' && attr.Key !== 'SONGITEMID')
+      .filter((attr) => !HIDDEN_ATTRIBUTE_KEYS.includes(attr.Key))
       .map((attr) => ({
         id: attr.Id,
         key: attr.Key,
