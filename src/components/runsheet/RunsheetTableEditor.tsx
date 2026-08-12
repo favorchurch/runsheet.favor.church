@@ -2,6 +2,7 @@
 
 import type { Editor } from '@tiptap/react';
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiTableCells, HiTrash } from 'react-icons/hi2';
 
 import { htmlToPlainText } from '@/lib/richText';
@@ -200,6 +201,10 @@ export function RunsheetTableEditor({
   useEffect(() => {
     setSubtitle(initialSubtitle || 'Sunday Service');
   }, [initialSubtitle]);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const [editingCardIndex, setEditingCardIndex] = useState<number | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -837,11 +842,12 @@ export function RunsheetTableEditor({
     value: string,
     isPersonField = false,
     songItemId: number | null = null,
+    forceEdit = false,
   ) => {
     const isActivityTitleColumn = key === 'title';
     const musicCellId = String(rowId);
     const isMusicCell = isActivityTitleColumn && !!musicCellMap[musicCellId];
-    const isEditing = !readOnly && editingCell?.itemId === rowId && editingCell?.key === key;
+    const isEditing = !readOnly && (forceEdit || (editingCell?.itemId === rowId && editingCell?.key === key));
 
     if (isEditing) {
       if (isMusicCell) {
@@ -853,7 +859,7 @@ export function RunsheetTableEditor({
               onSelectSong={(formattedSong, selectedSongId) =>
                 handleSelectSong(rowId, formattedSong, selectedSongId)
               }
-              onClose={() => closeCell(rowId, key)}
+              onClose={() => !forceEdit && closeCell(rowId, key)}
             />
           </div>
         );
@@ -864,7 +870,7 @@ export function RunsheetTableEditor({
           <PeopleSearchDropdown
             initialValue={value ?? ''}
             onSelectPerson={(selectedName) => handleAttrValueChange(rowId, key, selectedName)}
-            onClose={() => closeCell(rowId, key)}
+            onClose={() => !forceEdit && closeCell(rowId, key)}
           />
         );
       }
@@ -873,7 +879,7 @@ export function RunsheetTableEditor({
         <RichTextCell
           value={value ?? ''}
           onChange={(html) => handleAttrValueChange(rowId, key, html)}
-          onCommit={() => closeCell(rowId, key)}
+          onCommit={() => !forceEdit && closeCell(rowId, key)}
           onEditorChange={setActiveEditor}
         />
       );
@@ -980,7 +986,7 @@ export function RunsheetTableEditor({
   }
 
   return (
-    <div className="flex w-full flex-col gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+    <div className="flex w-full max-w-full min-w-0 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4 overflow-x-hidden">
       {/* Sticky Locked Header & Toolbar Container */}
       <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-300 p-2 sm:p-2.5 shadow-sm space-y-1.5 rounded-t-xl -mx-2.5 -mt-2.5 sm:-mx-4 sm:-mt-4">
         <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
@@ -1398,7 +1404,7 @@ export function RunsheetTableEditor({
       />
 
       {/* Spreadsheet Table View */}
-      <div className={`w-full flex flex-col gap-1.5 ${mobileViewMode === 'cards' ? 'hidden' : 'block'}`}>
+      <div className={`w-full max-w-full min-w-0 flex flex-col gap-1.5 ${mobileViewMode === 'cards' ? 'hidden' : 'block'}`}>
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-extrabold uppercase tracking-wider text-white shadow-xs">
@@ -1411,7 +1417,7 @@ export function RunsheetTableEditor({
           </div>
         </div>
 
-        <div className="w-full rounded-xl border border-slate-300 bg-white shadow-xs">
+        <div className="w-full max-w-full overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-xs">
           <table className="w-full min-w-full border-collapse bg-white text-[11px] text-slate-900" style={{ tableLayout: 'fixed' }}>
             <thead className="sticky top-0 z-30 bg-slate-900 text-white shadow-xs">
               <tr className="border-b-2 border-slate-950 text-left font-semibold text-white text-xs tracking-normal">
@@ -1678,11 +1684,11 @@ export function RunsheetTableEditor({
       )}
 
       {/* Single Card Focus Edit Screen View (Isolated Card Focus) */}
-      {editingCardIndex !== null && processedRows[editingCardIndex] && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 p-3 sm:p-6 flex flex-col items-center justify-start">
-          <div className="w-full max-w-xl rounded-2xl bg-white p-4 sm:p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 my-auto">
+      {mounted && editingCardIndex !== null && processedRows[editingCardIndex] && createPortal(
+        <div className="fixed inset-0 z-[9999] overflow-y-auto bg-slate-900/70 p-3 sm:p-6 flex flex-col items-center justify-center backdrop-blur-xs touch-auto">
+          <div className="relative w-full max-w-xl rounded-2xl bg-white p-4 sm:p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 my-auto max-h-[90vh]">
             {/* Header with Save Card Button */}
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3 shrink-0">
               <div>
                 <h3 className="text-base font-bold text-slate-900">Edit Card #{editingCardIndex + 1}</h3>
                 <span className="font-mono text-xs font-semibold text-blue-700">
@@ -1694,22 +1700,53 @@ export function RunsheetTableEditor({
                 <button
                   type="button"
                   onClick={() => setEditingCardIndex(null)}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer touch-manipulation"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={() => handleSaveCard(editingCardIndex)}
-                  className="rounded-lg bg-pink-700 px-4 py-1.5 text-xs font-bold text-white hover:bg-pink-800 cursor-pointer shadow-xs"
+                  className="rounded-lg bg-pink-700 px-4 py-1.5 text-xs font-bold text-white hover:bg-pink-800 cursor-pointer shadow-xs touch-manipulation"
                 >
                   Save Card
                 </button>
               </div>
             </div>
 
-            {/* Form showing all possible things to edit for this card */}
-            <div className="flex flex-col gap-3.5 text-xs max-h-[60vh] overflow-y-auto pr-1">
+            {/* Form showing all interactive fields to edit for this card */}
+            <div className="flex flex-col gap-3.5 text-xs overflow-y-auto pr-1 flex-1">
+              {/* Segment Duration */}
+              <div className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                <label className="font-bold text-slate-700 text-xs uppercase tracking-wider text-[10px]">
+                  Segment Duration (Minutes)
+                </label>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    disabled={readOnly}
+                    value={processedRows[editingCardIndex].duration || 0}
+                    onChange={(e) => {
+                      const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                      const targetId = processedRows[editingCardIndex].id;
+                      setItems((previous) => {
+                        const updated = [...previous];
+                        const idx = updated.findIndex((it) => it.id === targetId);
+                        if (idx !== -1) {
+                          updated[idx] = { ...updated[idx], duration: val };
+                        }
+                        return updated;
+                      });
+                      setIsDirty(true);
+                    }}
+                    className="w-24 rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-900 focus:border-slate-800 focus:outline-none"
+                  />
+                  <span className="text-xs font-semibold text-slate-500">minutes</span>
+                </div>
+              </div>
+
               {/* Activity Title & Music Toggle */}
               <div className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
                 <div className="flex items-center justify-between mb-1">
@@ -1731,7 +1768,7 @@ export function RunsheetTableEditor({
                       });
                       setIsDirty(true);
                     }}
-                    className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer ${
+                    className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold transition-colors cursor-pointer touch-manipulation ${
                       musicCellMap[String(processedRows[editingCardIndex].id)]
                         ? 'bg-slate-900 text-white font-bold'
                         : 'bg-slate-200 text-slate-700 hover:bg-slate-300 hover:text-slate-900'
@@ -1741,13 +1778,27 @@ export function RunsheetTableEditor({
                     {musicCellMap[String(processedRows[editingCardIndex].id)] ? 'Music Segment' : 'Mark Music'}
                   </button>
                 </div>
-                <div className="bg-white rounded border border-slate-300 p-1">
-                  {renderCellContent(
-                    processedRows[editingCardIndex].id,
-                    'title',
-                    processedRows[editingCardIndex].attributeValues?.ACTIVITYTITLE || processedRows[editingCardIndex].title || '',
-                    false,
-                    processedRows[editingCardIndex].songItemId ?? null
+                <div className="mt-0.5">
+                  {musicCellMap[String(processedRows[editingCardIndex].id)] ? (
+                    <SongSearchDropdown
+                      initialValue={processedRows[editingCardIndex].attributeValues?.ACTIVITYTITLE || processedRows[editingCardIndex].title || ''}
+                      initialSongItemId={processedRows[editingCardIndex].songItemId ?? null}
+                      onSelectSong={(formattedSong, selectedSongId) =>
+                        handleSelectSong(processedRows[editingCardIndex].id, formattedSong, selectedSongId)
+                      }
+                      onClose={() => {}}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      disabled={readOnly}
+                      value={htmlToPlainText(processedRows[editingCardIndex].attributeValues?.ACTIVITYTITLE || processedRows[editingCardIndex].title || '')}
+                      onChange={(e) => {
+                        handleAttrValueChange(processedRows[editingCardIndex].id, 'title', e.target.value);
+                      }}
+                      placeholder="Enter activity title..."
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 focus:border-slate-800 focus:ring-2 focus:ring-slate-800 focus:outline-none"
+                    />
                   )}
                 </div>
               </div>
@@ -1755,11 +1806,32 @@ export function RunsheetTableEditor({
               {/* All Dynamic Attribute Fields (Person columns sorted topmost) */}
               {sortedAttrCols.map((col) => {
                 const val = readRunsheetCellValue(processedRows[editingCardIndex], col.key);
+                const isPerson = isPersonColumn(col);
+
                 return (
-                  <div key={col.id} className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-white p-3">
+                  <div key={col.id} className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
                     <label className="font-bold text-slate-700 text-xs uppercase tracking-wider text-[10px]">{col.name}</label>
-                    <div className="bg-slate-50/80 rounded border border-slate-200 p-1">
-                      {renderCellContent(processedRows[editingCardIndex].id, col.key, val, isPersonColumn(col))}
+                    <div className="mt-0.5">
+                      {isPerson ? (
+                        <PeopleSearchDropdown
+                          initialValue={val}
+                          onSelectPerson={(selectedName) =>
+                            handleAttrValueChange(processedRows[editingCardIndex].id, col.key, selectedName)
+                          }
+                          onClose={() => {}}
+                        />
+                      ) : (
+                        <textarea
+                          rows={2}
+                          disabled={readOnly}
+                          value={htmlToPlainText(val)}
+                          onChange={(e) => {
+                            handleAttrValueChange(processedRows[editingCardIndex].id, col.key, e.target.value);
+                          }}
+                          placeholder={`Enter ${col.name.toLowerCase()}...`}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 focus:border-slate-800 focus:ring-2 focus:ring-slate-800 focus:outline-none resize-y min-h-[60px]"
+                        />
+                      )}
                     </div>
                   </div>
                 );
@@ -1767,14 +1839,14 @@ export function RunsheetTableEditor({
             </div>
 
             {/* Footer Action Bar */}
-            <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-3">
+            <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-3 shrink-0">
               <button
                 type="button"
                 onClick={() => {
                   handleDeleteRow(processedRows[editingCardIndex].id);
                   setEditingCardIndex(null);
                 }}
-                className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-100 cursor-pointer"
+                className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-100 cursor-pointer touch-manipulation"
               >
                 <HiTrash className="h-4 w-4 text-rose-600" />
                 <span>Delete Segment</span>
@@ -1784,21 +1856,22 @@ export function RunsheetTableEditor({
                 <button
                   type="button"
                   onClick={() => setEditingCardIndex(null)}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer touch-manipulation"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={() => handleSaveCard(editingCardIndex)}
-                  className="rounded-lg bg-pink-700 px-4 py-1.5 text-xs font-bold text-white hover:bg-pink-800 cursor-pointer shadow-xs"
+                  className="rounded-lg bg-pink-700 px-4 py-1.5 text-xs font-bold text-white hover:bg-pink-800 cursor-pointer shadow-xs touch-manipulation"
                 >
                   Save Card
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
