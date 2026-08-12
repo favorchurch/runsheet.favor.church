@@ -35,7 +35,18 @@ import { rockGetScheduleOptions, ScheduleOption } from '@/server-actions/rockGet
 import { rockDuplicateServiceRunsheet } from '@/server-actions/rockDuplicateServiceRunsheet';
 import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetDetails } from '@/types/Runsheet';
 import { cleanSongTitle } from '@/lib/songUtils';
-import { PeopleSearchDropdown, parsePeopleString } from './PeopleSearchDropdown';
+import { resolveSiblings, type SiblingChannel } from '@/lib/runsheetSiblings';
+import { matchRows, type MatchResult } from '@/lib/runsheetMatch';
+import { buildPropagationPlan, type PropagationPlan, type CandidateCellChange } from '@/lib/runsheetPropagate';
+import { executePropagationPlan, type PropagationOutcome } from '@/lib/runsheetPropagateExecute';
+import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
+import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDetailsBatch';
+import { PropagateReviewPanel } from './PropagateReviewPanel';
+
+function extractChannelDateLabel(name: string): string {
+  const parts = name.split('//');
+  return parts.length >= 2 ? parts[1].trim() : '';
+}
 import { generateRunsheetTitle } from './CreateRunsheetForm';
 import { CELL_ATTRIBUTE, RichTextCell } from './RichTextCell';
 import { RichTextContent } from './RichTextContent';
@@ -232,6 +243,15 @@ export function RunsheetTableEditor({
   }, []);
 
   const baselineRef = React.useRef<Map<number | string, RowFingerprint>>(new Map());
+
+  const [propagateSiblings, setPropagateSiblings] = useState<SiblingChannel[]>([]);
+  const [propagateCandidates, setPropagateCandidates] = useState<CandidateCellChange[]>([]);
+  const [propagateBarDismissed, setPropagateBarDismissed] = useState(false);
+  const [propagatePlan, setPropagatePlan] = useState<PropagationPlan | null>(null);
+  const [propagateReviewOpen, setPropagateReviewOpen] = useState(false);
+  const [propagateApplying, setPropagateApplying] = useState(false);
+  const [propagateOutcomes, setPropagateOutcomes] = useState<PropagationOutcome[] | undefined>(undefined);
+  const [propagateTargetRows, setPropagateTargetRows] = useState<Map<number, RunsheetItemRow[]>>(new Map());
 
   // Populate initial baseline for loaded items that exist in Rock
   useEffect(() => {
@@ -934,6 +954,39 @@ export function RunsheetTableEditor({
       setStatus({ type: 'success', message: 'Favor Runsheet successfully saved to Rock RMS!' });
       setIsDirty(false);
       setDeletedIds([]);
+
+      // Check for propagatable changes to trigger sibling propagation bar
+      const candidates: CandidateCellChange[] = [];
+      for (const item of itemsToSave) {
+        if (typeof item.id === 'string' || item.isNew) continue;
+        const baseline = baselineRef.current.get(item.id);
+        if (!baseline) continue;
+        for (const key of item.changedKeys || []) {
+          if (key === 'title' || key === 'order' || key === 'startDateTime' || key === 'duration' || key === 'songItemId') continue;
+          const column = columns.find((c) => c.key === key);
+          if (column && isPersonColumn(column)) continue;
+          candidates.push({
+            itemTitle: item.attributeValues?.ACTIVITYTITLE || item.title,
+            columnKey: key,
+            columnName: column?.name || key,
+            newValue: item.attributeValues?.[key] ?? '',
+            previousValue: baseline.attributeValues?.[key] ?? '',
+          });
+        }
+      }
+
+      if (candidates.length > 0) {
+        const channelsRes = await rockGetAvailableRunsheetChannels(false);
+        if (channelsRes.success) {
+          const siblings = resolveSiblings(channelId, initialName, channelsRes.channels);
+          if (siblings.length > 0) {
+            setPropagateSiblings(siblings);
+            setPropagateCandidates(candidates);
+            setPropagateBarDismissed(false);
+          }
+        }
+      }
+
       return true;
     } else {
       // Partial or total failure: advance baseline only for succeeded items
@@ -972,6 +1025,56 @@ export function RunsheetTableEditor({
   useEffect(() => {
     onSaveRef?.(handleSave);
   }, [onSaveRef, handleSave]);
+
+  const handleOpenPropagateReview = React.useCallback(async () => {
+    const batch = await rockGetRunsheetDetailsBatch(propagateSiblings.map((s) => s.channelId));
+    const targetRowsMap = new Map<number, RunsheetItemRow[]>();
+    const matchResultsByChannel = new Map<number, MatchResult>();
+
+    for (const result of batch) {
+      if (!result.success || !result.data) continue;
+      targetRowsMap.set(result.channelId, result.data.items);
+      matchResultsByChannel.set(result.channelId, matchRows(processedRows, result.channelId, result.data.items));
+    }
+
+    setPropagateTargetRows(targetRowsMap);
+    const plan = buildPropagationPlan(propagateCandidates, matchResultsByChannel, propagateSiblings, columns);
+    setPropagatePlan(plan);
+    setPropagateReviewOpen(true);
+  }, [propagateSiblings, propagateCandidates, processedRows, columns]);
+
+  const handlePropagateOverwrite = React.useCallback((targetChannelId: number, itemTitle: string, columnKey: string) => {
+    setPropagatePlan((prev) => {
+      if (!prev) return prev;
+      return {
+        targets: prev.targets.map((t) =>
+          t.channel.channelId !== targetChannelId
+            ? t
+            : {
+                ...t,
+                changes: t.changes.map((c) =>
+                  c.itemTitle === itemTitle && c.columnKey === columnKey ? { ...c, selected: true } : c,
+                ),
+              },
+        ),
+      };
+    });
+  }, []);
+
+  const handlePropagateApply = React.useCallback(async () => {
+    if (!propagatePlan) return;
+    setPropagateApplying(true);
+    try {
+      const outcomes = await executePropagationPlan(propagatePlan, propagateTargetRows, columns);
+      setPropagateOutcomes(outcomes);
+      if (outcomes.every((o) => o.ok)) {
+        setPropagateReviewOpen(false);
+        setPropagateBarDismissed(true);
+      }
+    } finally {
+      setPropagateApplying(false);
+    }
+  }, [propagatePlan, propagateTargetRows, columns]);
 
   // The template auto-fill above only sets local (dirty) state — without
   // this, a freshly created runsheet's template exists only in the browser
@@ -1549,6 +1652,42 @@ export function RunsheetTableEditor({
           <HiExclamationCircle className="h-4 w-4 shrink-0" />
           <span>{status.message}</span>
         </div>
+      )}
+
+      {propagateCandidates.length > 0 && !propagateBarDismissed && !propagateReviewOpen && (
+        <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs font-semibold text-blue-900 shadow-xs">
+          <span>
+            {propagateSiblings.length} other {extractChannelDateLabel(channelName)} service
+            {propagateSiblings.length === 1 ? '' : 's'} — apply your {propagateCandidates.length} change
+            {propagateCandidates.length === 1 ? '' : 's'}?
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleOpenPropagateReview}
+              className="rounded-md bg-blue-600 px-3 py-1 text-xs font-bold text-white hover:bg-blue-700 cursor-pointer shadow-2xs"
+            >
+              Review
+            </button>
+            <button
+              type="button"
+              onClick={() => setPropagateBarDismissed(true)}
+              className="rounded-md border border-blue-300 bg-white px-3 py-1 text-xs font-medium text-blue-800 hover:bg-blue-100 cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {propagateReviewOpen && propagatePlan && (
+        <PropagateReviewPanel
+          plan={propagatePlan}
+          onOverwrite={handlePropagateOverwrite}
+          onApply={handlePropagateApply}
+          applying={propagateApplying}
+          outcomes={propagateOutcomes}
+        />
       )}
 
       {/* Event Team Roster Card */}
