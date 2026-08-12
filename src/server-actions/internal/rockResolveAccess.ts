@@ -250,8 +250,7 @@ export async function rockResolveAccess(personId: number, fallbackEmail?: string
       if (groupId === ROCK_ADMINISTRATION_GROUP_ID) canEdit = true;
       if (groupId === GLOBAL_STAFF_GROUP_ID) canEdit = true;
       if (typeId === 28) canEdit = true;
-      if (roleId === 20) canEdit = true;
-      if (roleId === 55 && (groupId === 19095 || groupId === 19109)) canEdit = true;
+      if ((roleId === 55 || roleId === 20) && groupId === 19109) canEdit = true;
 
       // View conditions
       if (typeId === 23) canView = true;
