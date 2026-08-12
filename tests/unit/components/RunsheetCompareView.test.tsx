@@ -83,7 +83,7 @@ describe('RunsheetCompareView', () => {
       },
     ]);
     render(<RunsheetCompareView channelIds={[1]} onClose={jest.fn()} />);
-    await waitFor(() => expect(screen.getByText('9AM')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument());
     expect(screen.queryByText('Jane Doe')).not.toBeInTheDocument();
   });
 });

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { HiArrowsRightLeft, HiPencilSquare, HiXMark } from 'react-icons/hi2';
+import { HiArrowsRightLeft, HiExclamationTriangle, HiPencilSquare, HiXMark } from 'react-icons/hi2';
 import { isPersonColumn } from '@/constants/runsheetColumns';
 import { htmlToPlainText, legacyValueToHtml } from '@/lib/richText';
 import { sanitizeRichText } from '@/lib/sanitizeRichText';
@@ -46,11 +46,11 @@ function RenderRichCell({ value }: { value: string }) {
   const html = legacyValueToHtml(value);
   const clean = sanitizeRichText(html);
   if (clean === null) {
-    return <span className="text-slate-800 font-medium">{htmlToPlainText(value)}</span>;
+    return <span className="text-slate-800 font-medium whitespace-pre-wrap">{htmlToPlainText(value)}</span>;
   }
   return (
     <div
-      className="prose prose-xs max-w-none text-slate-800 line-clamp-3 leading-snug [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0"
+      className="prose prose-xs max-w-none text-slate-800 leading-snug [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0"
       dangerouslySetInnerHTML={{ __html: clean }}
     />
   );
@@ -293,22 +293,44 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
     }
   };
 
-  const matrixRows = useMemo(() => {
-    const list: { title: string; col: DynamicAttributeColumn; values: (string | null)[]; differs: boolean }[] = [];
+  // Group comparison data by segment row (title)
+  const segmentRows = useMemo(() => {
+    const result: {
+      title: string;
+      columns: {
+        col: DynamicAttributeColumn;
+        values: (string | null)[];
+        differs: boolean;
+      }[];
+      hasDifferences: boolean;
+    }[] = [];
 
     for (const title of rowTitles) {
+      const columnsInSegment: { col: DynamicAttributeColumn; values: (string | null)[]; differs: boolean }[] = [];
+      let segmentDiffers = false;
+
       for (const col of allColumns) {
         const values = sheets.map((s) => cellValue(s, title, col.key));
         const nonNulls = values.filter((v): v is string => v !== null);
         const distinct = new Set(nonNulls.map((v) => htmlToPlainText(v).trim()));
         const differs = distinct.size > 1;
 
-        if (showDifferencesOnly && !differs) continue;
+        if (differs) segmentDiffers = true;
+        if (!showDifferencesOnly || differs) {
+          columnsInSegment.push({ col, values, differs });
+        }
+      }
 
-        list.push({ title, col, values, differs });
+      if (columnsInSegment.length > 0) {
+        result.push({
+          title,
+          columns: columnsInSegment,
+          hasDifferences: segmentDiffers,
+        });
       }
     }
-    return list;
+
+    return result;
   }, [rowTitles, allColumns, sheets, showDifferencesOnly, cellValue]);
 
   if (loading) {
@@ -330,9 +352,9 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
           <div className="flex items-center gap-2.5">
             <HiArrowsRightLeft className="h-5 w-5 text-blue-400" />
             <div>
-              <h2 className="text-base sm:text-lg font-bold leading-tight">Runsheet Compare Matrix</h2>
+              <h2 className="text-base sm:text-lg font-bold leading-tight">Per-Segment Runsheet Comparison</h2>
               <p className="text-xs text-slate-400 hidden sm:block">
-                Side-by-side WYSIWYG comparison & inline editing across {sheets.length} sibling services
+                Side-by-side WYSIWYG per-segment row comparison & inline editing across {sheets.length} sibling services
               </p>
             </div>
           </div>
@@ -340,7 +362,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
             type="button"
             onClick={onClose}
             className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
-            title="Close Compare Matrix"
+            title="Close Compare View"
           >
             <HiXMark className="h-5 w-5" />
           </button>
@@ -386,139 +408,156 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
           </div>
         </div>
 
-        {/* WYSIWYG Compare Matrix Grid */}
-        <div className="flex-1 overflow-auto bg-slate-100/50 p-3 sm:p-4">
-          <div className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
-            <table className="w-full border-collapse text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-300 bg-slate-900 text-white">
-                  <th className="sticky top-0 z-20 w-48 sm:w-64 border-r border-slate-700 bg-slate-900 p-2.5 sm:p-3 font-semibold text-slate-200">
-                    Segment & Column
-                  </th>
-                  {sheets.map((sheet) => (
-                    <th
-                      key={sheet.channelId}
-                      className="sticky top-0 z-20 min-w-[220px] border-r border-slate-700 bg-slate-900 p-2.5 sm:p-3 font-semibold text-white last:border-r-0"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-sm font-bold text-blue-400">{sheet.time}</span>
-                        <span className="text-[10px] text-slate-400 font-normal truncate max-w-[120px]">
-                          {sheet.name.split('//')[0]?.trim()}
-                        </span>
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 bg-white">
-                {matrixRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={sheets.length + 1} className="p-8 text-center text-slate-500">
-                      {showDifferencesOnly
-                        ? '✨ All compared attributes match perfectly across these services!'
-                        : 'No attributes available to display.'}
-                    </td>
-                  </tr>
-                ) : (
-                  matrixRows.map(({ title, col, values, differs }, idx) => (
-                    <tr
-                      key={`${title}::${col.key}`}
-                      className={`transition-colors ${
-                        differs
-                          ? 'bg-amber-50/40 hover:bg-amber-50/70'
-                          : idx % 2 === 0
-                          ? 'bg-white hover:bg-slate-50'
-                          : 'bg-slate-50/50 hover:bg-slate-100/60'
-                      }`}
-                    >
-                      {/* Left Header Column */}
-                      <td className="border-r border-slate-300 p-2.5 font-medium text-slate-900 bg-slate-50/80">
-                        <div className="font-bold text-slate-900">{title}</div>
-                        <div className="text-[11px] font-medium text-slate-500">{col.name}</div>
-                      </td>
+        {/* Per-Segment WYSIWYG Row Comparison List */}
+        <div className="flex-1 overflow-auto bg-slate-100/60 p-3 sm:p-5 space-y-4">
+          {segmentRows.length === 0 ? (
+            <div className="rounded-xl border border-slate-300 bg-white p-12 text-center text-slate-500 shadow-sm">
+              {showDifferencesOnly
+                ? '✨ All segments and attributes match perfectly across these services!'
+                : 'No segment data available to compare.'}
+            </div>
+          ) : (
+            segmentRows.map((segment) => (
+              <div
+                key={segment.title}
+                className={`overflow-hidden rounded-xl border bg-white shadow-sm transition-all ${
+                  segment.hasDifferences ? 'border-amber-300 ring-1 ring-amber-200/60' : 'border-slate-200'
+                }`}
+              >
+                {/* Segment Header Bar */}
+                <div
+                  className={`flex items-center justify-between px-4 py-2.5 border-b font-bold text-xs ${
+                    segment.hasDifferences ? 'bg-amber-100/70 border-amber-200 text-amber-950' : 'bg-slate-800 border-slate-700 text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">{segment.title}</span>
+                    {segment.hasDifferences && (
+                      <span className="inline-flex items-center gap-1 rounded bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                        <HiExclamationTriangle className="h-3 w-3 text-amber-700" /> Differing Attributes
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[11px] font-normal opacity-80">{segment.columns.length} columns</span>
+                </div>
 
-                      {/* Service Values Columns */}
-                      {sheets.map((sheet, i) => {
-                        const val = values[i];
-                        const isMissing = val === null;
-                        const isEditingThisCell =
-                          editingCell?.channelId === sheet.channelId &&
-                          editingCell?.itemTitle === title &&
-                          editingCell?.columnKey === col.key;
-                        const isCellDirty = dirtyEdits.get(sheet.channelId)?.get(title)?.has(col.key);
-
-                        return (
-                          <td
-                            key={sheet.channelId}
-                            className={`group relative border-r border-slate-200 p-2.5 align-top last:border-r-0 ${
-                              differs ? 'border-amber-200/80' : ''
-                            } ${isCellDirty ? 'bg-pink-50/80 ring-1 ring-pink-300 inset-0' : ''}`}
-                          >
-                            {isMissing ? (
-                              <div className="text-slate-300 italic text-[11px]">— segment absent —</div>
-                            ) : isEditingThisCell ? (
-                              <div className="flex flex-col gap-1.5">
-                                <textarea
-                                  value={editDraft}
-                                  onChange={(e) => setEditDraft(e.target.value)}
-                                  className="w-full rounded border border-blue-500 bg-white p-1.5 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[60px]"
-                                  autoFocus
-                                />
-                                <div className="flex items-center justify-end gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingCell(null)}
-                                    className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={handleSaveEditCell}
-                                    className="rounded bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-blue-700 cursor-pointer"
-                                  >
-                                    Done
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="flex flex-col justify-between gap-1.5 h-full min-h-[42px]">
-                                <RenderRichCell value={val} />
-
-                                <div className="mt-1 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleStartEditCell(sheet.channelId, title, col.key, val)}
-                                    className="inline-flex items-center gap-0.5 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 cursor-pointer"
-                                    title="Edit this cell in-place"
-                                  >
-                                    <HiPencilSquare className="h-3 w-3 text-slate-500" />
-                                    <span>Edit</span>
-                                  </button>
-
-                                  {differs && (
-                                    <button
-                                      type="button"
-                                      aria-label={`Push ${title} ${col.name} from ${sheet.time}`}
-                                      onClick={() => handlePush(sheet, title, col.key, col.name, val)}
-                                      className="inline-flex items-center gap-1 rounded border border-blue-600 bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs hover:bg-blue-700 cursor-pointer active:scale-95 transition-all"
-                                      title="Push this exact value to all sibling service runsheets"
-                                    >
-                                      <span>⤳ Push to others</span>
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            )}
+                {/* Service Columns Comparison Table within Segment */}
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-xs text-left">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-slate-700 font-semibold text-[11px]">
+                        <th className="w-36 sm:w-44 border-r border-slate-200 p-2.5 bg-slate-100/80 text-slate-900">
+                          Attribute
+                        </th>
+                        {sheets.map((sheet) => (
+                          <th key={sheet.channelId} className="min-w-[200px] border-r border-slate-200 p-2.5 last:border-r-0">
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-xs font-bold text-slate-900">{sheet.time}</span>
+                              <span className="text-[10px] text-slate-500 font-normal truncate max-w-[110px]">
+                                {sheet.name.split('//')[0]?.trim()}
+                              </span>
+                            </div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 bg-white">
+                      {segment.columns.map(({ col, values, differs }) => (
+                        <tr
+                          key={`${segment.title}::${col.key}`}
+                          className={`transition-colors ${
+                            differs ? 'bg-amber-50/50 hover:bg-amber-50/80' : 'hover:bg-slate-50/80'
+                          }`}
+                        >
+                          {/* Attribute Name Column */}
+                          <td className="border-r border-slate-200 p-2.5 font-semibold text-slate-700 bg-slate-50/60 align-top">
+                            {col.name}
                           </td>
-                        );
-                      })}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+
+                          {/* Service Value Cells */}
+                          {sheets.map((sheet, i) => {
+                            const val = values[i];
+                            const isMissing = val === null;
+                            const isEditingThisCell =
+                              editingCell?.channelId === sheet.channelId &&
+                              editingCell?.itemTitle === segment.title &&
+                              editingCell?.columnKey === col.key;
+                            const isCellDirty = dirtyEdits.get(sheet.channelId)?.get(segment.title)?.has(col.key);
+
+                            return (
+                              <td
+                                key={sheet.channelId}
+                                className={`group relative border-r border-slate-200 p-2.5 align-top last:border-r-0 ${
+                                  differs ? 'border-amber-200/80' : ''
+                                } ${isCellDirty ? 'bg-pink-50/80 ring-1 ring-pink-300 inset-0' : ''}`}
+                              >
+                                {isMissing ? (
+                                  <div className="text-slate-300 italic text-[11px]">— segment absent —</div>
+                                ) : isEditingThisCell ? (
+                                  <div className="flex flex-col gap-1.5">
+                                    <textarea
+                                      value={editDraft}
+                                      onChange={(e) => setEditDraft(e.target.value)}
+                                      className="w-full rounded border border-blue-500 bg-white p-1.5 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[60px]"
+                                      autoFocus
+                                    />
+                                    <div className="flex items-center justify-end gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingCell(null)}
+                                        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={handleSaveEditCell}
+                                        className="rounded bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-blue-700 cursor-pointer"
+                                      >
+                                        Done
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col justify-between gap-1.5 h-full min-h-[38px]">
+                                    <RenderRichCell value={val} />
+
+                                    <div className="mt-1 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartEditCell(sheet.channelId, segment.title, col.key, val)}
+                                        className="inline-flex items-center gap-0.5 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 cursor-pointer"
+                                        title="Edit this cell in-place"
+                                      >
+                                        <HiPencilSquare className="h-3 w-3 text-slate-500" />
+                                        <span>Edit</span>
+                                      </button>
+
+                                      {differs && (
+                                        <button
+                                          type="button"
+                                          aria-label={`Push ${segment.title} ${col.name} from ${sheet.time}`}
+                                          onClick={() => handlePush(sheet, segment.title, col.key, col.name, val)}
+                                          className="inline-flex items-center gap-1 rounded border border-blue-600 bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs hover:bg-blue-700 cursor-pointer active:scale-95 transition-all"
+                                          title="Push this exact value to all sibling service runsheets"
+                                        >
+                                          <span>⤳ Push to others</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
