@@ -33,12 +33,26 @@ export interface RunsheetItemRow {
   detail?: string;
   /** Rock `ContentChannelItem.Id` of the linked Song, when the title cell is a music cell. */
   songItemId?: number | null;
+  changedKeys?: string[];
   anchorPreacher?: string;
   mainInstrument?: string;
   ledLiveScreens?: string;
   overlayBroadcast?: string;
   lighting?: string;
   audio?: string;
+}
+
+export interface ItemResult {
+  clientId: number | string;
+  rockId?: number;
+  ok: boolean;
+  error?: string;
+}
+
+export interface BulkSaveResult {
+  success: boolean;
+  error?: string;
+  results?: ItemResult[];
 }
 
 export interface RunsheetDetails {

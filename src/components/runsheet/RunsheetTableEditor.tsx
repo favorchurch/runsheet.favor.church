@@ -201,6 +201,48 @@ export function RunsheetTableEditor({
   useEffect(() => {
     setSubtitle(initialSubtitle || 'Sunday Service');
   }, [initialSubtitle]);
+
+  /** Baseline fingerprint representing item state as persisted in Rock. */
+  interface RowFingerprint {
+    title: string;
+    order: number;
+    startDateTime?: string;
+    duration: number;
+    songItemId?: number | null;
+    attributeValues: Record<string, string>;
+  }
+
+  const createRowFingerprint = React.useCallback((item: RunsheetItemRow): RowFingerprint => {
+    const richTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
+    const cleanAttrValues: Record<string, string> = {};
+    if (item.attributeValues) {
+      Object.entries(item.attributeValues).forEach(([k, v]) => {
+        cleanAttrValues[k] = v ?? '';
+      });
+    }
+
+    return {
+      title: richTitle,
+      order: item.order,
+      startDateTime: item.startDateTime,
+      duration: item.duration || 0,
+      songItemId: item.songItemId ?? null,
+      attributeValues: cleanAttrValues,
+    };
+  }, []);
+
+  const baselineRef = React.useRef<Map<number | string, RowFingerprint>>(new Map());
+
+  // Populate initial baseline for loaded items that exist in Rock
+  useEffect(() => {
+    const map = new Map<number | string, RowFingerprint>();
+    initialItems.forEach((item) => {
+      if (typeof item.id === 'number' || (!item.isNew && item.id)) {
+        map.set(item.id, createRowFingerprint(item));
+      }
+    });
+    baselineRef.current = map;
+  }, [initialItems, createRowFingerprint]);
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
@@ -764,27 +806,168 @@ export function RunsheetTableEditor({
     }
   };
 
+  const computeDiffPayload = React.useCallback(() => {
+    const runsheetPreparedItems = processedRows.map((row) => ({ ...row, startDateTime: row.calculatedStart }));
+    const rosterPreparedItems = items.filter((item) => item.title && item.title.startsWith('Roster:'));
+    const allPreparedItems = [...runsheetPreparedItems, ...rosterPreparedItems];
+
+    const itemsToSave: RunsheetItemRow[] = [];
+
+    allPreparedItems.forEach((item) => {
+      const isNewItem = typeof item.id === 'string' || item.isNew;
+      if (isNewItem) {
+        // New items are sent in full without changedKeys
+        itemsToSave.push({ ...item });
+        return;
+      }
+
+      const baseline = baselineRef.current.get(item.id);
+      if (!baseline) {
+        // If not in baseline, treat as requiring save
+        itemsToSave.push({ ...item });
+        return;
+      }
+
+      const changedKeys: string[] = [];
+
+      // Check title / ACTIVITYTITLE
+      const richTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
+      if (richTitle !== baseline.title) {
+        changedKeys.push('title');
+        changedKeys.push('ACTIVITYTITLE');
+      }
+
+      // Check order
+      if (item.order !== baseline.order) {
+        changedKeys.push('order');
+      }
+
+      // Check startDateTime
+      if (item.startDateTime !== baseline.startDateTime) {
+        changedKeys.push('startDateTime');
+      }
+
+      // Check duration
+      if ((item.duration || 0) !== baseline.duration) {
+        changedKeys.push('DURATION');
+        changedKeys.push('duration');
+      }
+
+      // Check songItemId
+      if ((item.songItemId ?? null) !== baseline.songItemId) {
+        changedKeys.push('SONGITEMID');
+        changedKeys.push('songItemId');
+      }
+
+      // Check attribute values
+      const currentAttrs = item.attributeValues || {};
+      const baselineAttrs = baseline.attributeValues || {};
+
+      const allKeys = new Set([...Object.keys(currentAttrs), ...Object.keys(baselineAttrs)]);
+      allKeys.forEach((key) => {
+        if (key === 'ACTIVITYTITLE') return;
+        const curVal = currentAttrs[key] ?? '';
+        const baseVal = baselineAttrs[key] ?? '';
+        if (curVal !== baseVal) {
+          if (!changedKeys.includes(key)) {
+            changedKeys.push(key);
+          }
+        }
+      });
+
+      if (changedKeys.length > 0) {
+        itemsToSave.push({ ...item, changedKeys });
+      }
+    });
+
+    return { allPreparedItems, itemsToSave };
+  }, [processedRows, items]);
+
+  // Derived dirty state
+  const computedDirtyState = useMemo(() => {
+    if (initialTemplate) return true;
+    if (deletedIds.length > 0) return true;
+    if (subtitle !== initialSubtitle) return true;
+    const { itemsToSave } = computeDiffPayload();
+    return itemsToSave.length > 0;
+  }, [deletedIds.length, subtitle, initialSubtitle, initialTemplate, computeDiffPayload]);
+
+  useEffect(() => {
+    setIsDirty(computedDirtyState);
+  }, [computedDirtyState]);
+
   const handleSave = React.useCallback(async (): Promise<boolean> => {
     if (readOnly) return false;
     setStatus({ type: 'saving' });
     setEditingCell(null);
 
-    const runsheetPreparedItems = processedRows.map((row) => ({ ...row, startDateTime: row.calculatedStart }));
-    const rosterPreparedItems = items.filter((item) => item.title && item.title.startsWith('Roster:'));
-    const preparedItems = [...runsheetPreparedItems, ...rosterPreparedItems];
+    const { allPreparedItems, itemsToSave } = computeDiffPayload();
 
-    const result = await rockBulkSaveRunsheetItems(channelId, preparedItems, deletedIds, columns, startTime);
+    // If nothing changed, return success early
+    if (itemsToSave.length === 0 && deletedIds.length === 0 && subtitle === initialSubtitle) {
+      setStatus({ type: 'success', message: 'No changes to save.' });
+      setIsDirty(false);
+      return true;
+    }
+
+    const result = await rockBulkSaveRunsheetItems(channelId, itemsToSave, deletedIds, columns, subtitle);
 
     if (result.success) {
+      // Advance baseline for all saved items
+      (result.results || []).forEach((res) => {
+        if (res.ok && res.rockId) {
+          const item = allPreparedItems.find((it) => it.id === res.clientId);
+          if (item) {
+            const updatedItem: RunsheetItemRow = { ...item, id: res.rockId, isNew: false };
+            baselineRef.current.set(res.rockId, createRowFingerprint(updatedItem));
+
+            // If it was a new item with a string id, update local item id state
+            if (typeof res.clientId === 'string') {
+              setItems((prev) =>
+                prev.map((it) => (it.id === res.clientId ? { ...it, id: res.rockId!, isNew: false } : it))
+              );
+            }
+          }
+        }
+      });
+
       setStatus({ type: 'success', message: 'Favor Runsheet successfully saved to Rock RMS!' });
       setIsDirty(false);
       setDeletedIds([]);
       return true;
     } else {
-      setStatus({ type: 'error', message: result.error || 'Failed to save changes.' });
+      // Partial or total failure: advance baseline only for succeeded items
+      let successCount = 0;
+      let failCount = 0;
+
+      (result.results || []).forEach((res) => {
+        if (res.ok && res.rockId) {
+          successCount++;
+          const item = allPreparedItems.find((it) => it.id === res.clientId);
+          if (item) {
+            const updatedItem: RunsheetItemRow = { ...item, id: res.rockId, isNew: false };
+            baselineRef.current.set(res.rockId, createRowFingerprint(updatedItem));
+
+            if (typeof res.clientId === 'string') {
+              setItems((prev) =>
+                prev.map((it) => (it.id === res.clientId ? { ...it, id: res.rockId!, isNew: false } : it))
+              );
+            }
+          }
+        } else if (!res.ok) {
+          failCount++;
+        }
+      });
+
+      const message =
+        failCount > 0
+          ? `Saved ${successCount} of ${itemsToSave.length} segments; ${failCount} failed. Click Save to retry.`
+          : result.error || 'Failed to save changes.';
+
+      setStatus({ type: 'error', message });
       return false;
     }
-  }, [readOnly, processedRows, items, channelId, deletedIds, columns, startTime]);
+  }, [readOnly, computeDiffPayload, deletedIds, subtitle, initialSubtitle, channelId, columns, createRowFingerprint]);
 
   useEffect(() => {
     onSaveRef?.(handleSave);

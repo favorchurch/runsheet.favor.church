@@ -4,7 +4,7 @@ import { readRunsheetCellValue } from '@/constants/runsheetColumns';
 import { htmlToPlainText } from '@/lib/richText';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockDelete, rockGet, rockPatch, rockPost } from '@/server-actions/internal/rockFetch';
-import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
+import type { BulkSaveResult, DynamicAttributeColumn, ItemResult, RunsheetItemRow } from '@/types/Runsheet';
 
 /** Rock's `ContentChannelItem` entity type, used to find item attributes. */
 const CONTENT_CHANNEL_ITEM_ENTITY_TYPE_ID = 208;
@@ -108,12 +108,8 @@ async function saveAttributeValue(
 }
 
 /**
- * Persists a whole runsheet: deletes removed segments, creates or updates the
- * rest, and writes each dynamic attribute value.
- *
- * Text cells hold rich-text HTML. Rock's own `ContentChannelItem.Title` column
- * is written as plain text so Rock's admin screens and search stay readable,
- * while the formatted version lives in the `ACTIVITYTITLE` attribute.
+ * Persists a runsheet: deletes removed segments, creates or updates the
+ * rest, and writes dynamic attribute values. Supports incremental save via `changedKeys`.
  */
 export async function rockBulkSaveRunsheetItems(
   channelId: number,
@@ -121,7 +117,7 @@ export async function rockBulkSaveRunsheetItems(
   deletedItemIds: (number | string)[],
   columns?: DynamicAttributeColumn[],
   subtitle?: string,
-) {
+): Promise<BulkSaveResult> {
   try {
     await getRockSession();
 
@@ -140,7 +136,7 @@ export async function rockBulkSaveRunsheetItems(
 
     // 2. Resolve channel & attribute metadata from Rock
     const channel = await resolveChannel(channelId);
-    const attributeColumns = (columns?.length ? columns : channel.columns).filter(
+    const allAttributeColumns = (columns?.length ? columns : channel.columns).filter(
       (col) => col.id && col.key !== 'DURATION' && col.key !== 'SONGITEMID',
     );
 
@@ -148,25 +144,26 @@ export async function rockBulkSaveRunsheetItems(
       channel.columns.find((col) => col.key === 'DURATION')?.id ?? FALLBACK_DURATION_ATTRIBUTE_ID;
     const songItemIdAttributeId = channel.columns.find((col) => col.key === 'SONGITEMID')?.id;
 
-    const attributeIds = [
-      ...attributeColumns.map((col) => col.id),
-      durationAttributeId,
-      ...(songItemIdAttributeId ? [songItemIdAttributeId] : []),
-    ];
+    // 3. Process all items in parallel with Promise.allSettled to track individual results
+    const itemSettledResults = await Promise.allSettled(
+      items.map(async (item): Promise<ItemResult> => {
+        const isNewItem = typeof item.id === 'string' || item.isNew;
+        const changedKeys = item.changedKeys; // undefined means full write path
 
-    // 3. Process all items in parallel for maximum speed
-    await Promise.all(
-      items.map(async (item) => {
         const richTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
         const plainTitle = htmlToPlainText(richTitle) || 'New Segment';
 
         let itemId: number;
-        const isNewItem = typeof item.id === 'string' || item.isNew;
 
         const validStartDateTime =
           item.startDateTime && (item.startDateTime.includes('T') || item.startDateTime.includes('-'))
             ? new Date(item.startDateTime).toISOString()
             : undefined;
+
+        // Check which fields need to be patched for ContentChannelItem
+        const shouldPatchTitle = !changedKeys || changedKeys.includes('title') || changedKeys.includes('ACTIVITYTITLE');
+        const shouldPatchOrder = !changedKeys || changedKeys.includes('order');
+        const shouldPatchStart = !changedKeys || changedKeys.includes('startDateTime');
 
         if (isNewItem) {
           const postPayload: Record<string, any> = {
@@ -181,32 +178,49 @@ export async function rockBulkSaveRunsheetItems(
           }
 
           const created = await rockPost('/ContentChannelItems', postPayload);
-
           itemId = typeof created === 'number' ? created : created?.Id || created?.id || Number(created);
         } else {
           itemId = Number(item.id);
-          const patchPayload: Record<string, any> = {
-            Title: plainTitle,
-            Order: item.order,
-          };
-          if (validStartDateTime) {
+          const patchPayload: Record<string, any> = {};
+          if (shouldPatchTitle) patchPayload.Title = plainTitle;
+          if (shouldPatchOrder) patchPayload.Order = item.order;
+          if (validStartDateTime && shouldPatchStart) {
             patchPayload.StartDateTime = validStartDateTime;
           }
 
-          await rockPatch(`/ContentChannelItems/${itemId}`, patchPayload);
+          if (Object.keys(patchPayload).length > 0) {
+            await rockPatch(`/ContentChannelItems/${itemId}`, patchPayload);
+          }
         }
 
-        if (!itemId || Number.isNaN(itemId) || itemId <= 0) return;
+        if (!itemId || Number.isNaN(itemId) || itemId <= 0) {
+          return { clientId: item.id, ok: false, error: 'Invalid Item ID returned from Rock' };
+        }
+
+        // Filter attribute columns to write based on changedKeys (if defined)
+        const attributeColumnsToWrite = changedKeys
+          ? allAttributeColumns.filter((col) => changedKeys.includes(col.key))
+          : allAttributeColumns;
+
+        const shouldWriteDuration = !changedKeys || changedKeys.includes('DURATION') || changedKeys.includes('duration');
+        const shouldWriteSongItemId =
+          songItemIdAttributeId && (!changedKeys || changedKeys.includes('SONGITEMID') || changedKeys.includes('songItemId'));
+
+        const targetAttributeIds: number[] = [
+          ...attributeColumnsToWrite.map((col) => col.id),
+          ...(shouldWriteDuration ? [durationAttributeId] : []),
+          ...(shouldWriteSongItemId ? [songItemIdAttributeId] : []),
+        ];
 
         // For brand new items, we know no attribute values exist yet — skip the extra GET query
-        const existingValueIds = isNewItem
+        const existingValueIds = isNewItem || targetAttributeIds.length === 0
           ? new Map<number, number>()
-          : await fetchExistingValueIds(itemId, attributeIds);
+          : await fetchExistingValueIds(itemId, targetAttributeIds);
 
-        // Save all attribute values for this item concurrently
+        // Save target attribute values concurrently
         const savePromises: Promise<void>[] = [];
 
-        for (const col of attributeColumns) {
+        for (const col of attributeColumnsToWrite) {
           const value =
             col.key === 'ACTIVITYTITLE' && item.attributeValues?.ACTIVITYTITLE === undefined
               ? richTitle
@@ -215,26 +229,48 @@ export async function rockBulkSaveRunsheetItems(
           savePromises.push(saveAttributeValue(existingValueIds, col.id, itemId, value));
         }
 
-        savePromises.push(
-          saveAttributeValue(existingValueIds, durationAttributeId, itemId, String(item.duration || 0))
-        );
+        if (shouldWriteDuration) {
+          savePromises.push(
+            saveAttributeValue(existingValueIds, durationAttributeId, itemId, String(item.duration || 0)),
+          );
+        }
 
-        if (songItemIdAttributeId) {
+        if (shouldWriteSongItemId && songItemIdAttributeId) {
           savePromises.push(
             saveAttributeValue(
               existingValueIds,
               songItemIdAttributeId,
               itemId,
               item.songItemId != null ? String(item.songItemId) : '',
-            )
+            ),
           );
         }
 
-        await Promise.all(savePromises);
-      })
+        if (savePromises.length > 0) {
+          await Promise.all(savePromises);
+        }
+
+        return { clientId: item.id, rockId: itemId, ok: true };
+      }),
     );
 
-    return { success: true };
+    const itemResults: ItemResult[] = itemSettledResults.map((res, index) => {
+      if (res.status === 'fulfilled') {
+        return res.value;
+      }
+      return {
+        clientId: items[index].id,
+        ok: false,
+        error: res.reason?.message || 'Failed to save item',
+      };
+    });
+
+    const hasErrors = itemResults.some((r) => !r.ok);
+    return {
+      success: !hasErrors,
+      results: itemResults,
+      ...(hasErrors ? { error: 'Some items failed to save' } : {}),
+    };
   } catch (err: any) {
     console.error('Error bulk-saving runsheet items:', err);
     return { success: false, error: err.message || 'Failed to save changes to Rock' };
