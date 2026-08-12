@@ -208,10 +208,13 @@ export function RunsheetTableEditor({
     // Touch devices (phones, iPads, tablets) get Cards; laptops/desktops with mouse get Table
     return window.matchMedia('(pointer: coarse)').matches ? 'cards' : 'grid';
   });
-  const [subtitle, setSubtitle] = useState<string>(initialSubtitle || 'Sunday Service');
+  /** Displayed/persisted subtitle falls back to this when Rock has none set; the baseline for dirty-checking must use the same fallback or an untouched runsheet reads as dirty. */
+  const normalizedInitialSubtitle = initialSubtitle || 'Sunday Service';
+  const [subtitle, setSubtitle] = useState<string>(normalizedInitialSubtitle);
 
   useEffect(() => {
-    setSubtitle(initialSubtitle || 'Sunday Service');
+    setSubtitle(normalizedInitialSubtitle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSubtitle]);
 
   /** Baseline fingerprint representing item state as persisted in Rock. */
@@ -244,6 +247,13 @@ export function RunsheetTableEditor({
   }, []);
 
   const baselineRef = React.useRef<Map<number | string, RowFingerprint>>(new Map());
+  /**
+   * Bumped whenever `baselineRef.current` is replaced or mutated, since a ref
+   * write alone doesn't trigger a re-render. Without this, `computedDirtyState`
+   * memoizes its very first computation (baseline still empty, before the
+   * populate effect below has run) and every item looks unsaved forever.
+   */
+  const [baselineVersion, setBaselineVersion] = useState(0);
 
   const [propagateSiblings, setPropagateSiblings] = useState<SiblingChannel[]>([]);
   const [propagateCandidates, setPropagateCandidates] = useState<CandidateCellChange[]>([]);
@@ -267,6 +277,7 @@ export function RunsheetTableEditor({
       }
     });
     baselineRef.current = map;
+    setBaselineVersion((v) => v + 1);
   }, [initialItems, createRowFingerprint]);
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -841,6 +852,17 @@ export function RunsheetTableEditor({
     allPreparedItems.forEach((item) => {
       const isNewItem = typeof item.id === 'string' || item.isNew;
       if (isNewItem) {
+        // Auto-injected roster placeholders (e.g. "Roster: Music Director") keep a
+        // stable synthetic id and get a baseline fingerprint on load even though
+        // they're flagged `isNew` — if nothing about them has changed since, they
+        // aren't a real pending save and shouldn't mark the runsheet dirty.
+        const rosterBaseline = baselineRef.current.get(item.id);
+        if (rosterBaseline) {
+          const fingerprint = createRowFingerprint(item);
+          if (JSON.stringify(fingerprint) === JSON.stringify(rosterBaseline)) {
+            return;
+          }
+        }
         // New items are sent in full without changedKeys
         itemsToSave.push({ ...item });
         return;
@@ -867,10 +889,13 @@ export function RunsheetTableEditor({
         changedKeys.push('order');
       }
 
-      // Check startDateTime
-      if (item.startDateTime !== baseline.startDateTime) {
-        changedKeys.push('startDateTime');
-      }
+      // startDateTime is not compared directly: by the time `item` reaches this
+      // diff, its startDateTime has been overwritten with `calculatedStart` (a
+      // derived "9:00:00 AM" clock string), while baseline.startDateTime holds
+      // the original ISO timestamp loaded from Rock — the two are never in the
+      // same format, so a naive equality check always reports a change even
+      // when nothing moved. Order and duration (checked above/below) already
+      // fully determine the calculated start, so they alone are sufficient.
 
       // Check duration
       if ((item.duration || 0) !== baseline.duration) {
@@ -912,10 +937,11 @@ export function RunsheetTableEditor({
   const computedDirtyState = useMemo(() => {
     if (initialTemplate) return true;
     if (deletedIds.length > 0) return true;
-    if (subtitle !== initialSubtitle) return true;
+    if (subtitle !== normalizedInitialSubtitle) return true;
     const { itemsToSave } = computeDiffPayload();
     return itemsToSave.length > 0;
-  }, [deletedIds.length, subtitle, initialSubtitle, initialTemplate, computeDiffPayload]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deletedIds.length, subtitle, normalizedInitialSubtitle, initialTemplate, computeDiffPayload, baselineVersion]);
 
   useEffect(() => {
     setIsDirty(computedDirtyState);
@@ -929,7 +955,7 @@ export function RunsheetTableEditor({
     const { allPreparedItems, itemsToSave } = computeDiffPayload();
 
     // If nothing changed, return success early
-    if (itemsToSave.length === 0 && deletedIds.length === 0 && subtitle === initialSubtitle) {
+    if (itemsToSave.length === 0 && deletedIds.length === 0 && subtitle === normalizedInitialSubtitle) {
       setStatus({ type: 'success', message: 'No changes to save.' });
       setIsDirty(false);
       return true;
@@ -1025,7 +1051,7 @@ export function RunsheetTableEditor({
       setStatus({ type: 'error', message });
       return false;
     }
-  }, [readOnly, computeDiffPayload, deletedIds, subtitle, initialSubtitle, channelId, channelName, columns, createRowFingerprint]);
+  }, [readOnly, computeDiffPayload, deletedIds, subtitle, normalizedInitialSubtitle, channelId, channelName, columns, createRowFingerprint]);
 
   useEffect(() => {
     onSaveRef?.(handleSave);

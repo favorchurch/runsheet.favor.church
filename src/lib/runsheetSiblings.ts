@@ -5,7 +5,7 @@
  * is a change to the filter, not to how the result is consumed.
  */
 import { extractRunsheetCampus } from '@/lib/runsheetCampus';
-import { extractChannelDate } from '@/server-actions/rockGetAvailableRunsheetChannels';
+import { extractChannelDate } from '@/lib/runsheetDate';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 
 export interface SiblingChannel {

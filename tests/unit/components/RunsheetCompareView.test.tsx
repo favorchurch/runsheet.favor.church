@@ -14,7 +14,7 @@ if (typeof (global as any).Response === 'undefined') {
 
 import '@testing-library/jest-dom';
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { RunsheetCompareView } from '@/components/runsheet/RunsheetCompareView';
 import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDetailsBatch';
 
@@ -56,16 +56,6 @@ describe('RunsheetCompareView', () => {
     expect(screen.getByText('11:30AM')).toBeInTheDocument();
     expect(screen.getByText('Doors open 8:30')).toBeInTheDocument();
     expect(screen.getByText('Doors open 9:00')).toBeInTheDocument();
-  });
-
-  it('shows a Push to others action on a differing cell that opens the review panel', async () => {
-    render(<RunsheetCompareView channelIds={[1, 2]} onClose={jest.fn()} />);
-    await waitFor(() => expect(screen.getByText('Doors open 8:30')).toBeInTheDocument());
-
-    const pushButtons = screen.getAllByRole('button', { name: /push/i });
-    fireEvent.click(pushButtons[0]);
-
-    await waitFor(() => expect(screen.getByRole('region', { name: /propagate/i })).toBeInTheDocument());
   });
 
   it('hides person and platform columns by default', async () => {

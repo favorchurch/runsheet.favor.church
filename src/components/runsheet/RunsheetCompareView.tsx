@@ -3,15 +3,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { HiArrowsRightLeft, HiExclamationTriangle, HiXMark } from 'react-icons/hi2';
 import { isPersonColumn } from '@/constants/runsheetColumns';
+import { PeopleSearchDropdown, parsePeopleString } from './PeopleSearchDropdown';
 import { htmlToPlainText, legacyValueToHtml } from '@/lib/richText';
 import { sanitizeRichText } from '@/lib/sanitizeRichText';
-import { matchRows, type MatchResult } from '@/lib/runsheetMatch';
-import { buildPropagationPlan, type CandidateCellChange, type PropagationPlan } from '@/lib/runsheetPropagate';
-import { executePropagationPlan, type PropagationOutcome } from '@/lib/runsheetPropagateExecute';
 import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDetailsBatch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
-import { PropagateReviewPanel } from './PropagateReviewPanel';
 
 interface RunsheetCompareViewProps {
   channelIds: number[];
@@ -56,6 +53,26 @@ function RenderRichCell({ value, textClass = 'text-slate-800' }: { value: string
   );
 }
 
+/** Person columns (Platform roles, Service Roles) render as name chips instead of rich text — matches RunsheetTableEditor's person-cell treatment. */
+function RenderPeopleCell({ value, textClass = 'text-slate-800' }: { value: string; textClass?: string }) {
+  if (!value) return <span className="text-slate-300 italic">—</span>;
+  return (
+    <div className={`flex flex-wrap items-center gap-1 font-medium ${textClass}`}>
+      {parsePeopleString(value).map((person, i, arr) => (
+        <span key={i} className="inline-flex items-center gap-1">
+          <span>{person.name}</span>
+          {person.isGuest && (
+            <span className="rounded bg-amber-100 text-amber-900 px-1 py-0.2 text-[10px] font-bold border border-amber-300">
+              Guest
+            </span>
+          )}
+          {i < arr.length - 1 && <span className="text-slate-400 mr-0.5">,</span>}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareViewProps) {
   const [sheets, setSheets] = useState<LoadedSheet[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,11 +88,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
   const [savingMatrix, setSavingMatrix] = useState(false);
   const [matrixSaveStatus, setMatrixSaveStatus] = useState<string | null>(null);
 
-  // Push to others state
-  const [pushPlan, setPushPlan] = useState<PropagationPlan | null>(null);
-  const [pushTargetRows, setPushTargetRows] = useState<Map<number, RunsheetItemRow[]>>(new Map());
-  const [pushApplying, setPushApplying] = useState(false);
-  const [pushOutcomes, setPushOutcomes] = useState<PropagationOutcome[] | undefined>(undefined);
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
 
   const fetchSheets = React.useCallback(async () => {
     const batch = await rockGetRunsheetDetailsBatch(channelIds);
@@ -129,6 +142,15 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
     return titles;
   }, [sheets]);
 
+  /** The single attribute a "Roster: <role>" row actually stores — whoever's assigned. */
+  const rosterPersonColumn = useMemo(() => {
+    for (const sheet of sheets) {
+      const col = sheet.columns.find(isPersonColumn);
+      if (col) return col;
+    }
+    return null;
+  }, [sheets]);
+
   // Evaluates cell value considering any unsaved in-memory matrix edits
   const cellValue = React.useCallback(
     (sheet: LoadedSheet, itemTitle: string, columnKey: string): string | null => {
@@ -149,11 +171,32 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
     setEditDraft(htmlToPlainText(currentValue));
   };
 
-  const handleSaveEditCell = () => {
-    if (!editingCell) return;
-    const { channelId, itemTitle, columnKey } = editingCell;
+  /**
+   * Records (or clears) a cell edit. Shared by the plain-text textarea's
+   * blur-commit and the people picker's per-selection commit — a no-op
+   * change (value back to the original) removes any existing dirty entry
+   * instead of marking the cell dirty for nothing.
+   */
+  const commitCellValue = (channelId: number, itemTitle: string, columnKey: string, newValue: string) => {
+    const sheet = sheets.find((s) => s.channelId === channelId);
+    const item = sheet?.items.find((i) => (i.attributeValues?.ACTIVITYTITLE || i.title) === itemTitle);
+    const originalValue = htmlToPlainText(item?.attributeValues?.[columnKey] ?? '');
 
     setDirtyEdits((prev) => {
+      if (newValue === originalValue) {
+        const channelMap = prev.get(channelId);
+        const itemMap = channelMap?.get(itemTitle);
+        if (!itemMap?.has(columnKey)) return prev;
+
+        const next = new Map(prev);
+        const nextChannelMap = new Map(channelMap);
+        const nextItemMap = new Map(itemMap);
+        nextItemMap.delete(columnKey);
+        nextChannelMap.set(itemTitle, nextItemMap);
+        next.set(channelId, nextChannelMap);
+        return next;
+      }
+
       const next = new Map(prev);
       let channelMap = next.get(channelId);
       if (!channelMap) {
@@ -165,12 +208,24 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
         itemMap = new Map();
         channelMap.set(itemTitle, itemMap);
       }
-      itemMap.set(columnKey, editDraft);
+      itemMap.set(columnKey, newValue);
       return next;
     });
+  };
 
+  const handleSaveEditCell = () => {
+    if (!editingCell) return;
+    const { channelId, itemTitle, columnKey } = editingCell;
+    commitCellValue(channelId, itemTitle, columnKey, editDraft);
     setEditingCell(null);
     setEditDraft('');
+  };
+
+  const handleSelectPersonInCell = (selectedName: string) => {
+    if (!editingCell) return;
+    const { channelId, itemTitle, columnKey } = editingCell;
+    setEditDraft(selectedName);
+    commitCellValue(channelId, itemTitle, columnKey, selectedName);
   };
 
   const hasDirtyEdits = useMemo(() => {
@@ -182,8 +237,8 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
     return false;
   }, [dirtyEdits]);
 
-  const handleSaveAllMatrixEdits = async () => {
-    if (!hasDirtyEdits || savingMatrix) return;
+  const handleSaveAllMatrixEdits = async (): Promise<boolean> => {
+    if (!hasDirtyEdits || savingMatrix) return true;
     setSavingMatrix(true);
     setMatrixSaveStatus(null);
 
@@ -228,69 +283,38 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
         setMatrixSaveStatus('All comparison edits saved successfully!');
         const freshSheets = await fetchSheets();
         setSheets(freshSheets);
+        return true;
       } else {
         setMatrixSaveStatus('Some edits failed to save to Rock. Please try again.');
+        return false;
       }
     } catch (err: any) {
       setMatrixSaveStatus(`Error saving edits: ${err?.message || 'Unknown error'}`);
+      return false;
     } finally {
       setSavingMatrix(false);
     }
   };
 
-  const handlePush = async (
-    sourceSheet: LoadedSheet,
-    itemTitle: string,
-    columnKey: string,
-    columnName: string,
-    newValue: string
-  ) => {
-    const others = sheets.filter((s) => s.channelId !== sourceSheet.channelId);
-    const matchResultsByChannel = new Map<number, MatchResult>();
-    const targetRowsMap = new Map<number, RunsheetItemRow[]>();
-
-    for (const target of others) {
-      matchResultsByChannel.set(target.channelId, matchRows(sourceSheet.items, target.channelId, target.items));
-      targetRowsMap.set(target.channelId, target.items);
+  const handleRequestClose = () => {
+    if (hasDirtyEdits) {
+      setShowUnsavedModal(true);
+      return;
     }
-
-    const candidate: CandidateCellChange = {
-      itemTitle,
-      columnKey,
-      columnName,
-      newValue,
-      previousValue: newValue,
-    };
-
-    const siblings = others.map((s) => ({ channelId: s.channelId, name: s.name, time: s.time, preselected: true }));
-    const plan = buildPropagationPlan([candidate], matchResultsByChannel, siblings, sourceSheet.columns);
-
-    const forcedPlan: PropagationPlan = {
-      targets: plan.targets.map((t) => ({
-        ...t,
-        changes: t.changes.map((c) => (c.status === 'unmatched' ? c : { ...c, status: 'clean' as const, selected: true })),
-      })),
-    };
-
-    setPushTargetRows(targetRowsMap);
-    setPushPlan(forcedPlan);
-    setPushOutcomes(undefined);
+    onClose();
   };
 
-  const handlePushApply = async () => {
-    if (!pushPlan) return;
-    setPushApplying(true);
-    try {
-      const outcomes = await executePropagationPlan(pushPlan, pushTargetRows, allColumns);
-      setPushOutcomes(outcomes);
-      if (outcomes.every((o) => o.ok)) {
-        const loaded = await fetchSheets();
-        setSheets(loaded);
-        setPushPlan(null);
-      }
-    } finally {
-      setPushApplying(false);
+  const handleSaveAndClose = async () => {
+    const success = await handleSaveAllMatrixEdits();
+    if (success) {
+      setShowUnsavedModal(false);
+      onClose();
     }
+  };
+
+  const handleDiscardAndClose = () => {
+    setShowUnsavedModal(false);
+    onClose();
   };
 
   // Group comparison data by segment row (title)
@@ -306,6 +330,27 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
     }[] = [];
 
     for (const title of rowTitles) {
+      // Service role rows ("Roster: Music Director") only ever hold one
+      // meaningful attribute — who's assigned — so they compare just the
+      // role title against the name(s) underneath it, not every column.
+      if (title.startsWith('Roster:')) {
+        if (!rosterPersonColumn) continue;
+
+        const values = sheets.map((s) => cellValue(s, title, rosterPersonColumn.key));
+        const nonNulls = values.filter((v): v is string => v !== null);
+        const distinct = new Set(nonNulls.map((v) => htmlToPlainText(v).trim()));
+        const differs = distinct.size > 1;
+
+        if (showDifferencesOnly && !differs) continue;
+
+        result.push({
+          title: title.replace(/^Roster:\s*/, ''),
+          columns: [{ col: { ...rosterPersonColumn, name: 'Assigned' }, values, differs }],
+          hasDifferences: differs,
+        });
+        continue;
+      }
+
       const columnsInSegment: { col: DynamicAttributeColumn; values: (string | null)[]; differs: boolean }[] = [];
       let segmentDiffers = false;
 
@@ -331,7 +376,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
     }
 
     return result;
-  }, [rowTitles, allColumns, sheets, showDifferencesOnly, cellValue]);
+  }, [rowTitles, allColumns, sheets, showDifferencesOnly, cellValue, rosterPersonColumn]);
 
   if (loading) {
     return (
@@ -352,18 +397,57 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
           <div className="flex items-center gap-2.5">
             <HiArrowsRightLeft className="h-5 w-5 text-blue-400" />
             <div>
-              <h2 className="text-base sm:text-lg font-bold leading-tight">Per-Segment Runsheet Comparison</h2>
+              <h2 className="text-base sm:text-lg font-bold leading-tight">Runsheet Comparison</h2>
             </div>
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
             title="Close Compare View"
           >
             <HiXMark className="h-5 w-5" />
           </button>
         </div>
+
+        {showUnsavedModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4">
+            <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-200">
+              <h3 className="text-lg font-bold text-slate-900">Unsaved Comparison Edits</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                You have unsaved edits in this comparison view. What would you like to do before leaving?
+              </p>
+              <div className="mt-6 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveAndClose}
+                  disabled={savingMatrix}
+                  className="w-full rounded-lg bg-pink-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-pink-800 cursor-pointer disabled:opacity-50"
+                >
+                  {savingMatrix ? 'Saving to Rock...' : '1. Save & Leave'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDiscardAndClose}
+                  disabled={savingMatrix}
+                  className="w-full rounded-lg bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer disabled:opacity-50"
+                >
+                  2. Discard & Leave
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowUnsavedModal(false)}
+                  disabled={savingMatrix}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+                >
+                  3. Cancel & Continue Editing
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Toolbar & Filter Controls */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 sm:px-6">
@@ -494,52 +578,26 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
                               >
                                 {isMissing ? (
                                   <div className="text-slate-300 italic text-[11px]">— segment absent —</div>
-                                ) : isEditingThisCell ? (
-                                  <div className="flex flex-col gap-1.5" onClick={(e) => e.stopPropagation()}>
-                                    <textarea
-                                      value={editDraft}
-                                      onChange={(e) => setEditDraft(e.target.value)}
-                                      onBlur={handleSaveEditCell}
-                                      className="w-full rounded border border-blue-500 bg-white p-1.5 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[60px]"
-                                      autoFocus
+                                ) : isEditingThisCell && isPersonColumn(col) ? (
+                                  <div onClick={(e) => e.stopPropagation()}>
+                                    <PeopleSearchDropdown
+                                      initialValue={editDraft}
+                                      onSelectPerson={handleSelectPersonInCell}
+                                      onClose={() => setEditingCell(null)}
                                     />
-                                    <div className="flex items-center justify-end gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => setEditingCell(null)}
-                                        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-                                      >
-                                        Cancel
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={handleSaveEditCell}
-                                        className="rounded bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-blue-700 cursor-pointer"
-                                      >
-                                        Done
-                                      </button>
-                                    </div>
                                   </div>
+                                ) : isEditingThisCell ? (
+                                  <textarea
+                                    value={editDraft}
+                                    onChange={(e) => setEditDraft(e.target.value)}
+                                    onBlur={handleSaveEditCell}
+                                    className="w-full rounded border border-blue-500 bg-white p-1.5 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[60px]"
+                                    autoFocus
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
                                 ) : (
                                   <div className="flex flex-col justify-between gap-1.5 h-full min-h-[38px]">
-                                    <RenderRichCell value={val} />
-
-                                    {differs && (
-                                      <div className="mt-1 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button
-                                          type="button"
-                                          aria-label={`Push ${segment.title} ${col.name} from ${sheet.time}`}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handlePush(sheet, segment.title, col.key, col.name, val);
-                                          }}
-                                          className="inline-flex items-center gap-1 rounded border border-blue-600 bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs hover:bg-blue-700 cursor-pointer active:scale-95 transition-all"
-                                          title="Push this exact value to all sibling service runsheets"
-                                        >
-                                          <span>⤳ Push to others</span>
-                                        </button>
-                                      </div>
-                                    )}
+                                    {isPersonColumn(col) ? <RenderPeopleCell value={val} /> : <RenderRichCell value={val} />}
                                   </div>
                                 )}
                               </td>
@@ -555,16 +613,6 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
           )}
         </div>
       </div>
-
-      {pushPlan && (
-        <PropagateReviewPanel
-          plan={pushPlan}
-          onOverwrite={() => { }}
-          onApply={handlePushApply}
-          applying={pushApplying}
-          outcomes={pushOutcomes}
-        />
-      )}
     </div>
   );
 }
