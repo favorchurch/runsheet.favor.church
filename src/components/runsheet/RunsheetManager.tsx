@@ -11,6 +11,7 @@ import type { AuthUser } from '@/types/AuthUser';
 import type { RunsheetDetails } from '@/types/Runsheet';
 import { CreateRunsheetForm } from './CreateRunsheetForm';
 import { RunsheetTableEditor } from './RunsheetTableEditor';
+import { RunsheetCompareView } from './RunsheetCompareView';
 
 interface RunsheetManagerProps {
   user?: AuthUser;
@@ -42,6 +43,8 @@ export function RunsheetManager({
   const [isSavingModal, setIsSavingModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingNavigationAction>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [compareSelection, setCompareSelection] = useState<Set<number>>(new Set());
+  const [compareViewOpen, setCompareViewOpen] = useState(false);
 
   const saveRunsheetRef = React.useRef<(() => Promise<boolean>) | null>(null);
   const activeChannelIdRef = React.useRef<number | null>(initialChannelId);
@@ -349,26 +352,52 @@ export function RunsheetManager({
           <label className="text-xs sm:text-sm font-semibold text-slate-800 whitespace-nowrap">
             Select Runsheet:
           </label>
-          <select
-            className="w-full sm:w-auto min-w-0 max-w-full md:max-w-md text-ellipsis rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100"
-            value={selectedChannelId || ''}
-            disabled={channelsLoading}
-            onChange={(e) => {
-              const val = Number(e.target.value);
-              if (val) handleSelectChannel(val);
-            }}
-          >
-            {(!selectedChannelId || channelsLoading) && (
-              <option value="" disabled hidden>
-                {channelsLoading ? 'Loading runsheets...' : 'Select a Runsheet...'}
-              </option>
+          <div className="flex flex-col gap-1">
+            <select
+              className="w-full sm:w-auto min-w-0 max-w-full md:max-w-md text-ellipsis rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100"
+              value={selectedChannelId || ''}
+              disabled={channelsLoading}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                if (val) handleSelectChannel(val);
+              }}
+            >
+              {(!selectedChannelId || channelsLoading) && (
+                <option value="" disabled hidden>
+                  {channelsLoading ? 'Loading runsheets...' : 'Select a Runsheet...'}
+                </option>
+              )}
+              {availableChannels.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            {availableChannels.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-600">
+                <span className="font-semibold text-slate-700">Compare selection:</span>
+                {availableChannels.map((c) => (
+                  <label key={c.id} className="flex items-center gap-1 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      aria-label="Select for compare"
+                      checked={compareSelection.has(c.id)}
+                      onChange={() => {
+                        setCompareSelection((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(c.id)) next.delete(c.id);
+                          else if (next.size < 4) next.add(c.id);
+                          return next;
+                        });
+                      }}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <span>{c.name.split('//').pop()?.trim() || c.name}</span>
+                  </label>
+                ))}
+              </div>
             )}
-            {availableChannels.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          </div>
 
           {canEdit && (
             <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none whitespace-nowrap">
@@ -381,6 +410,15 @@ export function RunsheetManager({
               <span>Show Archived</span>
             </label>
           )}
+
+          <button
+            type="button"
+            disabled={compareSelection.size < 2}
+            onClick={() => setCompareViewOpen(true)}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+          >
+            Compare ({compareSelection.size})
+          </button>
         </div>
 
         {canEdit && (
@@ -480,6 +518,13 @@ export function RunsheetManager({
           onSaveRef={(saveFn) => (saveRunsheetRef.current = saveFn)}
         />
       ) : null}
+
+      {compareViewOpen && (
+        <RunsheetCompareView
+          channelIds={Array.from(compareSelection)}
+          onClose={() => setCompareViewOpen(false)}
+        />
+      )}
     </div>
   );
 }
