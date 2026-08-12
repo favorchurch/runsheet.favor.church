@@ -499,6 +499,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
                                     <textarea
                                       value={editDraft}
                                       onChange={(e) => setEditDraft(e.target.value)}
+                                      onBlur={handleSaveEditCell}
                                       className="w-full rounded border border-blue-500 bg-white p-1.5 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[60px]"
                                       autoFocus
                                     />
