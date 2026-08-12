@@ -41,16 +41,16 @@ function isPropagatableColumn(column: DynamicAttributeColumn): boolean {
   return !PLATFORM_COLUMN_KEYS.includes(column.key.toUpperCase());
 }
 
-function RenderRichCell({ value }: { value: string }) {
+function RenderRichCell({ value, textClass = 'text-slate-800' }: { value: string; textClass?: string }) {
   if (!value) return <span className="text-slate-300 italic">—</span>;
   const html = legacyValueToHtml(value);
   const clean = sanitizeRichText(html);
   if (clean === null) {
-    return <span className="text-slate-800 font-medium whitespace-pre-wrap">{htmlToPlainText(value)}</span>;
+    return <span className={`${textClass} font-medium whitespace-pre-wrap`}>{htmlToPlainText(value)}</span>;
   }
   return (
     <div
-      className="prose prose-xs max-w-none text-slate-800 leading-snug [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0"
+      className={`prose prose-xs max-w-none ${textClass} leading-snug [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 [&>p]:inline [&>span]:inline`}
       dangerouslySetInnerHTML={{ __html: clean }}
     />
   );
@@ -431,7 +431,10 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-sm">{segment.title}</span>
+                    <RenderRichCell
+                      value={segment.title}
+                      textClass={segment.hasDifferences ? 'text-amber-950 font-bold text-sm' : 'text-white font-bold text-sm'}
+                    />
                     {segment.hasDifferences && (
                       <span className="inline-flex items-center gap-1 rounded bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-900">
                         <HiExclamationTriangle className="h-3 w-3 text-amber-700" /> Differing Attributes
