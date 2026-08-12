@@ -466,7 +466,11 @@ export function RunsheetManager({
           channelName={runsheetData.name}
           columns={runsheetData.columns}
           initialItems={runsheetData.items}
-          initialStartTime={parseStartTimeFromRunsheetName(runsheetData.name)}
+          initialStartTime={
+            runsheetData.subtitle && /^\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)$/i.test(runsheetData.subtitle.trim())
+              ? runsheetData.subtitle.trim()
+              : parseStartTimeFromRunsheetName(runsheetData.name)
+          }
           initialSubtitle={runsheetData.subtitle}
           readOnly={!canEdit}
           runsheetCampuses={user?.access?.runsheetCampuses}

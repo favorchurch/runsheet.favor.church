@@ -1,4 +1,4 @@
-import { computePlatformRoles, extractPeopleFromRow } from '@/components/runsheet/EventTeamRosterCard';
+import { computePlatformRoles, extractPeopleFromRow, ensureRosterItems, VITAL_ROLES } from '@/components/runsheet/EventTeamRosterCard';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 
 describe('EventTeamRosterCard helpers', () => {
@@ -6,6 +6,29 @@ describe('EventTeamRosterCard helpers', () => {
     { id: 1, key: 'PLATFORM', name: 'Anchor / Preacher', fieldTypeId: 18 },
     { id: 2, key: 'DESCRIPTION', name: 'Detail' },
   ];
+
+  it('contains Assistant Stage Managers and Assistant Service Producers in VITAL_ROLES', () => {
+    expect(VITAL_ROLES).toContain('Assistant Stage Managers');
+    expect(VITAL_ROLES).toContain('Assistant Service Producers');
+    expect(VITAL_ROLES.length).toBe(10);
+  });
+
+  it('ensures roster items exist for all vital roles', () => {
+    const items = ensureRosterItems([]);
+    expect(items.length).toBe(10);
+    expect(items.map((i) => i.title)).toEqual([
+      'Roster: Service Director',
+      'Roster: Service Producer',
+      'Roster: Assistant Service Producers',
+      'Roster: Stage Manager Captain',
+      'Roster: Assistant Stage Managers',
+      'Roster: Music Director',
+      'Roster: Offstage Director',
+      'Roster: Worship Leaders',
+      'Roster: Host Core Cap',
+      'Roster: Security Lead',
+    ]);
+  });
 
   it('extracts people from row correctly', () => {
     const row: RunsheetItemRow = {

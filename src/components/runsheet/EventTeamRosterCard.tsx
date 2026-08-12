@@ -10,7 +10,9 @@ import { RichTextContent } from './RichTextContent';
 export const VITAL_ROLES = [
   'Service Director',
   'Service Producer',
+  'Assistant Service Producers',
   'Stage Manager Captain',
+  'Assistant Stage Managers',
   'Music Director',
   'Offstage Director',
   'Worship Leaders',
@@ -151,7 +153,7 @@ export function EventTeamRosterCard({
             <span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
               Service Roles
             </span>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-1.5 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-5 gap-1.5 text-xs">
               {VITAL_ROLES.map((role) => {
                 const val = getRosterValue(role);
                 const isEditing = editingRoleTitle === `Roster: ${role}`;

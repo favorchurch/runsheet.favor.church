@@ -768,7 +768,7 @@ export function RunsheetTableEditor({
     const rosterPreparedItems = items.filter((item) => item.title && item.title.startsWith('Roster:'));
     const preparedItems = [...runsheetPreparedItems, ...rosterPreparedItems];
 
-    const result = await rockBulkSaveRunsheetItems(channelId, preparedItems, deletedIds, columns, subtitle);
+    const result = await rockBulkSaveRunsheetItems(channelId, preparedItems, deletedIds, columns, startTime);
 
     if (result.success) {
       setStatus({ type: 'success', message: 'Favor Runsheet successfully saved to Rock RMS!' });
@@ -779,7 +779,7 @@ export function RunsheetTableEditor({
       setStatus({ type: 'error', message: result.error || 'Failed to save changes.' });
       return false;
     }
-  }, [readOnly, processedRows, items, channelId, deletedIds, columns, subtitle]);
+  }, [readOnly, processedRows, items, channelId, deletedIds, columns, startTime]);
 
   useEffect(() => {
     onSaveRef?.(handleSave);
