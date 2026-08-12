@@ -263,6 +263,8 @@ export function RunsheetTableEditor({
   const [propagateApplying, setPropagateApplying] = useState(false);
   const [propagateOutcomes, setPropagateOutcomes] = useState<PropagationOutcome[] | undefined>(undefined);
   const [propagateTargetRows, setPropagateTargetRows] = useState<Map<number, RunsheetItemRow[]>>(new Map());
+  /** itemId -> pre-edit title, for rows renamed in the save that triggered propagation (see handleSave). */
+  const propagateOldTitlesRef = React.useRef<Map<number, string>>(new Map());
 
   // Populate initial baseline for loaded items that exist in Rock
   useEffect(() => {
@@ -947,6 +949,40 @@ export function RunsheetTableEditor({
     setIsDirty(computedDirtyState);
   }, [computedDirtyState]);
 
+  /**
+   * Fetches sibling data, builds the match/propagation plan, and opens the
+   * review. Only ever triggered by an explicit "Review" click on the bar —
+   * a save never opens this on its own.
+   */
+  const openPropagateReview = React.useCallback(
+    async (siblings: SiblingChannel[], candidatesToReview: CandidateCellChange[]) => {
+      const batch = await rockGetRunsheetDetailsBatch(siblings.map((s) => s.channelId));
+      const targetRowsMap = new Map<number, RunsheetItemRow[]>();
+      const matchResultsByChannel = new Map<number, MatchResult>();
+
+      // Sibling sheets haven't seen this save's edits yet, so a row renamed in
+      // it must be matched under its OLD title — matching under the new one
+      // would find nothing there and silently drop every change on that row.
+      const matchingSourceRows = processedRows.map((row) => {
+        const oldTitle = typeof row.id === 'number' ? propagateOldTitlesRef.current.get(row.id) : undefined;
+        if (oldTitle === undefined) return row;
+        return { ...row, title: oldTitle, attributeValues: { ...row.attributeValues, ACTIVITYTITLE: oldTitle } };
+      });
+
+      for (const result of batch) {
+        if (!result.success || !result.data) continue;
+        targetRowsMap.set(result.channelId, result.data.items);
+        matchResultsByChannel.set(result.channelId, matchRows(matchingSourceRows, result.channelId, result.data.items));
+      }
+
+      setPropagateTargetRows(targetRowsMap);
+      const plan = buildPropagationPlan(candidatesToReview, matchResultsByChannel, siblings, columns);
+      setPropagatePlan(plan);
+      setPropagateReviewOpen(true);
+    },
+    [processedRows, columns]
+  );
+
   const handleSave = React.useCallback(async (): Promise<boolean> => {
     if (readOnly) return false;
     setStatus({ type: 'saving' });
@@ -964,6 +1000,40 @@ export function RunsheetTableEditor({
     const result = await rockBulkSaveRunsheetItems(channelId, itemsToSave, deletedIds, columns, subtitle);
 
     if (result.success) {
+      // Snapshot propagation candidates against the PRE-save baseline before
+      // it gets advanced below — advancing first would make `previousValue`
+      // equal `newValue` for every cell, since baselineRef would already
+      // hold the just-saved value by the time this reads from it.
+      const candidates: CandidateCellChange[] = [];
+      // A row whose title changed in this very save is caught here too — the
+      // target sibling hasn't seen the rename yet, so matching by title text
+      // would fail. Its pre-edit title is stashed for handleOpenPropagateReview
+      // to match against, while candidates themselves carry the row's id so
+      // matching never depends on title text at all.
+      const oldTitlesForMatching = new Map<number, string>();
+      for (const item of itemsToSave) {
+        if (typeof item.id === 'string' || item.isNew) continue;
+        const baseline = baselineRef.current.get(item.id);
+        if (!baseline) continue;
+        const newTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
+        if (newTitle !== baseline.title) {
+          oldTitlesForMatching.set(item.id, baseline.title);
+        }
+        for (const key of item.changedKeys || []) {
+          if (key === 'title' || key === 'order' || key === 'startDateTime' || key === 'duration' || key === 'songItemId') continue;
+          const column = columns.find((c) => c.key === key);
+          candidates.push({
+            itemId: item.id,
+            itemTitle: newTitle,
+            columnKey: key,
+            columnName: column?.name || key,
+            newValue: item.attributeValues?.[key] ?? '',
+            previousValue: baseline.attributeValues?.[key] ?? '',
+          });
+        }
+      }
+      propagateOldTitlesRef.current = oldTitlesForMatching;
+
       // Advance baseline for all saved items
       (result.results || []).forEach((res) => {
         if (res.ok && res.rockId) {
@@ -986,26 +1056,6 @@ export function RunsheetTableEditor({
       setIsDirty(false);
       setDeletedIds([]);
 
-      // Check for propagatable changes to trigger sibling propagation bar
-      const candidates: CandidateCellChange[] = [];
-      for (const item of itemsToSave) {
-        if (typeof item.id === 'string' || item.isNew) continue;
-        const baseline = baselineRef.current.get(item.id);
-        if (!baseline) continue;
-        for (const key of item.changedKeys || []) {
-          if (key === 'title' || key === 'order' || key === 'startDateTime' || key === 'duration' || key === 'songItemId') continue;
-          const column = columns.find((c) => c.key === key);
-          if (column && isPersonColumn(column)) continue;
-          candidates.push({
-            itemTitle: item.attributeValues?.ACTIVITYTITLE || item.title,
-            columnKey: key,
-            columnName: column?.name || key,
-            newValue: item.attributeValues?.[key] ?? '',
-            previousValue: baseline.attributeValues?.[key] ?? '',
-          });
-        }
-      }
-
       if (candidates.length > 0) {
         const channelsRes = await rockGetAvailableRunsheetChannels(false);
         if (channelsRes.success) {
@@ -1014,6 +1064,8 @@ export function RunsheetTableEditor({
             setPropagateSiblings(siblings);
             setPropagateCandidates(candidates);
             setPropagateBarDismissed(false);
+            // Show the bar and wait for an explicit "Review" click before
+            // opening anything — the review no longer opens on its own.
           }
         }
       }
@@ -1057,37 +1109,28 @@ export function RunsheetTableEditor({
     onSaveRef?.(handleSave);
   }, [onSaveRef, handleSave]);
 
-  const handleOpenPropagateReview = React.useCallback(async () => {
-    const batch = await rockGetRunsheetDetailsBatch(propagateSiblings.map((s) => s.channelId));
-    const targetRowsMap = new Map<number, RunsheetItemRow[]>();
-    const matchResultsByChannel = new Map<number, MatchResult>();
+  const handleOpenPropagateReview = React.useCallback(
+    () => openPropagateReview(propagateSiblings, propagateCandidates),
+    [openPropagateReview, propagateSiblings, propagateCandidates]
+  );
 
-    for (const result of batch) {
-      if (!result.success || !result.data) continue;
-      targetRowsMap.set(result.channelId, result.data.items);
-      matchResultsByChannel.set(result.channelId, matchRows(processedRows, result.channelId, result.data.items));
-    }
-
-    setPropagateTargetRows(targetRowsMap);
-    const plan = buildPropagationPlan(propagateCandidates, matchResultsByChannel, propagateSiblings, columns);
-    setPropagatePlan(plan);
-    setPropagateReviewOpen(true);
-  }, [propagateSiblings, propagateCandidates, processedRows, columns]);
-
-  const handlePropagateOverwrite = React.useCallback((targetChannelId: number, itemTitle: string, columnKey: string) => {
+  /**
+   * The checkbox is per CHANGE, not per service — checking it selects that
+   * change for every matched sibling at once (unmatched ones have nothing to
+   * apply and stay excluded regardless).
+   */
+  const handlePropagateToggleGroup = React.useCallback((itemTitle: string, columnKey: string, nextSelected: boolean) => {
     setPropagatePlan((prev) => {
       if (!prev) return prev;
       return {
-        targets: prev.targets.map((t) =>
-          t.channel.channelId !== targetChannelId
-            ? t
-            : {
-                ...t,
-                changes: t.changes.map((c) =>
-                  c.itemTitle === itemTitle && c.columnKey === columnKey ? { ...c, selected: true } : c,
-                ),
-              },
-        ),
+        targets: prev.targets.map((t) => ({
+          ...t,
+          changes: t.changes.map((c) =>
+            c.itemTitle === itemTitle && c.columnKey === columnKey && c.status !== 'unmatched'
+              ? { ...c, selected: nextSelected }
+              : c,
+          ),
+        })),
       };
     });
   }, []);
@@ -1714,8 +1757,16 @@ export function RunsheetTableEditor({
       {propagateReviewOpen && propagatePlan && (
         <PropagateReviewPanel
           plan={propagatePlan}
-          onOverwrite={handlePropagateOverwrite}
+          onToggleGroup={handlePropagateToggleGroup}
           onApply={handlePropagateApply}
+          onClose={() => {
+            // The review now opens automatically right after save, so the
+            // blue bar is really just a leftover trigger for it — closing
+            // the review via X should dismiss the whole flow, not leave that
+            // bar sitting around to reopen the same (now-stale) review.
+            setPropagateReviewOpen(false);
+            setPropagateBarDismissed(true);
+          }}
           applying={propagateApplying}
           outcomes={propagateOutcomes}
         />

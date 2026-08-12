@@ -1,8 +1,6 @@
-import { redirect } from 'next/navigation';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { canUserAccessRunsheet } from '@/lib/permissions';
 import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
-import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,16 +15,16 @@ export default async function DirectRunsheetPage({ params }: PageProps) {
   const session = await getRockSession();
   const canAccess = canUserAccessRunsheet(session);
 
-  // A link to a runsheet that doesn't exist, or exists outside this user's
-  // campus scope, gets a real server redirect here rather than rendering the
-  // page and relying on a client effect to notice and clean it up.
-  if (canAccess && !isNaN(parsedChannelId)) {
-    const { success, channels } = await rockGetAvailableRunsheetChannels();
-    if (!success || !channels.some((c) => c.id === parsedChannelId)) {
-      redirect('/');
-    }
-  }
-
+  // Whether this channel actually exists / is in scope is verified
+  // client-side by RunsheetManager's own loadChannelDetails (it falls back
+  // to "/" via history.pushState, no hard navigation, on a bad id). Doing
+  // that same existence check here with a real redirect() was actively
+  // harmful: this route is force-dynamic, so it re-executes on every
+  // Server-Action-triggered refresh — including the one that follows every
+  // save — and a fresh re-fetch of the channel list racing a just-completed
+  // write could transiently omit the current channel, firing a real
+  // redirect('/') that wiped all in-progress UI (an open propagate review,
+  // unsaved edits) with no warning, looking like "the site refreshed".
   if (!canAccess) {
     return (
       <div className="mx-auto max-w-xl py-16 text-center">

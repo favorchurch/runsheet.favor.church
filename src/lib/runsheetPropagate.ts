@@ -1,15 +1,18 @@
 /**
  * Builds a review-ready propagation plan from a set of candidate cell
- * changes and the row matches for each target sibling. Person and platform
- * columns are filtered before the plan exists, not at render time, so an
- * excluded column can never reach either surface that consumes this plan.
+ * changes and the row matches for each target sibling. Every real edit shows
+ * up here regardless of which column it's on — the only thing filtered out
+ * is `SIBLINGKEY` itself, an internal bookkeeping attribute never surfaced
+ * as an editable cell in the first place.
  */
-import { isPersonColumn, SIBLINGKEY_ATTRIBUTE_KEY } from '@/constants/runsheetColumns';
+import { SIBLINGKEY_ATTRIBUTE_KEY } from '@/constants/runsheetColumns';
 import type { MatchResult } from '@/lib/runsheetMatch';
 import type { SiblingChannel } from '@/lib/runsheetSiblings';
 import type { DynamicAttributeColumn } from '@/types/Runsheet';
 
 export interface CandidateCellChange {
+  /** The source row's own id — the stable identity used for matching, since `itemTitle` can itself be one of the edited columns. */
+  itemId: number;
   itemTitle: string;
   columnKey: string;
   columnName: string;
@@ -26,6 +29,8 @@ export interface CellChange {
   newValue: string;
   sourcePreviousValue: string;
   targetCurrentValue: string | null;
+  /** The matched row's own id in the target sheet, used to locate it at execute time — title text is display-only and may not match (e.g. a rename hasn't landed on the target yet). */
+  targetItemId: number | null;
   status: CellStatus;
   selected: boolean;
 }
@@ -39,40 +44,28 @@ export interface PropagationPlan {
   targets: PropagationTarget[];
 }
 
-const PLATFORM_COLUMN_KEYS = [
-  'ANCHORPREACHER',
-  'MAININSTRUMENT',
-  'LEDLIVESCREENS',
-  'LED WALL',
-  'OVERLAYBROADCAST',
-  'LIGHTING',
-  'AUDIO',
-];
-
-function isExcludedColumn(columnKey: string, columns: DynamicAttributeColumn[]): boolean {
-  if (columnKey === SIBLINGKEY_ATTRIBUTE_KEY) return true;
-  if (PLATFORM_COLUMN_KEYS.includes(columnKey.toUpperCase())) return true;
-
-  const column = columns.find((c) => c.key === columnKey);
-  return !!column && isPersonColumn(column);
+function isExcludedColumn(columnKey: string): boolean {
+  return columnKey === SIBLINGKEY_ATTRIBUTE_KEY;
 }
 
 export function buildPropagationPlan(
   candidateChanges: CandidateCellChange[],
   matchResultsByChannel: Map<number, MatchResult>,
   targets: SiblingChannel[],
-  columns: DynamicAttributeColumn[],
+  // Kept for call-site compatibility; no longer used to exclude columns —
+  // every real edit is shown, regardless of its column.
+  _columns: DynamicAttributeColumn[],
 ): PropagationPlan {
-  const eligibleChanges = candidateChanges.filter((c) => !isExcludedColumn(c.columnKey, columns));
+  const eligibleChanges = candidateChanges.filter((c) => !isExcludedColumn(c.columnKey));
 
   const planTargets: PropagationTarget[] = targets.map((channel) => {
     const matchResult = matchResultsByChannel.get(channel.channelId);
     const changes: CellChange[] = [];
 
     for (const candidate of eligibleChanges) {
-      const rowMatch = matchResult?.matches.find(
-        (m) => (m.sourceRow.attributeValues?.ACTIVITYTITLE || m.sourceRow.title) === candidate.itemTitle,
-      );
+      // Matched by id, not title text — the title itself may be one of the
+      // columns that just changed, so it can't double as the join key.
+      const rowMatch = matchResult?.matches.find((m) => m.sourceRow.id === candidate.itemId);
 
       if (!rowMatch || !rowMatch.targetRow) {
         changes.push({
@@ -82,6 +75,7 @@ export function buildPropagationPlan(
           newValue: candidate.newValue,
           sourcePreviousValue: candidate.previousValue,
           targetCurrentValue: null,
+          targetItemId: null,
           status: 'unmatched',
           selected: false,
         });
@@ -98,6 +92,7 @@ export function buildPropagationPlan(
         newValue: candidate.newValue,
         sourcePreviousValue: candidate.previousValue,
         targetCurrentValue,
+        targetItemId: typeof rowMatch.targetRow.id === 'number' ? rowMatch.targetRow.id : null,
         status: isClean ? 'clean' : 'diverged',
         selected: isClean,
       });

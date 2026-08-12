@@ -30,16 +30,17 @@ export async function executePropagationPlan(
       }
 
       const targetRows = targetRowsByChannel.get(channel.channelId) || [];
-      const changesByItemTitle = new Map<string, typeof selected>();
+      // Grouped by the target row's own id, not title text — a title edit
+      // riding along in the same save must not break finding its row here.
+      const changesByTargetItemId = new Map<number, typeof selected>();
       for (const change of selected) {
-        changesByItemTitle.set(change.itemTitle, [...(changesByItemTitle.get(change.itemTitle) || []), change]);
+        if (change.targetItemId === null) continue;
+        changesByTargetItemId.set(change.targetItemId, [...(changesByTargetItemId.get(change.targetItemId) || []), change]);
       }
 
       const itemsToSave: RunsheetItemRow[] = [];
-      for (const [itemTitle, itemChanges] of changesByItemTitle) {
-        const targetRow = targetRows.find(
-          (r) => (r.attributeValues?.ACTIVITYTITLE || r.title) === itemTitle,
-        );
+      for (const [targetItemId, itemChanges] of changesByTargetItemId) {
+        const targetRow = targetRows.find((r) => r.id === targetItemId);
         if (!targetRow || typeof targetRow.id !== 'number') continue;
 
         const attributeValues = { ...targetRow.attributeValues };

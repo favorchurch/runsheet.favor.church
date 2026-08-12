@@ -2,6 +2,7 @@
 'use client';
 
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import React, { useEffect, useState } from 'react';
 import { canUserEditRunsheet } from '@/lib/permissions';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
@@ -52,11 +53,22 @@ export function RunsheetManager({
   const deletedChannelIdsRef = React.useRef<Set<number>>(new Set());
 
   const canEdit = canUserEditRunsheet(user);
+  const router = useRouter();
 
+  /**
+   * Switching channels used to call `window.history.pushState` directly —
+   * it updates the address bar, but Next's own client router never learns
+   * the "current route" changed. That desync is invisible until a Server
+   * Action resolves (e.g. saving): Next then tries to refresh whatever
+   * route it still THINKS is active, discovers the URL bar has moved out
+   * from under it, and falls back to a full reload to resync — which is
+   * exactly what wiped an open propagate review right after a save, but
+   * only once you'd switched sheets at least once first. Routing through
+   * `router.push` keeps Next's router state and the URL bar in agreement,
+   * so that fallback reload never has a reason to fire.
+   */
   const updateUrl = (path: string) => {
-    if (typeof window !== 'undefined') {
-      window.history.pushState(null, '', path);
-    }
+    router.push(path, { scroll: false });
   };
 
   // A view-only account landing directly on a page it has no access to
@@ -142,31 +154,16 @@ export function RunsheetManager({
         if (res.success && res.channels) {
           const filtered = res.channels.filter((c) => !deletedChannelIdsRef.current.has(c.id));
           setAvailableChannels(filtered);
-
-          // If the requested channel is not available (e.g. deleted or no campus access), redirect to home
-          if (initialChannelId && !filtered.some((c) => c.id === initialChannelId)) {
-            activeChannelIdRef.current = null;
-            setSelectedChannelId(null);
-            setRunsheetData(null);
-            setLoading(false);
-            updateUrl('/');
-          }
-        } else if (initialChannelId) {
-          activeChannelIdRef.current = null;
-          setSelectedChannelId(null);
-          setRunsheetData(null);
-          setLoading(false);
-          updateUrl('/');
         }
+        // A channel missing from this list (deleted, no campus access, or a
+        // transient race right after a write) is NOT treated as fatal here —
+        // this effect only populates the picker dropdown. Whether the
+        // currently open channel is actually valid is loadChannelDetails's
+        // job alone; duplicating that check against this separately-fetched
+        // list previously wiped the whole session (including an open
+        // propagate review) whenever the two fetches raced.
       } catch (err) {
         console.error('Error loading channels:', err);
-        if (initialChannelId) {
-          activeChannelIdRef.current = null;
-          setSelectedChannelId(null);
-          setRunsheetData(null);
-          setLoading(false);
-          updateUrl('/');
-        }
       } finally {
         if (!isCancelled) {
           setChannelsLoading(false);

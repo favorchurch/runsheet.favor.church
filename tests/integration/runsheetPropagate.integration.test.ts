@@ -38,13 +38,13 @@ describe('propagation write path (integration)', () => {
         {
           channel: { channelId: 2, name: 'X // Aug 16, 2026 // 9AM', time: '9AM', preselected: true },
           changes: [
-            { itemTitle: 'Welcome', columnKey: 'NOTES', columnName: 'Notes', newValue: 'new', sourcePreviousValue: 'old', targetCurrentValue: 'old', status: 'clean', selected: true },
+            { itemTitle: 'Welcome', columnKey: 'NOTES', columnName: 'Notes', newValue: 'new', sourcePreviousValue: 'old', targetCurrentValue: 'old', targetItemId: 10, status: 'clean', selected: true },
           ],
         },
         {
           channel: { channelId: 3, name: 'X // Aug 16, 2026 // 5PM', time: '5PM', preselected: true },
           changes: [
-            { itemTitle: 'Welcome', columnKey: 'NOTES', columnName: 'Notes', newValue: 'new', sourcePreviousValue: 'old', targetCurrentValue: 'different', status: 'diverged', selected: false },
+            { itemTitle: 'Welcome', columnKey: 'NOTES', columnName: 'Notes', newValue: 'new', sourcePreviousValue: 'old', targetCurrentValue: 'different', targetItemId: 20, status: 'diverged', selected: false },
           ],
         },
       ],
@@ -82,11 +82,11 @@ describe('propagation write path (integration)', () => {
       targets: [
         {
           channel: { channelId: 2, name: 'X // Aug 16, 2026 // 9AM', time: '9AM', preselected: true },
-          changes: [{ itemTitle: 'Welcome', columnKey: 'NOTES', columnName: 'Notes', newValue: 'new', sourcePreviousValue: 'old', targetCurrentValue: 'old', status: 'clean', selected: true }],
+          changes: [{ itemTitle: 'Welcome', columnKey: 'NOTES', columnName: 'Notes', newValue: 'new', sourcePreviousValue: 'old', targetCurrentValue: 'old', targetItemId: 10, status: 'clean', selected: true }],
         },
         {
           channel: { channelId: 3, name: 'X // Aug 16, 2026 // 5PM', time: '5PM', preselected: true },
-          changes: [{ itemTitle: 'Welcome', columnKey: 'NOTES', columnName: 'Notes', newValue: 'new', sourcePreviousValue: 'old', targetCurrentValue: 'old', status: 'clean', selected: true }],
+          changes: [{ itemTitle: 'Welcome', columnKey: 'NOTES', columnName: 'Notes', newValue: 'new', sourcePreviousValue: 'old', targetCurrentValue: 'old', targetItemId: 20, status: 'clean', selected: true }],
         },
       ],
     };
