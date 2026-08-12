@@ -42,6 +42,7 @@ import { executePropagationPlan, type PropagationOutcome } from '@/lib/runsheetP
 import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDetailsBatch';
 import { PropagateReviewPanel } from './PropagateReviewPanel';
+import { PeopleSearchDropdown, parsePeopleString } from './PeopleSearchDropdown';
 
 function extractChannelDateLabel(name: string): string {
   const parts = name.split('//');
@@ -256,8 +257,12 @@ export function RunsheetTableEditor({
   // Populate initial baseline for loaded items that exist in Rock
   useEffect(() => {
     const map = new Map<number | string, RowFingerprint>();
-    initialItems.forEach((item) => {
+    const fullInitialItems = ensureRosterItems(initialItems);
+    fullInitialItems.forEach((item) => {
       if (typeof item.id === 'number' || (!item.isNew && item.id)) {
+        map.set(item.id, createRowFingerprint(item));
+      } else if (item.isNew && item.title?.startsWith('Roster:')) {
+        // Auto-ensured roster items are part of default structure, store baseline fingerprint
         map.set(item.id, createRowFingerprint(item));
       }
     });
@@ -978,7 +983,7 @@ export function RunsheetTableEditor({
       if (candidates.length > 0) {
         const channelsRes = await rockGetAvailableRunsheetChannels(false);
         if (channelsRes.success) {
-          const siblings = resolveSiblings(channelId, initialName, channelsRes.channels);
+          const siblings = resolveSiblings(channelId, channelName, channelsRes.channels);
           if (siblings.length > 0) {
             setPropagateSiblings(siblings);
             setPropagateCandidates(candidates);
@@ -1020,7 +1025,7 @@ export function RunsheetTableEditor({
       setStatus({ type: 'error', message });
       return false;
     }
-  }, [readOnly, computeDiffPayload, deletedIds, subtitle, initialSubtitle, channelId, columns, createRowFingerprint]);
+  }, [readOnly, computeDiffPayload, deletedIds, subtitle, initialSubtitle, channelId, channelName, columns, createRowFingerprint]);
 
   useEffect(() => {
     onSaveRef?.(handleSave);
