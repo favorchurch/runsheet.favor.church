@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { HiArrowsRightLeft, HiExclamationTriangle, HiXMark } from 'react-icons/hi2';
+import { HiArrowsRightLeft, HiPencilSquare, HiXMark } from 'react-icons/hi2';
 import { isPersonColumn } from '@/constants/runsheetColumns';
 import { htmlToPlainText, legacyValueToHtml } from '@/lib/richText';
 import { sanitizeRichText } from '@/lib/sanitizeRichText';
@@ -9,6 +9,7 @@ import { matchRows, type MatchResult } from '@/lib/runsheetMatch';
 import { buildPropagationPlan, type CandidateCellChange, type PropagationPlan } from '@/lib/runsheetPropagate';
 import { executePropagationPlan, type PropagationOutcome } from '@/lib/runsheetPropagateExecute';
 import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDetailsBatch';
+import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 import { PropagateReviewPanel } from './PropagateReviewPanel';
 
@@ -61,32 +62,46 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
   const [showPeopleColumns, setShowPeopleColumns] = useState(false);
   const [showDifferencesOnly, setShowDifferencesOnly] = useState(false);
 
+  // In-place inline cell editing state
+  const [editingCell, setEditingCell] = useState<{ channelId: number; itemTitle: string; columnKey: string } | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+
+  // Dirty matrix tracking: channelId -> itemTitle -> columnKey -> newValue
+  const [dirtyEdits, setDirtyEdits] = useState<Map<number, Map<string, Map<string, string>>>>(new Map());
+  const [savingMatrix, setSavingMatrix] = useState(false);
+  const [matrixSaveStatus, setMatrixSaveStatus] = useState<string | null>(null);
+
+  // Push to others state
   const [pushPlan, setPushPlan] = useState<PropagationPlan | null>(null);
   const [pushTargetRows, setPushTargetRows] = useState<Map<number, RunsheetItemRow[]>>(new Map());
   const [pushApplying, setPushApplying] = useState(false);
   const [pushOutcomes, setPushOutcomes] = useState<PropagationOutcome[] | undefined>(undefined);
 
+  const fetchSheets = React.useCallback(async () => {
+    const batch = await rockGetRunsheetDetailsBatch(channelIds);
+    return batch
+      .filter((r) => r.success && r.data)
+      .map((r) => ({
+        channelId: r.channelId,
+        name: r.data!.name,
+        time: r.data!.name.split('//').pop()?.trim() || `Channel ${r.channelId}`,
+        columns: r.data!.columns,
+        items: r.data!.items,
+      }));
+  }, [channelIds]);
+
   useEffect(() => {
     let active = true;
     (async () => {
-      const batch = await rockGetRunsheetDetailsBatch(channelIds);
+      const loaded = await fetchSheets();
       if (!active) return;
-      const loaded = batch
-        .filter((r) => r.success && r.data)
-        .map((r) => ({
-          channelId: r.channelId,
-          name: r.data!.name,
-          time: r.data!.name.split('//').pop()?.trim() || `Channel ${r.channelId}`,
-          columns: r.data!.columns,
-          items: r.data!.items,
-        }));
       setSheets(loaded);
       setLoading(false);
     })();
     return () => {
       active = false;
     };
-  }, [channelIds]);
+  }, [fetchSheets]);
 
   const allColumns = useMemo(() => {
     const seen = new Map<string, DynamicAttributeColumn>();
@@ -114,10 +129,113 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
     return titles;
   }, [sheets]);
 
-  const cellValue = (sheet: LoadedSheet, itemTitle: string, columnKey: string): string | null => {
-    const item = sheet.items.find((i) => (i.attributeValues?.ACTIVITYTITLE || i.title) === itemTitle);
-    if (!item) return null;
-    return item.attributeValues?.[columnKey] ?? '';
+  // Evaluates cell value considering any unsaved in-memory matrix edits
+  const cellValue = React.useCallback(
+    (sheet: LoadedSheet, itemTitle: string, columnKey: string): string | null => {
+      const channelEdits = dirtyEdits.get(sheet.channelId);
+      const itemEdits = channelEdits?.get(itemTitle);
+      if (itemEdits?.has(columnKey)) {
+        return itemEdits.get(columnKey)!;
+      }
+      const item = sheet.items.find((i) => (i.attributeValues?.ACTIVITYTITLE || i.title) === itemTitle);
+      if (!item) return null;
+      return item.attributeValues?.[columnKey] ?? '';
+    },
+    [dirtyEdits]
+  );
+
+  const handleStartEditCell = (channelId: number, itemTitle: string, columnKey: string, currentValue: string) => {
+    setEditingCell({ channelId, itemTitle, columnKey });
+    setEditDraft(htmlToPlainText(currentValue));
+  };
+
+  const handleSaveEditCell = () => {
+    if (!editingCell) return;
+    const { channelId, itemTitle, columnKey } = editingCell;
+
+    setDirtyEdits((prev) => {
+      const next = new Map(prev);
+      let channelMap = next.get(channelId);
+      if (!channelMap) {
+        channelMap = new Map();
+        next.set(channelId, channelMap);
+      }
+      let itemMap = channelMap.get(itemTitle);
+      if (!itemMap) {
+        itemMap = new Map();
+        channelMap.set(itemTitle, itemMap);
+      }
+      itemMap.set(columnKey, editDraft);
+      return next;
+    });
+
+    setEditingCell(null);
+    setEditDraft('');
+  };
+
+  const hasDirtyEdits = useMemo(() => {
+    for (const channelMap of dirtyEdits.values()) {
+      for (const itemMap of channelMap.values()) {
+        if (itemMap.size > 0) return true;
+      }
+    }
+    return false;
+  }, [dirtyEdits]);
+
+  const handleSaveAllMatrixEdits = async () => {
+    if (!hasDirtyEdits || savingMatrix) return;
+    setSavingMatrix(true);
+    setMatrixSaveStatus(null);
+
+    try {
+      const savePromises: Promise<any>[] = [];
+
+      for (const [channelId, itemMap] of dirtyEdits.entries()) {
+        const sheet = sheets.find((s) => s.channelId === channelId);
+        if (!sheet) continue;
+
+        const itemsToSave: RunsheetItemRow[] = [];
+
+        for (const [itemTitle, columnEdits] of itemMap.entries()) {
+          const item = sheet.items.find((i) => (i.attributeValues?.ACTIVITYTITLE || i.title) === itemTitle);
+          if (!item) continue;
+
+          const attributeValues = { ...item.attributeValues };
+          const changedKeys: string[] = [];
+
+          for (const [colKey, newVal] of columnEdits.entries()) {
+            attributeValues[colKey] = newVal;
+            changedKeys.push(colKey);
+          }
+
+          itemsToSave.push({
+            ...item,
+            attributeValues,
+            changedKeys,
+          });
+        }
+
+        if (itemsToSave.length > 0) {
+          savePromises.push(rockBulkSaveRunsheetItems(channelId, itemsToSave, [], sheet.columns));
+        }
+      }
+
+      const results = await Promise.all(savePromises);
+      const allOk = results.every((r) => r.success);
+
+      if (allOk) {
+        setDirtyEdits(new Map());
+        setMatrixSaveStatus('All comparison edits saved successfully!');
+        const freshSheets = await fetchSheets();
+        setSheets(freshSheets);
+      } else {
+        setMatrixSaveStatus('Some edits failed to save to Rock. Please try again.');
+      }
+    } catch (err: any) {
+      setMatrixSaveStatus(`Error saving edits: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setSavingMatrix(false);
+    }
   };
 
   const handlePush = async (
@@ -166,17 +284,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
       const outcomes = await executePropagationPlan(pushPlan, pushTargetRows, allColumns);
       setPushOutcomes(outcomes);
       if (outcomes.every((o) => o.ok)) {
-        // Refresh comparison data after successful push
-        const batch = await rockGetRunsheetDetailsBatch(channelIds);
-        const loaded = batch
-          .filter((r) => r.success && r.data)
-          .map((r) => ({
-            channelId: r.channelId,
-            name: r.data!.name,
-            time: r.data!.name.split('//').pop()?.trim() || `Channel ${r.channelId}`,
-            columns: r.data!.columns,
-            items: r.data!.items,
-          }));
+        const loaded = await fetchSheets();
         setSheets(loaded);
         setPushPlan(null);
       }
@@ -201,7 +309,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
       }
     }
     return list;
-  }, [rowTitles, allColumns, sheets, showDifferencesOnly]);
+  }, [rowTitles, allColumns, sheets, showDifferencesOnly, cellValue]);
 
   if (loading) {
     return (
@@ -224,7 +332,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
             <div>
               <h2 className="text-base sm:text-lg font-bold leading-tight">Runsheet Compare Matrix</h2>
               <p className="text-xs text-slate-400 hidden sm:block">
-                Side-by-side WYSIWYG comparison across {sheets.length} sibling services
+                Side-by-side WYSIWYG comparison & inline editing across {sheets.length} sibling services
               </p>
             </div>
           </div>
@@ -262,12 +370,19 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
             </label>
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 font-semibold text-amber-800 border border-amber-200">
-              <HiExclamationTriangle className="h-3.5 w-3.5 text-amber-600" /> Differing Cell
-            </span>
-            <span className="text-slate-400">|</span>
-            <span>{matrixRows.length} attributes compared</span>
+          <div className="flex items-center gap-3 text-xs">
+            {matrixSaveStatus && (
+              <span className="font-medium text-slate-700 bg-slate-200 px-2 py-1 rounded">{matrixSaveStatus}</span>
+            )}
+
+            <button
+              type="button"
+              disabled={!hasDirtyEdits || savingMatrix}
+              onClick={handleSaveAllMatrixEdits}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-pink-700 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-pink-800 disabled:opacity-40 cursor-pointer transition-all"
+            >
+              {savingMatrix ? 'Saving Edits...' : 'Save Comparison Edits'}
+            </button>
           </div>
         </div>
 
@@ -283,7 +398,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
                   {sheets.map((sheet) => (
                     <th
                       key={sheet.channelId}
-                      className="sticky top-0 z-20 min-w-[200px] border-r border-slate-700 bg-slate-900 p-2.5 sm:p-3 font-semibold text-white last:border-r-0"
+                      className="sticky top-0 z-20 min-w-[220px] border-r border-slate-700 bg-slate-900 p-2.5 sm:p-3 font-semibold text-white last:border-r-0"
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-mono text-sm font-bold text-blue-400">{sheet.time}</span>
@@ -326,22 +441,62 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
                       {sheets.map((sheet, i) => {
                         const val = values[i];
                         const isMissing = val === null;
+                        const isEditingThisCell =
+                          editingCell?.channelId === sheet.channelId &&
+                          editingCell?.itemTitle === title &&
+                          editingCell?.columnKey === col.key;
+                        const isCellDirty = dirtyEdits.get(sheet.channelId)?.get(title)?.has(col.key);
 
                         return (
                           <td
                             key={sheet.channelId}
                             className={`group relative border-r border-slate-200 p-2.5 align-top last:border-r-0 ${
                               differs ? 'border-amber-200/80' : ''
-                            }`}
+                            } ${isCellDirty ? 'bg-pink-50/80 ring-1 ring-pink-300 inset-0' : ''}`}
                           >
                             {isMissing ? (
                               <div className="text-slate-300 italic text-[11px]">— segment absent —</div>
+                            ) : isEditingThisCell ? (
+                              <div className="flex flex-col gap-1.5">
+                                <textarea
+                                  value={editDraft}
+                                  onChange={(e) => setEditDraft(e.target.value)}
+                                  className="w-full rounded border border-blue-500 bg-white p-1.5 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[60px]"
+                                  autoFocus
+                                />
+                                <div className="flex items-center justify-end gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingCell(null)}
+                                    className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleSaveEditCell}
+                                    className="rounded bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-blue-700 cursor-pointer"
+                                  >
+                                    Done
+                                  </button>
+                                </div>
+                              </div>
                             ) : (
-                              <div className="flex flex-col justify-between gap-1.5 h-full">
+                              <div className="flex flex-col justify-between gap-1.5 h-full min-h-[42px]">
                                 <RenderRichCell value={val} />
 
-                                {differs && (
-                                  <div className="mt-1 flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="mt-1 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartEditCell(sheet.channelId, title, col.key, val)}
+                                    className="inline-flex items-center gap-0.5 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 cursor-pointer"
+                                    title="Edit this cell in-place"
+                                  >
+                                    <HiPencilSquare className="h-3 w-3 text-slate-500" />
+                                    <span>Edit</span>
+                                  </button>
+
+                                  {differs && (
                                     <button
                                       type="button"
                                       aria-label={`Push ${title} ${col.name} from ${sheet.time}`}
@@ -351,8 +506,8 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
                                     >
                                       <span>⤳ Push to others</span>
                                     </button>
-                                  </div>
-                                )}
+                                  )}
+                                </div>
                               </div>
                             )}
                           </td>

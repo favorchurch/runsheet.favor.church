@@ -5,6 +5,7 @@ import Image from 'next/image';
 import React, { useEffect, useState } from 'react';
 import { canUserEditRunsheet } from '@/lib/permissions';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
+import { extractChannelTime } from '@/lib/runsheetDate';
 import { rockGetAvailableRunsheetChannels, type RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
 import type { AuthUser } from '@/types/AuthUser';
@@ -243,7 +244,7 @@ export function RunsheetManager({
   };
 
   const handleRunsheetCreated = (newChannelId: number, title: string, createdData?: RunsheetDetails) => {
-    setAvailableChannels((prev) => [{ id: newChannelId, name: title }, ...prev]);
+    setAvailableChannels((prev) => [{ id: newChannelId, name: title, time: extractChannelTime(title) }, ...prev]);
     setShowCreateForm(false);
     setIsEditorDirty(false);
     activeChannelIdRef.current = newChannelId;
@@ -373,7 +374,7 @@ export function RunsheetManager({
                 </option>
               ))}
             </select>
-            {availableChannels.length > 0 && (
+            {canEdit && availableChannels.length > 0 && (
               <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-600">
                 <span className="font-semibold text-slate-700">Compare selection:</span>
                 {availableChannels.map((c) => (
@@ -411,14 +412,16 @@ export function RunsheetManager({
             </label>
           )}
 
-          <button
-            type="button"
-            disabled={compareSelection.size < 2}
-            onClick={() => setCompareViewOpen(true)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
-          >
-            Compare ({compareSelection.size})
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              disabled={compareSelection.size < 2}
+              onClick={() => setCompareViewOpen(true)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+            >
+              Compare ({compareSelection.size})
+            </button>
+          )}
         </div>
 
         {canEdit && (

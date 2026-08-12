@@ -24,6 +24,7 @@ jest.mock('@/auth0-hooks/server/assertAuthenticated');
 jest.mock('@/auth0-hooks/server/getServerSession');
 jest.mock('@/auth0-hooks/server/getRockSession', () => ({ getRockSession: jest.fn().mockResolvedValue({}) }));
 jest.mock('@/server-actions/rockGetAvailableRunsheetChannels');
+jest.mock('@/lib/permissions', () => ({ canUserEditRunsheet: jest.fn().mockReturnValue(true) }));
 jest.mock('@/components/runsheet/RunsheetCompareView', () => ({
   RunsheetCompareView: ({ channelIds, onClose }: { channelIds: number[]; onClose: () => void }) => (
     <div data-testid="compare-view">{channelIds.join(',')}<button onClick={onClose}>close</button></div>
