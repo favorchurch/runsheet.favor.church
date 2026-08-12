@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { HiArrowsRightLeft, HiExclamationTriangle, HiPencilSquare, HiXMark } from 'react-icons/hi2';
+import { HiArrowsRightLeft, HiExclamationTriangle, HiXMark } from 'react-icons/hi2';
 import { isPersonColumn } from '@/constants/runsheetColumns';
 import { htmlToPlainText, legacyValueToHtml } from '@/lib/richText';
 import { sanitizeRichText } from '@/lib/sanitizeRichText';
@@ -353,9 +353,6 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
             <HiArrowsRightLeft className="h-5 w-5 text-blue-400" />
             <div>
               <h2 className="text-base sm:text-lg font-bold leading-tight">Per-Segment Runsheet Comparison</h2>
-              <p className="text-xs text-slate-400 hidden sm:block">
-                Side-by-side WYSIWYG per-segment row comparison & inline editing across {sheets.length} sibling services
-              </p>
             </div>
           </div>
           <button
@@ -420,15 +417,13 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
             segmentRows.map((segment) => (
               <div
                 key={segment.title}
-                className={`overflow-hidden rounded-xl border bg-white shadow-sm transition-all ${
-                  segment.hasDifferences ? 'border-amber-300 ring-1 ring-amber-200/60' : 'border-slate-200'
-                }`}
+                className={`overflow-hidden rounded-xl border bg-white shadow-sm transition-all ${segment.hasDifferences ? 'border-amber-300 ring-1 ring-amber-200/60' : 'border-slate-200'
+                  }`}
               >
                 {/* Segment Header Bar */}
                 <div
-                  className={`flex items-center justify-between px-4 py-2.5 border-b font-bold text-xs ${
-                    segment.hasDifferences ? 'bg-amber-100/70 border-amber-200 text-amber-950' : 'bg-slate-800 border-slate-700 text-white'
-                  }`}
+                  className={`flex items-center justify-between px-4 py-2.5 border-b font-bold text-xs ${segment.hasDifferences ? 'bg-amber-100/70 border-amber-200 text-amber-950' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
                 >
                   <div className="flex items-center gap-2">
                     <RenderRichCell
@@ -468,9 +463,8 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
                       {segment.columns.map(({ col, values, differs }) => (
                         <tr
                           key={`${segment.title}::${col.key}`}
-                          className={`transition-colors ${
-                            differs ? 'bg-amber-50/50 hover:bg-amber-50/80' : 'hover:bg-slate-50/80'
-                          }`}
+                          className={`transition-colors ${differs ? 'bg-amber-50/50 hover:bg-amber-50/80' : 'hover:bg-slate-50/80'
+                            }`}
                         >
                           {/* Attribute Name Column */}
                           <td className="border-r border-slate-200 p-2.5 font-semibold text-slate-700 bg-slate-50/60 align-top">
@@ -490,14 +484,18 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
                             return (
                               <td
                                 key={sheet.channelId}
-                                className={`group relative border-r border-slate-200 p-2.5 align-top last:border-r-0 ${
-                                  differs ? 'border-amber-200/80' : ''
-                                } ${isCellDirty ? 'bg-pink-50/80 ring-1 ring-pink-300 inset-0' : ''}`}
+                                className={`group relative border-r border-slate-200 p-2.5 align-top last:border-r-0 ${differs ? 'border-amber-200/80' : ''
+                                  } ${isCellDirty ? 'bg-pink-50/80 ring-1 ring-pink-300 inset-0' : ''} ${!isMissing && !isEditingThisCell ? 'cursor-pointer hover:bg-blue-50/40' : ''}`}
+                                onClick={() => {
+                                  if (!isMissing && !isEditingThisCell) {
+                                    handleStartEditCell(sheet.channelId, segment.title, col.key, val);
+                                  }
+                                }}
                               >
                                 {isMissing ? (
                                   <div className="text-slate-300 italic text-[11px]">— segment absent —</div>
                                 ) : isEditingThisCell ? (
-                                  <div className="flex flex-col gap-1.5">
+                                  <div className="flex flex-col gap-1.5" onClick={(e) => e.stopPropagation()}>
                                     <textarea
                                       value={editDraft}
                                       onChange={(e) => setEditDraft(e.target.value)}
@@ -525,29 +523,22 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
                                   <div className="flex flex-col justify-between gap-1.5 h-full min-h-[38px]">
                                     <RenderRichCell value={val} />
 
-                                    <div className="mt-1 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleStartEditCell(sheet.channelId, segment.title, col.key, val)}
-                                        className="inline-flex items-center gap-0.5 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 cursor-pointer"
-                                        title="Edit this cell in-place"
-                                      >
-                                        <HiPencilSquare className="h-3 w-3 text-slate-500" />
-                                        <span>Edit</span>
-                                      </button>
-
-                                      {differs && (
+                                    {differs && (
+                                      <div className="mt-1 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button
                                           type="button"
                                           aria-label={`Push ${segment.title} ${col.name} from ${sheet.time}`}
-                                          onClick={() => handlePush(sheet, segment.title, col.key, col.name, val)}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handlePush(sheet, segment.title, col.key, col.name, val);
+                                          }}
                                           className="inline-flex items-center gap-1 rounded border border-blue-600 bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs hover:bg-blue-700 cursor-pointer active:scale-95 transition-all"
                                           title="Push this exact value to all sibling service runsheets"
                                         >
                                           <span>⤳ Push to others</span>
                                         </button>
-                                      )}
-                                    </div>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </td>
@@ -567,7 +558,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
       {pushPlan && (
         <PropagateReviewPanel
           plan={pushPlan}
-          onOverwrite={() => {}}
+          onOverwrite={() => { }}
           onApply={handlePushApply}
           applying={pushApplying}
           outcomes={pushOutcomes}
