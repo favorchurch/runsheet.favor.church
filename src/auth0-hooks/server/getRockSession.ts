@@ -31,10 +31,10 @@ function parseRockPersonIds(rawPersonIds: unknown, personId: number): number[] {
         typeof candidate === 'number' && Number.isInteger(candidate) && candidate > 0,
     )
   ) {
-    return rawPersonIds;
+    return [...new Set(rawPersonIds)];
   }
 
-  return [personId];
+  return personId > 0 ? [personId] : [];
 }
 
 function withEffectivePersonId(personIds: number[], effectivePersonId: number): number[] {

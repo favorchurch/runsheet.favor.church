@@ -97,6 +97,39 @@ describe('getRockSession rock_person_ids claim', () => {
     expect(result.personIds).toEqual([101]);
   });
 
+  it('omits zero when Rock did not find a person', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        'https://auth.favor.church/rock_person_found': false,
+        email: 'fallback@example.com',
+      }),
+    );
+    mockRockResolveAccess.mockResolvedValue(resolvedResult(456));
+
+    const result = await getRockSession();
+
+    expect(result.personIds).toEqual([456]);
+    expect(result.personIds).not.toContain(0);
+  });
+
+  it('deduplicates and copies valid claim entries', async () => {
+    const claimedPersonIds = [101, 101, 202];
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        'https://auth.favor.church/rock_person_found': true,
+        'https://auth.favor.church/rock_person_id': 101,
+        'https://auth.favor.church/rock_person_ids': claimedPersonIds,
+      }),
+    );
+    mockGetSessionCache.mockResolvedValue(resolvedResult(101));
+
+    const result = await getRockSession();
+
+    expect(result.personIds).toEqual([101, 202]);
+    result.personIds.push(303);
+    expect(claimedPersonIds).toEqual([101, 101, 202]);
+  });
+
   it('includes the scalar in a valid cache-hit claim', async () => {
     mockGetServerSession.mockResolvedValue(
       sessionFor({
