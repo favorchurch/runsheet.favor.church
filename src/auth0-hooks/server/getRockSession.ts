@@ -15,10 +15,35 @@ export { NoRockPersonError, NoAccessError, CloudflareBlockError };
 
 interface RockSession extends ResolveResult {
   personId: number;
+  personIds: number[];
 }
 
 const ROCK_PERSON_ID_CLAIM = 'https://auth.favor.church/rock_person_id';
 const ROCK_PERSON_FOUND_CLAIM = 'https://auth.favor.church/rock_person_found';
+const ROCK_PERSON_IDS_CLAIM = 'https://auth.favor.church/rock_person_ids';
+
+function parseRockPersonIds(rawPersonIds: unknown, personId: number): number[] {
+  if (
+    Array.isArray(rawPersonIds) &&
+    rawPersonIds.length > 0 &&
+    rawPersonIds.every(
+      (candidate): candidate is number =>
+        typeof candidate === 'number' && Number.isInteger(candidate) && candidate > 0,
+    )
+  ) {
+    return [...new Set(rawPersonIds)];
+  }
+
+  return personId > 0 ? [personId] : [];
+}
+
+function withEffectivePersonId(personIds: number[], effectivePersonId: number): number[] {
+  if (effectivePersonId > 0 && !personIds.includes(effectivePersonId)) {
+    return [...personIds, effectivePersonId];
+  }
+
+  return personIds;
+}
 
 /**
  * Return the current user's Rock-backed portal session.
@@ -36,13 +61,14 @@ export async function getRockSession(): Promise<RockSession> {
   const profile = session.user as Record<string, any>;
   const personFound = profile[ROCK_PERSON_FOUND_CLAIM];
   const personId = personFound ? Number(profile[ROCK_PERSON_ID_CLAIM]) : 0;
+  const personIds = parseRockPersonIds(profile[ROCK_PERSON_IDS_CLAIM], personId);
   const email = profile.email || profile.name || '';
 
   // Check cache first if valid personId
   if (personId > 0) {
     const cached = await getSessionCache(personId);
     if (cached) {
-      return { ...cached, personId };
+      return { ...cached, personId, personIds: withEffectivePersonId(personIds, personId) };
     }
   }
 
@@ -54,7 +80,11 @@ export async function getRockSession(): Promise<RockSession> {
     await setSessionCache(resolvedPersonId, resolved);
   }
 
-  return { ...resolved, personId: resolvedPersonId };
+  return {
+    ...resolved,
+    personId: resolvedPersonId,
+    personIds: withEffectivePersonId(personIds, resolvedPersonId),
+  };
 }
 
 /**
