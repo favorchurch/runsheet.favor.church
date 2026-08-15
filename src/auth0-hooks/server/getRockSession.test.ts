@@ -1,0 +1,116 @@
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { getRockSession, type ResolveResult } from './getRockSession';
+import { getServerSession } from './getServerSession';
+import { rockResolveAccess } from '@/server-actions/internal/rockResolveAccess';
+import { getSessionCache, setSessionCache } from '@/server-actions/sessionCache';
+
+jest.mock('./getServerSession', () => ({
+  getServerSession: jest.fn(),
+}));
+
+jest.mock('@/server-actions/internal/rockResolveAccess', () => ({
+  CloudflareBlockError: class CloudflareBlockError extends Error {},
+  NoAccessError: class NoAccessError extends Error {},
+  NoRockPersonError: class NoRockPersonError extends Error {},
+  rockResolveAccess: jest.fn(),
+}));
+
+jest.mock('@/server-actions/sessionCache', () => ({
+  clearSessionCache: jest.fn(),
+  getSessionCache: jest.fn(),
+  setSessionCache: jest.fn(),
+}));
+
+const mockGetServerSession = jest.mocked(getServerSession);
+const mockRockResolveAccess = jest.mocked(rockResolveAccess);
+const mockGetSessionCache = jest.mocked(getSessionCache);
+const mockSetSessionCache = jest.mocked(setSessionCache);
+
+function resolvedResult(id: number): ResolveResult {
+  return {
+    contact: { id },
+    rolesMap: {},
+    access: {
+      campusIds: [],
+      connectLeaderGroupIds: [],
+      regionalLeaderSections: [],
+      clusterHeadSections: [],
+      departmentHeadSections: [],
+      runsheetCampuses: [],
+    },
+  };
+}
+
+function sessionFor(profile: Record<string, unknown>) {
+  return { user: profile } as never;
+}
+
+describe('getRockSession rock_person_ids claim', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetSessionCache.mockResolvedValue(undefined);
+    mockSetSessionCache.mockResolvedValue(undefined);
+  });
+
+  it('runsheet-claim-parse', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        'https://auth.favor.church/rock_person_found': true,
+        'https://auth.favor.church/rock_person_id': 101,
+        'https://auth.favor.church/rock_person_ids': [101, 202],
+      }),
+    );
+    mockRockResolveAccess.mockResolvedValue(resolvedResult(303));
+
+    const result = await getRockSession();
+
+    expect(result.personId).toBe(303);
+    expect(result.personIds).toEqual([101, 202, 303]);
+  });
+
+  it('falls back to the scalar for an absent claim', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        'https://auth.favor.church/rock_person_found': true,
+        'https://auth.favor.church/rock_person_id': 101,
+      }),
+    );
+    mockRockResolveAccess.mockResolvedValue(resolvedResult(101));
+
+    const result = await getRockSession();
+
+    expect(result.personIds).toEqual([101]);
+  });
+
+  it('falls back to the scalar for a malformed claim', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        'https://auth.favor.church/rock_person_found': true,
+        'https://auth.favor.church/rock_person_id': 101,
+        'https://auth.favor.church/rock_person_ids': [101, '202'],
+      }),
+    );
+    mockRockResolveAccess.mockResolvedValue(resolvedResult(101));
+
+    const result = await getRockSession();
+
+    expect(result.personIds).toEqual([101]);
+  });
+
+  it('includes the scalar in a valid cache-hit claim', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        'https://auth.favor.church/rock_person_found': true,
+        'https://auth.favor.church/rock_person_id': 101,
+        'https://auth.favor.church/rock_person_ids': [202],
+      }),
+    );
+    mockGetSessionCache.mockResolvedValue(resolvedResult(101));
+
+    const result = await getRockSession();
+
+    expect(result.personId).toBe(101);
+    expect(result.personIds).toEqual([202, 101]);
+    expect(mockRockResolveAccess).not.toHaveBeenCalled();
+  });
+});
