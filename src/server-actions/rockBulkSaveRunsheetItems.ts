@@ -117,12 +117,17 @@ export async function rockBulkSaveRunsheetItems(
   deletedItemIds: (number | string)[],
   columns?: DynamicAttributeColumn[],
   subtitle?: string,
+  newChannelName?: string,
 ): Promise<BulkSaveResult> {
   try {
     await getRockSession();
 
     if (subtitle !== undefined) {
       await rockPatch(`/ContentChannels/${channelId}`, { Description: subtitle });
+    }
+
+    if (newChannelName !== undefined) {
+      await rockPatch(`/ContentChannels/${channelId}`, { Name: newChannelName });
     }
 
     // 1. Delete removed items in parallel

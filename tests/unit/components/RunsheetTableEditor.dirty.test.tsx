@@ -35,8 +35,9 @@ jest.mock('@/lib/richText', () => ({
 
 import '@testing-library/jest-dom';
 import React from 'react';
-import { render } from '@testing-library/react';
+import { render, fireEvent, screen } from '@testing-library/react';
 import { RunsheetTableEditor } from '@/components/runsheet/RunsheetTableEditor';
+import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 
 describe('RunsheetTableEditor dirty state', () => {
@@ -98,5 +99,53 @@ describe('RunsheetTableEditor dirty state', () => {
 
     // After render, onDirtyChange should have been called with false (or last call should be false)
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  test('marks editor dirty when only the Start Time field is edited', () => {
+    const onDirtyChange = jest.fn();
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="10:00:00 AM"
+        onDirtyChange={onDirtyChange}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText('Start:'), { target: { value: '09:30:00 AM' } });
+
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  });
+
+  test('saves an edited Start Time by rewriting the channel name', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="MNL // August 16, 2026 // 10AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="09:00:00 AM"
+        onSaveRef={(fn) => (saveFn = fn)}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText('Start:'), { target: { value: '09:30:00 AM' } });
+
+    await saveFn?.();
+
+    expect(rockBulkSaveRunsheetItems).toHaveBeenCalledWith(
+      1,
+      expect.anything(),
+      expect.anything(),
+      columns,
+      expect.anything(),
+      'MNL // August 16, 2026 // 10:30AM'
+    );
   });
 });

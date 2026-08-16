@@ -22,6 +22,7 @@ import {
   writeRunsheetCellValue,
 } from '@/constants/runsheetColumns';
 import {
+  applyStartTimeToRunsheetName,
   formatDurationToHMS,
   formatMinutesToTimeWithSeconds,
   parseDurationInputToMinutes,
@@ -940,10 +941,11 @@ export function RunsheetTableEditor({
     if (initialTemplate) return true;
     if (deletedIds.length > 0) return true;
     if (subtitle !== normalizedInitialSubtitle) return true;
+    if (startTime !== initialStartTime) return true;
     const { itemsToSave } = computeDiffPayload();
     return itemsToSave.length > 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deletedIds.length, subtitle, normalizedInitialSubtitle, initialTemplate, computeDiffPayload, baselineVersion]);
+  }, [deletedIds.length, subtitle, normalizedInitialSubtitle, startTime, initialStartTime, initialTemplate, computeDiffPayload, baselineVersion]);
 
   useEffect(() => {
     setIsDirty(computedDirtyState);
@@ -989,15 +991,18 @@ export function RunsheetTableEditor({
     setEditingCell(null);
 
     const { allPreparedItems, itemsToSave } = computeDiffPayload();
+    const startTimeChanged = startTime !== initialStartTime;
 
     // If nothing changed, return success early
-    if (itemsToSave.length === 0 && deletedIds.length === 0 && subtitle === normalizedInitialSubtitle) {
+    if (itemsToSave.length === 0 && deletedIds.length === 0 && subtitle === normalizedInitialSubtitle && !startTimeChanged) {
       setStatus({ type: 'success', message: 'No changes to save.' });
       setIsDirty(false);
       return true;
     }
 
-    const result = await rockBulkSaveRunsheetItems(channelId, itemsToSave, deletedIds, columns, subtitle);
+    const newChannelName = startTimeChanged ? applyStartTimeToRunsheetName(channelName, startTime) : undefined;
+
+    const result = await rockBulkSaveRunsheetItems(channelId, itemsToSave, deletedIds, columns, subtitle, newChannelName);
 
     if (result.success) {
       // Snapshot propagation candidates against the PRE-save baseline before
@@ -1103,7 +1108,7 @@ export function RunsheetTableEditor({
       setStatus({ type: 'error', message });
       return false;
     }
-  }, [readOnly, computeDiffPayload, deletedIds, subtitle, normalizedInitialSubtitle, channelId, channelName, columns, createRowFingerprint]);
+  }, [readOnly, computeDiffPayload, deletedIds, subtitle, normalizedInitialSubtitle, startTime, initialStartTime, channelId, channelName, columns, createRowFingerprint]);
 
   useEffect(() => {
     onSaveRef?.(handleSave);

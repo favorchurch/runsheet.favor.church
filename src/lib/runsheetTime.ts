@@ -51,6 +51,39 @@ export function parseStartTimeFromRunsheetName(name: string): string {
   return formatMinutesToTimeWithSeconds(startMinutes);
 }
 
+/** Renders minutes past midnight as the compact `10AM` / `11:30AM` slot format used in runsheet titles. */
+function formatMinutesToCompactSlot(totalMinutes: number): string {
+  const hours24 = Math.floor(totalMinutes / 60) % 24;
+  const mins = Math.floor(totalMinutes % 60);
+  const period = hours24 >= 12 ? 'PM' : 'AM';
+  const hours12 = hours24 % 12 || 12;
+
+  return mins === 0 ? `${hours12}${period}` : `${hours12}:${String(mins).padStart(2, '0')}${period}`;
+}
+
+/**
+ * Reverses `parseStartTimeFromRunsheetName`: given an edited Start Time,
+ * rewrites the `{prefix} // {date} // {time}` name's last segment so the new
+ * value round-trips on the next load. Adds back the 1 hour that parsing
+ * subtracts, so the name keeps encoding the service time, not the start time.
+ *
+ * Names without a `//`-delimited time slot are left untouched — there is
+ * nowhere safe to splice a time into an arbitrary title.
+ */
+export function applyStartTimeToRunsheetName(name: string, startTime: string): string {
+  if (!name || !name.includes('//')) return name;
+
+  const segments = name.split('//');
+  const lastSegment = segments[segments.length - 1].trim();
+  if (!/^\d{1,2}(?::\d{2})?\s*(AM|PM)$/i.test(lastSegment)) return name;
+
+  const startMinutes = parseTimeToMinutes(startTime);
+  const scheduleMinutes = (startMinutes + 60) % (24 * 60);
+
+  segments[segments.length - 1] = ` ${formatMinutesToCompactSlot(scheduleMinutes)}`;
+  return segments.join('//');
+}
+
 /** Renders minutes past midnight as `9:00:00 AM`. */
 export function formatMinutesToTimeWithSeconds(totalMinutes: number): string {
   const hours24 = Math.floor(totalMinutes / 60) % 24;
