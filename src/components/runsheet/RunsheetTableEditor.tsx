@@ -287,6 +287,8 @@ export function RunsheetTableEditor({
     setMounted(true);
   }, []);
   const [editingCardIndex, setEditingCardIndex] = useState<number | null>(null);
+  /** Draft text for the Card view's Duration field — lets seconds be typed (`00:05:30`) without every keystroke reformatting the input. */
+  const [cardDurationDraft, setCardDurationDraft] = useState('');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
@@ -653,6 +655,28 @@ export function RunsheetTableEditor({
     return { processedRows: processed, timeSpanMap: spans, parentBlockMap: parents };
   }, [items, startTime]);
 
+  useEffect(() => {
+    if (editingCardIndex === null) return;
+    const row = processedRows[editingCardIndex];
+    if (row) setCardDurationDraft(formatDurationToHMS(Number(row.duration) || 0));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingCardIndex]);
+
+  const handleCommitCardDurationDraft = () => {
+    if (editingCardIndex === null) return;
+    const targetId = processedRows[editingCardIndex]?.id;
+    if (targetId === undefined) return;
+    const val = parseDurationInputToMinutes(cardDurationDraft);
+    setItems((previous) => {
+      const idx = previous.findIndex((it) => it.id === targetId);
+      if (idx === -1) return previous;
+      const updated = [...previous];
+      updated[idx] = { ...updated[idx], duration: val };
+      return updated;
+    });
+    setIsDirty(true);
+  };
+
   /** Attribute columns sorted with Person columns first for mobile cards. */
   const sortedAttrCols = useMemo(() => {
     return [...dynamicAttrCols].sort((a, b) => {
@@ -843,7 +867,14 @@ export function RunsheetTableEditor({
     setEditingCell(null);
   };
 
-  /** Up/down reorder for the mobile Card view, where HTML5 drag-and-drop doesn't work reliably on touch. */
+  /**
+   * Up/down reorder for the mobile Card view, where HTML5 drag-and-drop doesn't
+   * work reliably on touch. A direct swap by id, not `moveItemById` — that
+   * helper's "remove then insert before the target's post-removal slot" logic
+   * correctly swaps adjacent rows moving up, but is a no-op moving down: removing
+   * the dragged row shifts the very-next target back by exactly the one slot
+   * being inserted into, landing the dragged row right back where it started.
+   */
   const handleMoveCard = (index: number, direction: 'up' | 'down') => {
     if (readOnly) return;
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
@@ -853,7 +884,16 @@ export function RunsheetTableEditor({
     const targetId = processedRows[targetIndex]?.id;
     if (draggedId === undefined || targetId === undefined) return;
 
-    moveItemById(draggedId, targetId);
+    saveSnapshot();
+    setItems((previous) => {
+      const updated = [...previous];
+      const fromIndex = updated.findIndex((item) => item.id === draggedId);
+      const toIndex = updated.findIndex((item) => item.id === targetId);
+      if (fromIndex === -1 || toIndex === -1) return previous;
+      [updated[fromIndex], updated[toIndex]] = [updated[toIndex], updated[fromIndex]];
+      return updated;
+    });
+    setIsDirty(true);
   };
 
   const handleConfirmDuplicate = async (e: React.FormEvent) => {
@@ -2213,31 +2253,25 @@ export function RunsheetTableEditor({
               {/* Segment Duration */}
               <div className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
                 <label className="font-bold text-slate-700 text-xs uppercase tracking-wider text-[10px]">
-                  Segment Duration (Minutes)
+                  Segment Duration (HH:MM:SS)
                 </label>
                 <div className="flex items-center gap-2 mt-0.5">
                   <input
-                    type="number"
-                    min="0"
-                    step="1"
+                    type="text"
                     disabled={readOnly}
-                    value={processedRows[editingCardIndex].duration || 0}
-                    onChange={(e) => {
-                      const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                      const targetId = processedRows[editingCardIndex].id;
-                      setItems((previous) => {
-                        const updated = [...previous];
-                        const idx = updated.findIndex((it) => it.id === targetId);
-                        if (idx !== -1) {
-                          updated[idx] = { ...updated[idx], duration: val };
-                        }
-                        return updated;
-                      });
-                      setIsDirty(true);
+                    value={cardDurationDraft}
+                    onChange={(e) => setCardDurationDraft(e.target.value)}
+                    onBlur={handleCommitCardDurationDraft}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === 'Escape') {
+                        handleCommitCardDurationDraft();
+                        e.currentTarget.blur();
+                      }
                     }}
-                    className="w-24 rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-900 focus:border-slate-800 focus:outline-none"
+                    placeholder="00:05:00"
+                    className="w-28 rounded border border-slate-300 bg-white px-2.5 py-1 font-mono text-xs font-semibold text-slate-900 focus:border-slate-800 focus:outline-none"
                   />
-                  <span className="text-xs font-semibold text-slate-500">minutes</span>
+                  <span className="text-xs font-semibold text-slate-500">hh:mm:ss</span>
                 </div>
               </div>
 

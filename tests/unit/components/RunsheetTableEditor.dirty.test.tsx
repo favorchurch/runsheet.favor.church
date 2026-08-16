@@ -60,9 +60,9 @@ describe('RunsheetTableEditor dirty state', () => {
   });
 
   const columns: DynamicAttributeColumn[] = [
-    { id: 1, key: 'ACTIVITYTITLE', label: 'Activity', columnGroup: 'Details', order: 1, fieldType: 'text' },
-    { id: 2, key: 'DESCRIPTION', label: 'Description', columnGroup: 'Details', order: 2, fieldType: 'text' },
-    { id: 3, key: 'WORSHIPLEADER', label: 'Worship Leader', columnGroup: 'People', order: 3, fieldType: 'person' },
+    { id: 1, key: 'ACTIVITYTITLE', name: 'Activity' },
+    { id: 2, key: 'DESCRIPTION', name: 'Description' },
+    { id: 3, key: 'WORSHIPLEADER', name: 'Worship Leader' },
   ];
 
   const initialItems: RunsheetItemRow[] = [
@@ -222,6 +222,73 @@ describe('RunsheetTableEditor dirty state', () => {
       (item: RunsheetItemRow) => (item.attributeValues?.ACTIVITYTITLE || item.title) === 'New Segment'
     );
     expect(newRowEntry?.order).toBe(2);
+  });
+
+  test('a card can be moved down with the Move Down button in Card view', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="10:00:00 AM"
+        onSaveRef={(fn) => (saveFn = fn)}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Cards'));
+
+    // Move "Welcome & Announcements" (index 0) down past "Praise & Worship".
+    const moveDownButtons = screen.getAllByTitle('Move down');
+    expect(moveDownButtons).toHaveLength(2);
+    fireEvent.click(moveDownButtons[0]);
+
+    await saveFn?.();
+
+    const [, itemsToSave] = (rockBulkSaveRunsheetItems as jest.Mock).mock.calls[0];
+    const welcomeEntry = itemsToSave.find(
+      (item: RunsheetItemRow) => (item.attributeValues?.ACTIVITYTITLE || item.title) === 'Welcome & Announcements'
+    );
+    const praiseEntry = itemsToSave.find(
+      (item: RunsheetItemRow) => (item.attributeValues?.ACTIVITYTITLE || item.title) === 'Praise & Worship'
+    );
+    expect(praiseEntry?.order).toBe(1);
+    expect(welcomeEntry?.order).toBe(2);
+  });
+
+  test('the Card view Duration field accepts seconds', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    (rockGetAvailableRunsheetChannels as jest.Mock).mockResolvedValue({ success: true, channels: [] });
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="10:00:00 AM"
+        onSaveRef={(fn) => (saveFn = fn)}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Cards'));
+    fireEvent.click(screen.getAllByText('Edit Card')[0]);
+
+    const durationInput = screen.getByPlaceholderText('00:05:00');
+    fireEvent.change(durationInput, { target: { value: '00:05:30' } });
+    fireEvent.blur(durationInput);
+
+    await saveFn?.();
+
+    const [, itemsToSave] = (rockBulkSaveRunsheetItems as jest.Mock).mock.calls[0];
+    const welcomeEntry = itemsToSave.find(
+      (item: RunsheetItemRow) => (item.attributeValues?.ACTIVITYTITLE || item.title) === 'Welcome & Announcements'
+    );
+    expect(welcomeEntry?.duration).toBe(5.5);
   });
 
   test('editing a duration updates the correct row even when a previously-assigned roster row sorts ahead of it', async () => {
