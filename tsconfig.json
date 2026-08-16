@@ -27,17 +27,14 @@
   },
   "include": [
     "next-env.d.ts",
+    ".next/types/**/*.ts",
     "src/**/*.ts",
     "src/**/*.tsx",
-    ".next/types/**/*.ts",
-    "src/**/*.jsx",
     "src/**/*.js",
+    "src/**/*.jsx",
     "src/**/*.module.css",
-    "tests/**/*.ts",
-    "src/components/AttendanceRateTable/columns/useColumnConnectGroupSimpletsx",
-    "tests/unit/signups.skip",
-    "tests/unit/checkin.skip",
-    "tests/unit/carenotes.test.skip"
+    "scripts/**/*.ts",
+    "tests/**/*.ts"
   ],
-  "exclude": ["node_modules", "ext", ".worktrees"]
+  "exclude": ["node_modules", ".next", ".worktrees"]
 }

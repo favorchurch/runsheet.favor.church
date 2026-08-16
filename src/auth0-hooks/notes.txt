@@ -1,2 +1,0 @@
-Note: These hooks will only work with auth0 flow.
-Make sure to add these flows from auth0-login-flows

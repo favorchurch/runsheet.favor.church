@@ -1,11 +1,26 @@
 'use server';
 
+import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
+import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockPost } from '@/server-actions/internal/rockFetch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
-import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
+import { canAccessRunsheetChannel, ALL_CAMPUSES } from '@/lib/runsheetCampus';
+import type { RunsheetItemRow } from '@/types/Runsheet';
 
 export async function rockCreateServiceRunsheet(title: string, contentChannelTypeId: number, categoryId?: number) {
   try {
+    const session = await getRockSession();
+
+    if (!canAccessRunsheetChannel(session?.access?.runsheetCampuses, title)) {
+      const allowed = (session?.access?.runsheetCampuses || [])
+        .filter((c) => c !== ALL_CAMPUSES)
+        .join(', ');
+      return {
+        success: false,
+        error: `You are only authorized to create runsheets for your assigned campus (${allowed || 'none'}).`,
+      };
+    }
+
     // 1. Create the Content Channel in Rock RMS using the selected ContentChannelTypeId
     const result = await rockPost('/ContentChannels', {
       Name: title,
@@ -14,6 +29,10 @@ export async function rockCreateServiceRunsheet(title: string, contentChannelTyp
       IsIndexEnabled: true,
       EnablePersonalization: true,
       IsStructuredContent: true,
+      // Without this, Rock's own admin grid ignores our `Order` field and
+      // falls back to sorting items by StartDateTime descending — showing
+      // the runsheet bottom-to-top.
+      ItemsManuallyOrdered: true,
     });
 
     // Rock RMS POST returns either the integer ID directly (e.g. 21) or an object { Id: 21 }
@@ -35,9 +54,10 @@ export async function rockCreateServiceRunsheet(title: string, contentChannelTyp
       }
     }
 
-    // 3. Automatically populate the default 18 runsheet template items
+    // 3. Automatically populate the default runsheet template items
+    let preparedItems: RunsheetItemRow[] = [];
     try {
-      const preparedItems = DEFAULT_RUNSHEET_TEMPLATE.map((row, idx) => ({
+      preparedItems = DEFAULT_RUNSHEET_TEMPLATE.map((row, idx) => ({
         id: `new_${idx}_${Date.now()}`,
         isNew: true,
         title: row.title,
@@ -62,7 +82,17 @@ export async function rockCreateServiceRunsheet(title: string, contentChannelTyp
       console.warn('Could not populate initial template items:', templateErr);
     }
 
-    return { success: true, id: channelId };
+    return {
+      success: true,
+      id: channelId,
+      data: {
+        channelId,
+        name: title,
+        contentChannelTypeId,
+        columns: [],
+        items: preparedItems,
+      },
+    };
   } catch (err: any) {
     console.error('Error creating content channel:', err);
     return { success: false, error: err.message || 'Unknown error occurred' };

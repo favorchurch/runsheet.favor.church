@@ -9,7 +9,7 @@
 import 'server-only';
 
 import { createClient } from 'redis';
-import { REDIS_URL } from '@/constants.server';
+import { REDIS_URL } from '@/constants/server';
 
 let client: ReturnType<typeof createClient> | null = null;
 

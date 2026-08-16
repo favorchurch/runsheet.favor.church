@@ -10,7 +10,8 @@
 import 'server-only';
 
 import NodeCache from 'node-cache';
-import { REDIS_KEY_PREFIX } from '@/constants.server';
+import { REDIS_KEY_PREFIX } from '@/constants/server';
+import { clampCacheTtlSeconds } from '@/lib/cacheTtl';
 import { isRedisEnabled, redisCommand } from '@/server-actions/internal/redisClient';
 import type { AuthAccess, AuthContact, AuthRolesMap } from '@/types/AuthUser';
 
@@ -21,13 +22,17 @@ export interface CachedSession {
   access: AuthAccess;
 }
 
-const SESSION_TTL = Number(process.env.SESSION_CACHE_TTL || '3600');
+/** Authorization revocation window; never allow configuration to exceed five minutes. */
+export const SESSION_TTL_SECONDS = Math.min(
+  300,
+  clampCacheTtlSeconds(process.env.SESSION_CACHE_TTL || '300', 300, 1),
+);
 const CHECK_PERIOD = 600;
 
-const localCache = new NodeCache({ stdTTL: SESSION_TTL, checkperiod: CHECK_PERIOD });
+const localCache = new NodeCache({ stdTTL: SESSION_TTL_SECONDS, checkperiod: CHECK_PERIOD });
 
 function sessionCacheKey(personId: number): string {
-  return `${REDIS_KEY_PREFIX}session:${personId}`;
+  return `${REDIS_KEY_PREFIX}session:v3:${personId}`;
 }
 
 /** Read a cached session; falls back to Redis when enabled, otherwise in-memory only. Returns `undefined` on miss. */
@@ -50,7 +55,7 @@ export async function getSessionCache(personId: number): Promise<CachedSession |
   }
 }
 
-/** Write/refresh a cached session in both NodeCache and (if enabled) Redis with `SESSION_CACHE_TTL`. */
+/** Write/refresh a cached session in both NodeCache and (if enabled) Redis with the <=5m TTL. */
 export async function setSessionCache(personId: number, data: CachedSession): Promise<void> {
   const key = sessionCacheKey(personId);
   localCache.set(key, data);
@@ -60,7 +65,7 @@ export async function setSessionCache(personId: number, data: CachedSession): Pr
   }
 
   try {
-    await redisCommand(['SETEX', key, SESSION_TTL, JSON.stringify(data)]);
+    await redisCommand(['SETEX', key, SESSION_TTL_SECONDS, JSON.stringify(data)]);
   } catch (error) {
     console.warn('[session-cache] write failed', error);
   }

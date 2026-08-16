@@ -11,3 +11,72 @@ html, body {
   color: #0f172a !important;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
+
+/*
+ * Runsheet rich-text cells.
+ *
+ * Shared by the read-only renderer (RichTextContent) and the Tiptap editor
+ * (RichTextCell) so a cell looks the same whether or not it is being edited.
+ * Tailwind's Preflight resets list markers and heading weights, so the handful
+ * of elements the cell editor can produce are styled back in here.
+ */
+.runsheet-rich-text > :first-child {
+  margin-top: 0;
+}
+
+.runsheet-rich-text > :last-child {
+  margin-bottom: 0;
+}
+
+.runsheet-rich-text p {
+  margin: 0;
+  min-height: 1em;
+  overflow-wrap: anywhere;
+}
+
+.runsheet-rich-text p + p {
+  margin-top: 0.35em;
+}
+
+.runsheet-rich-text strong,
+.runsheet-rich-text b {
+  font-weight: 600;
+}
+
+.runsheet-rich-text em,
+.runsheet-rich-text i {
+  font-style: italic;
+}
+
+.runsheet-rich-text u {
+  text-decoration: underline;
+}
+
+.runsheet-rich-text s,
+.runsheet-rich-text strike,
+.runsheet-rich-text del {
+  text-decoration: line-through;
+}
+
+.runsheet-rich-text ul,
+.runsheet-rich-text ol {
+  margin: 0.15em 0;
+  padding-left: 1.35em;
+}
+
+.runsheet-rich-text ul {
+  list-style: disc;
+}
+
+.runsheet-rich-text ol {
+  list-style: decimal;
+}
+
+.runsheet-rich-text li,
+.runsheet-rich-text li p {
+  margin: 0;
+}
+
+.runsheet-rich-text.ProseMirror {
+  outline: none;
+}

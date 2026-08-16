@@ -253,6 +253,7 @@ node_modules
 psd
 
 # graphify outputs
+graphify-out
 graphify-out/*
 !graphify-out/GRAPH_REPORT.md
 !graphify-out/manifest.json

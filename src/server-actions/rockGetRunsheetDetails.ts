@@ -1,146 +1,197 @@
 'use server';
 
+import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
+import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
+import { isPersonColumn, HIDDEN_ATTRIBUTE_KEYS } from '@/constants/runsheetColumns';
+import { canAccessRunsheetChannel } from '@/lib/runsheetCampus';
 
-export interface DynamicAttributeColumn {
-  id: number;
-  key: string;
-  name: string;
-  fieldTypeId?: number;
+/** Rock's `ContentChannelItem` entity type, used to find item attributes. */
+const CONTENT_CHANNEL_ITEM_ENTITY_TYPE_ID = 208;
+
+/** Resolved person names, memoised per server instance. */
+const personNameCache = new Map<string, string>();
+
+function looksLikePersonKey(value: string): boolean {
+  return /^\d+$/.test(value) || /^[0-9a-fA-F-]{32,36}$/.test(value);
 }
 
-export interface RunsheetItemRow {
-  id: number | string; // number if existing in Rock, string (temp id) if newly added locally
-  isNew?: boolean;
-  isDeleted?: boolean;
-  isDirty?: boolean;
-  title: string;
-  order: number;
-  startDateTime?: string;
-  duration: number; // in minutes
-  attributeValues: Record<string, string>; // Dynamic attribute key -> value
-  detail?: string;
-  anchorPreacher?: string;
-  mainInstrument?: string;
-  ledLiveScreens?: string;
-  overlayBroadcast?: string;
-  lighting?: string;
-  audio?: string;
-}
+/**
+ * Turns a Person attribute's stored value into a display name.
+ *
+ * Rock stores Person attributes as a PersonAlias GUID (or occasionally a bare
+ * person id), so a raw read shows an opaque key. Rock usually keeps the rendered
+ * name alongside it in `AttributeValue.PersistedTextValue`, which is checked
+ * first; otherwise the person record is fetched directly.
+ */
+/**
+ * Resolves every person-column cell's stored key to a display name in at most
+ * two Rock API calls total, regardless of how many rows/cells need it.
+ *
+ * Resolving one cell at a time (one `/AttributeValues` + one `/People` round
+ * trip per cell) was the actual cause of multi-minute runsheet loads: on a
+ * serverless deploy each request gets a fresh function instance, so
+ * `personNameCache` starts empty every time and every person cell paid for a
+ * live, sequential Rock round trip on every single page view/refresh.
+ */
+async function resolvePersonNamesBatch(rawValues: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const toResolve = new Set<string>();
 
-export interface RunsheetDetails {
-  channelId: number;
-  name: string;
-  contentChannelTypeId: number;
-  columns: DynamicAttributeColumn[];
-  items: RunsheetItemRow[];
-}
+  for (const rawValue of rawValues) {
+    const trimmed = rawValue?.trim() ?? '';
+    if (!trimmed || trimmed === 'undefined') continue;
 
-const personNameCache: { [key: string]: string } = {};
+    const cached = personNameCache.get(trimmed);
+    if (cached) {
+      result.set(trimmed, cached);
+      continue;
+    }
 
-async function resolvePersonName(key: string, rockUrl: string, rockKey: string): Promise<string> {
-  if (!key || key === 'undefined' || !key.trim()) return '';
-  const trimmed = key.trim();
-  if (trimmed === 'undefined') return '';
+    // Already a name rather than an id/GUID.
+    if (!looksLikePersonKey(trimmed)) {
+      result.set(trimmed, trimmed);
+      continue;
+    }
 
-  // If already in-memory cached
-  if (personNameCache[trimmed]) {
-    return personNameCache[trimmed];
+    toResolve.add(trimmed);
   }
 
-  // If it's already a full name (has spaces/letters, not a pure numeric ID or GUID)
-  if (!/^\d+$/.test(trimmed) && !/^[0-9a-fA-F-]{32,36}$/.test(trimmed)) {
-    return trimmed;
+  if (toResolve.size === 0) return result;
+
+  const keys = Array.from(toResolve);
+  const BATCH_SIZE = 15; // Keep OData $filter string under IIS 2048-byte URL limit
+
+  // 1. Chunk keys into batches of 15 and fetch AttributeValues in parallel
+  const keyBatches: string[][] = [];
+  for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+    keyBatches.push(keys.slice(i, i + BATCH_SIZE));
   }
 
-  try {
-    // 1. Check Rock AttributeValues table directly (Rock stores PersistedTextValue like "Ijah Callao" for Person alias GUIDs!)
-    const attrRes = await fetch(
-      `${rockUrl}/AttributeValues?$filter=Value eq '${trimmed}'&$top=1&$select=PersistedTextValue,ValueAsPersonId`,
-      {
-        headers: {
-          'Authorization-Token': rockKey,
-          'Accept': 'application/json',
-        },
-        cache: 'force-cache',
-      }
-    );
-    if (attrRes.ok) {
-      const attrData = await attrRes.json();
-      if (Array.isArray(attrData) && attrData.length > 0) {
-        const item = attrData[0];
-        if (item.PersistedTextValue) {
-          personNameCache[trimmed] = item.PersistedTextValue;
-          return item.PersistedTextValue;
-        }
-        if (item.ValueAsPersonId) {
-          const pRes = await fetch(`${rockUrl}/People/${item.ValueAsPersonId}?$select=FirstName,LastName`, {
-            headers: {
-              'Authorization-Token': rockKey,
-              'Accept': 'application/json',
-            },
-            cache: 'force-cache',
-          });
-          if (pRes.ok) {
-            const pData = await pRes.json();
-            if (pData?.FirstName) {
-              const fullName = `${pData.FirstName} ${pData.LastName || ''}`.trim();
-              personNameCache[trimmed] = fullName;
-              return fullName;
-            }
+  const byValue = new Map<string, any>();
+
+  await Promise.all(
+    keyBatches.map(async (batchKeys) => {
+      try {
+        const filter = batchKeys.map((key) => `Value eq '${key.replace(/'/g, "''")}'`).join(' or ');
+        const matches = (await rockGet('/AttributeValues', {
+          $filter: filter,
+          $top: batchKeys.length,
+          $select: 'Value,PersistedTextValue,ValueAsPersonId',
+        })) as any[];
+
+        for (const match of matches || []) {
+          if (match?.Value) {
+            byValue.set(match.Value, match);
           }
         }
+      } catch (err) {
+        console.error('Error fetching AttributeValues chunk:', err);
       }
+    })
+  );
+
+  const idToKeys = new Map<string, string[]>();
+
+  for (const key of keys) {
+    const match = byValue.get(key);
+    if (match?.PersistedTextValue) {
+      personNameCache.set(key, match.PersistedTextValue);
+      result.set(key, match.PersistedTextValue);
+      continue;
     }
 
-    // 2. Try GET /People/{id} if numeric ID
-    if (/^\d+$/.test(trimmed)) {
-      const res = await fetch(`${rockUrl}/People/${trimmed}?$select=FirstName,LastName`, {
-        headers: {
-          'Authorization-Token': rockKey,
-          'Accept': 'application/json',
-        },
-        cache: 'force-cache',
-      });
-      if (res.ok) {
-        const p = await res.json();
-        if (p && p.FirstName) {
-          const fullName = `${p.FirstName} ${p.LastName || ''}`.trim();
-          personNameCache[trimmed] = fullName;
-          return fullName;
-        }
-      }
+    const personId = match?.ValueAsPersonId ?? (/^\d+$/.test(key) ? key : null);
+    if (personId) {
+      const idKey = String(personId);
+      idToKeys.set(idKey, [...(idToKeys.get(idKey) || []), key]);
     }
-  } catch (err) {
-    console.error('Error resolving person name for key:', key, err);
   }
 
-  return key;
+  // 2. Chunk person IDs into batches of 15 and fetch People in parallel
+  if (idToKeys.size > 0) {
+    const personIds = Array.from(idToKeys.keys());
+    const idBatches: string[][] = [];
+    for (let i = 0; i < personIds.length; i += BATCH_SIZE) {
+      idBatches.push(personIds.slice(i, i + BATCH_SIZE));
+    }
+
+    await Promise.all(
+      idBatches.map(async (batchIds) => {
+        try {
+          const idFilter = batchIds.map((id) => `Id eq ${id}`).join(' or ');
+          const people = (await rockGet('/People', {
+            $filter: idFilter,
+            $select: 'Id,FirstName,LastName',
+            $top: batchIds.length,
+          })) as any[];
+
+          for (const person of people || []) {
+            if (!person?.FirstName) continue;
+            const fullName = `${person.FirstName} ${person.LastName || ''}`.trim();
+            for (const key of idToKeys.get(String(person.Id)) || []) {
+              personNameCache.set(key, fullName);
+              result.set(key, fullName);
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching People chunk:', err);
+        }
+      })
+    );
+  }
+
+  // Anything still unresolved (lookup failed, orphaned reference) just
+  // falls back to showing its raw stored key instead of blowing up the load.
+  for (const key of keys) {
+    if (!result.has(key)) result.set(key, key);
+  }
+
+  return result;
 }
 
+/** Loads a runsheet channel, its dynamic columns, and every segment row. */
 export async function rockGetRunsheetDetails(channelId: number) {
   try {
-    const rockUrl = process.env.ROCK_API_URL || 'https://rock.favor.church/api';
-    const rockKey = process.env.ROCK_API_KEY || 'IULFJIYTsYHPd8x28Jwi0H21';
+    const session = await getRockSession();
 
-    // 1. Fetch Content Channel info
-    const channel = (await rockGet(`/ContentChannels/${channelId}`)) as { Id: number; Name: string; ContentChannelTypeId: number };
+    const channel = (await rockGet(`/ContentChannels/${channelId}`, undefined, true)) as {
+      Id: number;
+      Name: string;
+      Description?: string;
+      ForeignKey?: string;
+      ContentChannelTypeId: number;
+    } | null;
+
     if (!channel) {
       throw new Error(`Content Channel ${channelId} not found`);
     }
 
+    // Defense in depth: the channel list already scopes by campus, but this
+    // blocks a direct/shared link to a channel outside the user's campus too.
+    if (!canAccessRunsheetChannel(session.access?.runsheetCampuses, channel.Name)) {
+      throw new Error('You do not have access to this runsheet.');
+    }
+
     const typeId = channel.ContentChannelTypeId;
 
-    // 2. Fetch Dynamic Item Attributes from Rock RMS for ContentChannelType & ContentChannel
+    // Item attributes can be attached to the channel type or to this channel.
     const rawAttrs = (await rockGet(
-      `/Attributes?$filter=EntityTypeId eq 208 and ((EntityTypeQualifierColumn eq 'ContentChannelTypeId' and EntityTypeQualifierValue eq '${typeId}') or (EntityTypeQualifierColumn eq 'ContentChannelId' and EntityTypeQualifierValue eq '${channelId}'))&$orderby=Order asc,Id asc`,
-      undefined,
-      true
+      '/Attributes',
+      {
+        $filter:
+          `EntityTypeId eq ${CONTENT_CHANNEL_ITEM_ENTITY_TYPE_ID} and ` +
+          `((EntityTypeQualifierColumn eq 'ContentChannelTypeId' and EntityTypeQualifierValue eq '${typeId}') or ` +
+          `(EntityTypeQualifierColumn eq 'ContentChannelId' and EntityTypeQualifierValue eq '${channelId}'))`,
+        $orderby: 'Order asc,Id asc',
+      },
+      true,
     )) as any[];
 
-    // Exclude DURATION attribute from general column list since DURATION has dedicated time columns
+    // DURATION drives the dedicated Start/End/Duration columns, SONGITEMID
+    // is an internal reference to the linked Song, and SIBLINGKEY is the shared row key.
     const columns: DynamicAttributeColumn[] = (rawAttrs || [])
-      .filter((attr) => attr.Key !== 'DURATION')
+      .filter((attr) => !HIDDEN_ATTRIBUTE_KEYS.includes(attr.Key))
       .map((attr) => ({
         id: attr.Id,
         key: attr.Key,
@@ -148,76 +199,94 @@ export async function rockGetRunsheetDetails(channelId: number) {
         fieldTypeId: attr.FieldTypeId,
       }));
 
-    // 3. Fetch Content Channel Items for this channel with loaded attributes
     const rawItems = (await rockGet(
-      `/ContentChannelItems?$filter=ContentChannelId eq ${channelId}&$orderby=Order asc&loadAttributes=simple`,
-      undefined,
-      true
+      '/ContentChannelItems',
+      {
+        $filter: `ContentChannelId eq ${channelId}`,
+        $orderby: 'Order asc',
+        loadAttributes: 'simple',
+      },
+      true,
     )) as any[];
 
-    // 4. Map items and resolve person GUIDs / values asynchronously
-    const items: RunsheetItemRow[] = await Promise.all(
-      (rawItems || []).map(async (item) => {
+    // Collect every person-column cell's raw value up front so all of them can
+    // be resolved to display names in one or two batched Rock calls, instead
+    // of one live round trip per cell (see resolvePersonNamesBatch above).
+    const personKeysToResolve: string[] = [];
+    for (const item of rawItems || []) {
+      const attrs = item.AttributeValues || {};
+      for (const col of columns) {
+        if (!isPersonColumn(col)) continue;
+        const attrObj = attrs[col.key];
+        const rawVal: string = attrObj?.PersistedTextValue || attrObj?.Value || attrObj?.ValueFormatted || '';
+        if (rawVal && looksLikePersonKey(rawVal.trim())) {
+          personKeysToResolve.push(rawVal.trim());
+        }
+      }
+    }
+    const resolvedPersonNames = await resolvePersonNamesBatch(personKeysToResolve);
+
+    const items: RunsheetItemRow[] = (rawItems || []).map((item) => {
         const attrs = item.AttributeValues || {};
-        const getAttrObj = (key: string) => attrs[key];
         const getAttrVal = (key: string) => attrs[key]?.Value || '';
 
-        const durationStr = getAttrVal('DURATION');
-        const durationNum = parseInt(durationStr, 10);
+        const durationNum = parseFloat(getAttrVal('DURATION'));
 
         const attributeValues: Record<string, string> = {};
 
         for (const col of columns) {
-          const attrObj = getAttrObj(col.key);
-          let rawVal = attrObj?.PersistedTextValue || attrObj?.ValueFormatted || attrObj?.Value || '';
+          const attrObj = attrs[col.key];
+          // `Value` is the raw stored value. `ValueFormatted` is Rock's own
+          // rendering for admin-screen display — for MarkdownFieldType it
+          // HTML-encodes the raw value first (our cells already store real
+          // HTML), so preferring it here double-escapes entities like `&`
+          // into `&amp;amp;`, which then only half-decodes back to `&amp;`
+          // once rendered. `Value` is what the runsheet editor itself wrote.
+          let rawVal: string = attrObj?.PersistedTextValue || attrObj?.Value || attrObj?.ValueFormatted || '';
 
-          // If Person field type (18) or Person-related key, resolve PersonAlias GUID to full name!
-          if (
-            rawVal &&
-            (col.fieldTypeId === 18 ||
-              col.key.toUpperCase().includes('PLATFORM') ||
-              col.key.toUpperCase().includes('ANCHOR') ||
-              col.key.toUpperCase().includes('PREACHER'))
-          ) {
-            if (/^\d+$/.test(rawVal.trim()) || /^[0-9a-fA-F-]{32,36}$/.test(rawVal.trim())) {
-              rawVal = await resolvePersonName(rawVal, rockUrl, rockKey);
-            }
+          if (rawVal && isPersonColumn(col) && looksLikePersonKey(rawVal.trim())) {
+            rawVal = resolvedPersonNames.get(rawVal.trim()) || rawVal;
           }
 
           attributeValues[col.key] = rawVal;
         }
 
-        // Title preference: use ACTIVITYTITLE if present, fallback to item.Title
-        const titleVal = attributeValues['ACTIVITYTITLE'] || item.Title || '';
-        attributeValues['ACTIVITYTITLE'] = titleVal;
+        // The activity title attribute is the source of truth; Rock's own Title
+        // column is the plain-text mirror kept for Rock's admin screens.
+        const titleVal = attributeValues.ACTIVITYTITLE || item.Title || '';
+        attributeValues.ACTIVITYTITLE = titleVal;
 
-        // Alias fallbacks for backward compatibility
-        const detailVal = attributeValues['DESCRIPTION'] || attributeValues['DETIAL'] || getAttrVal('DETIAL') || '';
-        const anchorVal = attributeValues['PLATFORM'] || attributeValues['ANCHORPREACHER'] || getAttrVal('ANCHORPREACHER') || '';
+        const songItemIdNum = parseInt(getAttrVal('SONGITEMID'), 10);
 
         return {
           id: item.Id,
           title: titleVal,
           order: item.Order || 0,
           startDateTime: item.StartDateTime || '',
-          duration: isNaN(durationNum) ? 0 : durationNum,
+          duration: Number.isNaN(durationNum) ? 0 : durationNum,
           attributeValues,
-          detail: detailVal,
-          anchorPreacher: anchorVal,
-          mainInstrument: attributeValues['MAININSTRUMENT'] || getAttrVal('MAININSTRUMENT') || '',
-          ledLiveScreens: attributeValues['LED WALL'] || attributeValues['LEDLIVESCREENS'] || getAttrVal('LEDLIVESCREENS') || '',
-          overlayBroadcast: attributeValues['OVERLAYBROADCAST'] || getAttrVal('OVERLAYBROADCAST') || '',
-          lighting: attributeValues['LIGHTING'] || getAttrVal('LIGHTING') || '',
-          audio: attributeValues['AUDIO'] || getAttrVal('AUDIO') || '',
+          songItemId: Number.isNaN(songItemIdNum) ? null : songItemIdNum,
+          detail: attributeValues.DESCRIPTION || attributeValues.DETIAL || getAttrVal('DETIAL') || '',
+          anchorPreacher: attributeValues.PLATFORM || attributeValues.ANCHORPREACHER || getAttrVal('ANCHORPREACHER') || '',
+          mainInstrument: attributeValues.MAININSTRUMENT || getAttrVal('MAININSTRUMENT') || '',
+          ledLiveScreens:
+            attributeValues['LED WALL'] || attributeValues.LEDLIVESCREENS || getAttrVal('LEDLIVESCREENS') || '',
+          overlayBroadcast: attributeValues.OVERLAYBROADCAST || getAttrVal('OVERLAYBROADCAST') || '',
+          lighting: attributeValues.LIGHTING || getAttrVal('LIGHTING') || '',
+          audio: attributeValues.AUDIO || getAttrVal('AUDIO') || '',
         };
-      })
-    );
+      });
 
     return {
       success: true,
       data: {
         channelId: channel.Id,
         name: channel.Name,
+        subtitle: channel.Description || '',
+        // Stored independently of Name/Description so editing Start Time never
+        // touches the runsheet's title — Rock's `ForeignKey` is a free-text
+        // field reserved for exactly this kind of external app bookkeeping.
+        startTime: channel.ForeignKey || '',
         contentChannelTypeId: typeId,
         columns,
         items,
