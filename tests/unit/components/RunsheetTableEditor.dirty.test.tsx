@@ -380,4 +380,35 @@ describe('RunsheetTableEditor dirty state', () => {
     const welcomeEntry = itemsToSave.find((item: RunsheetItemRow) => item.id === 101);
     expect(welcomeEntry?.attributeValues?.ACTIVITYTITLE).toBe('Favor News');
   });
+
+  test('the Card view Description field (and other free-text attribute fields) preserves spaces', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    (rockGetAvailableRunsheetChannels as jest.Mock).mockResolvedValue({ success: true, channels: [] });
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="10:00:00 AM"
+        onSaveRef={(fn) => (saveFn = fn)}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Cards'));
+    fireEvent.click(screen.getAllByText('Edit Card')[0]);
+
+    const descriptionInput = screen.getByPlaceholderText('Enter description...') as HTMLTextAreaElement;
+    fireEvent.change(descriptionInput, { target: { value: 'Favor News' } });
+    expect(descriptionInput.value).toBe('Favor News');
+    fireEvent.blur(descriptionInput);
+
+    await saveFn?.();
+
+    const [, itemsToSave] = (rockBulkSaveRunsheetItems as jest.Mock).mock.calls[0];
+    const welcomeEntry = itemsToSave.find((item: RunsheetItemRow) => item.id === 101);
+    expect(welcomeEntry?.attributeValues?.DESCRIPTION).toBe('Favor News');
+  });
 });

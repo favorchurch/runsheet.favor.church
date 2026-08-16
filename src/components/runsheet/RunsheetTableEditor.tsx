@@ -302,17 +302,8 @@ export function RunsheetTableEditor({
    * committed on blur, keeps typing itself cheap.
    */
   const [cardTitleDraft, setCardTitleDraft] = useState('');
-
-  /** This editor's own sticky title/toolbar bar, measured so the table's sticky column headers can sit just below it instead of also competing for `top: 0`. */
-  const stickyBarRef = React.useRef<HTMLDivElement | null>(null);
-  const [stickyBarHeight, setStickyBarHeight] = useState(0);
-  useEffect(() => {
-    const el = stickyBarRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => setStickyBarHeight(Math.ceil(el.getBoundingClientRect().height)));
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+  /** Same draft-until-blur treatment as the title, keyed by attribute column, for every other free-text field in the Card view (Description, etc). */
+  const [cardAttrDrafts, setCardAttrDrafts] = useState<{ [key: string]: string }>({});
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
@@ -685,6 +676,13 @@ export function RunsheetTableEditor({
     if (!row) return;
     setCardDurationDraft(formatDurationToHMS(Number(row.duration) || 0));
     setCardTitleDraft(htmlToPlainText(row.attributeValues?.ACTIVITYTITLE || row.title || ''));
+
+    const attrDrafts: { [key: string]: string } = {};
+    for (const col of dynamicAttrCols) {
+      if (isPersonColumn(col)) continue;
+      attrDrafts[col.key] = htmlToPlainText(readRunsheetCellValue(row, col.key));
+    }
+    setCardAttrDrafts(attrDrafts);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingCardIndex]);
 
@@ -693,6 +691,13 @@ export function RunsheetTableEditor({
     const targetId = processedRows[editingCardIndex]?.id;
     if (targetId === undefined) return;
     handleAttrValueChange(targetId, 'title', cardTitleDraft);
+  };
+
+  const handleCommitCardAttrDraft = (colKey: string) => {
+    if (editingCardIndex === null) return;
+    const targetId = processedRows[editingCardIndex]?.id;
+    if (targetId === undefined) return;
+    handleAttrValueChange(targetId, colKey, cardAttrDrafts[colKey] ?? '');
   };
 
   const handleCommitCardDurationDraft = () => {
@@ -1481,14 +1486,10 @@ export function RunsheetTableEditor({
     return { width: '100px', minWidth: '85px' };
   }
 
-  /** Where the table's own sticky column headers stick — below both the app's nav header and this editor's sticky title/toolbar bar. */
-  const tableHeaderTop = stickyTopOffset + stickyBarHeight;
-
   return (
-    <div className="flex w-full max-w-full min-w-0 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4 overflow-x-hidden">
+    <div className="flex w-full max-w-full min-w-0 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
       {/* Sticky Locked Header & Toolbar Container — sits just below the app's own sticky nav header (stickyTopOffset), not also at top:0, or the two would overlap. */}
       <div
-        ref={stickyBarRef}
         style={{ top: stickyTopOffset }}
         className="sticky z-40 bg-white/95 backdrop-blur border-b border-slate-300 p-2 sm:p-2.5 shadow-sm space-y-1.5 rounded-t-xl -mx-2.5 -mt-2.5 sm:-mx-4 sm:-mt-4"
       >
@@ -1966,34 +1967,34 @@ export function RunsheetTableEditor({
 
         <div className="w-full max-w-full overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-xs">
           <table className="w-full min-w-full border-collapse bg-white text-[11px] text-slate-900" style={{ tableLayout: 'fixed' }}>
-            <thead className="sticky z-30 bg-slate-900 text-white shadow-xs" style={{ top: tableHeaderTop }}>
+            <thead className="sticky top-0 z-30 bg-slate-900 text-white shadow-xs">
               <tr className="border-b-2 border-slate-950 text-left font-semibold text-white text-xs tracking-normal">
-                {!readOnly && <th className="sticky z-30 bg-slate-900 border-r border-slate-800 p-1 text-center" style={{ top: tableHeaderTop, width: '28px', minWidth: '28px' }} />}
-                <th className="sticky z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ top: tableHeaderTop, width: '64px', minWidth: '58px' }}>
+                {!readOnly && <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center" style={{ width: '28px', minWidth: '28px' }} />}
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
                   Start
                 </th>
-                <th className="sticky z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ top: tableHeaderTop, width: '64px', minWidth: '58px' }}>
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
                   End
                 </th>
-                <th className="sticky z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ top: tableHeaderTop, width: '64px', minWidth: '58px' }}>
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
                   Duration
                 </th>
-                <th className="sticky z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ top: tableHeaderTop, width: '140px', minWidth: '110px' }}>
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '140px', minWidth: '110px' }}>
                   Activity Title
                 </th>
 
                 {dynamicAttrCols.map((col) => (
                   <th
                     key={col.id}
-                    className="sticky z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold select-none overflow-hidden text-ellipsis text-slate-100"
-                    style={{ ...getColumnStyle(col.key, col.name), top: tableHeaderTop }}
+                    className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold select-none overflow-hidden text-ellipsis text-slate-100"
+                    style={getColumnStyle(col.key, col.name)}
                     title={col.name}
                   >
                     {col.name}
                   </th>
                 ))}
 
-                {!readOnly && <th className="sticky z-30 bg-slate-900 p-1 text-center" style={{ top: tableHeaderTop, width: '48px', minWidth: '48px' }} />}
+                {!readOnly && <th className="sticky top-0 z-30 bg-slate-900 p-1 text-center" style={{ width: '48px', minWidth: '48px' }} />}
               </tr>
             </thead>
             <tbody>
@@ -2391,10 +2392,9 @@ export function RunsheetTableEditor({
                         <textarea
                           rows={2}
                           disabled={readOnly}
-                          value={htmlToPlainText(val)}
-                          onChange={(e) => {
-                            handleAttrValueChange(processedRows[editingCardIndex].id, col.key, e.target.value);
-                          }}
+                          value={cardAttrDrafts[col.key] ?? htmlToPlainText(val)}
+                          onChange={(e) => setCardAttrDrafts((previous) => ({ ...previous, [col.key]: e.target.value }))}
+                          onBlur={() => handleCommitCardAttrDraft(col.key)}
                           placeholder={`Enter ${col.name.toLowerCase()}...`}
                           className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 focus:border-slate-800 focus:ring-2 focus:ring-slate-800 focus:outline-none resize-y min-h-[60px]"
                         />
