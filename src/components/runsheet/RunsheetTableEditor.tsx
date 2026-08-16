@@ -97,6 +97,8 @@ interface RunsheetTableEditorProps {
   initialItems: RunsheetItemRow[];
   initialStartTime?: string;
   initialSubtitle?: string;
+  /** Pixel height of an outer page header this editor's own sticky bar must sit below, so the two don't stack on top of each other at `top: 0`. */
+  stickyTopOffset?: number;
   readOnly?: boolean;
   runsheetCampuses?: string[];
   onCreated?: (channelId: number, title: string, createdData?: RunsheetDetails) => void;
@@ -160,6 +162,7 @@ export function RunsheetTableEditor({
   initialItems,
   initialStartTime = '08:00:00 AM',
   initialSubtitle = '',
+  stickyTopOffset = 0,
   readOnly = false,
   runsheetCampuses,
   onCreated,
@@ -289,6 +292,27 @@ export function RunsheetTableEditor({
   const [editingCardIndex, setEditingCardIndex] = useState<number | null>(null);
   /** Draft text for the Card view's Duration field — lets seconds be typed (`00:05:30`) without every keystroke reformatting the input. */
   const [cardDurationDraft, setCardDurationDraft] = useState('');
+  /**
+   * Draft text for the Card view's Activity Title field. Committing on every
+   * keystroke (via `handleAttrValueChange`, which replaces the whole `items`
+   * array and pushes an undo snapshot) is heavy enough per-keystroke work that
+   * real mobile browsers can drop a character — the space bar interacting
+   * with iOS/Android autocorrect being the most commonly hit case — even
+   * though it can't be reproduced with synthetic test events. A local draft,
+   * committed on blur, keeps typing itself cheap.
+   */
+  const [cardTitleDraft, setCardTitleDraft] = useState('');
+
+  /** This editor's own sticky title/toolbar bar, measured so the table's sticky column headers can sit just below it instead of also competing for `top: 0`. */
+  const stickyBarRef = React.useRef<HTMLDivElement | null>(null);
+  const [stickyBarHeight, setStickyBarHeight] = useState(0);
+  useEffect(() => {
+    const el = stickyBarRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => setStickyBarHeight(Math.ceil(el.getBoundingClientRect().height)));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
@@ -658,9 +682,18 @@ export function RunsheetTableEditor({
   useEffect(() => {
     if (editingCardIndex === null) return;
     const row = processedRows[editingCardIndex];
-    if (row) setCardDurationDraft(formatDurationToHMS(Number(row.duration) || 0));
+    if (!row) return;
+    setCardDurationDraft(formatDurationToHMS(Number(row.duration) || 0));
+    setCardTitleDraft(htmlToPlainText(row.attributeValues?.ACTIVITYTITLE || row.title || ''));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingCardIndex]);
+
+  const handleCommitCardTitleDraft = () => {
+    if (editingCardIndex === null) return;
+    const targetId = processedRows[editingCardIndex]?.id;
+    if (targetId === undefined) return;
+    handleAttrValueChange(targetId, 'title', cardTitleDraft);
+  };
 
   const handleCommitCardDurationDraft = () => {
     if (editingCardIndex === null) return;
@@ -1448,10 +1481,17 @@ export function RunsheetTableEditor({
     return { width: '100px', minWidth: '85px' };
   }
 
+  /** Where the table's own sticky column headers stick — below both the app's nav header and this editor's sticky title/toolbar bar. */
+  const tableHeaderTop = stickyTopOffset + stickyBarHeight;
+
   return (
     <div className="flex w-full max-w-full min-w-0 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4 overflow-x-hidden">
-      {/* Sticky Locked Header & Toolbar Container */}
-      <div className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-300 p-2 sm:p-2.5 shadow-sm space-y-1.5 rounded-t-xl -mx-2.5 -mt-2.5 sm:-mx-4 sm:-mt-4">
+      {/* Sticky Locked Header & Toolbar Container — sits just below the app's own sticky nav header (stickyTopOffset), not also at top:0, or the two would overlap. */}
+      <div
+        ref={stickyBarRef}
+        style={{ top: stickyTopOffset }}
+        className="sticky z-40 bg-white/95 backdrop-blur border-b border-slate-300 p-2 sm:p-2.5 shadow-sm space-y-1.5 rounded-t-xl -mx-2.5 -mt-2.5 sm:-mx-4 sm:-mt-4"
+      >
         <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
           <div>
             <div className="flex items-center gap-2">
@@ -1926,34 +1966,34 @@ export function RunsheetTableEditor({
 
         <div className="w-full max-w-full overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-xs">
           <table className="w-full min-w-full border-collapse bg-white text-[11px] text-slate-900" style={{ tableLayout: 'fixed' }}>
-            <thead className="sticky top-0 z-30 bg-slate-900 text-white shadow-xs">
+            <thead className="sticky z-30 bg-slate-900 text-white shadow-xs" style={{ top: tableHeaderTop }}>
               <tr className="border-b-2 border-slate-950 text-left font-semibold text-white text-xs tracking-normal">
-                {!readOnly && <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center" style={{ width: '28px', minWidth: '28px' }} />}
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
+                {!readOnly && <th className="sticky z-30 bg-slate-900 border-r border-slate-800 p-1 text-center" style={{ top: tableHeaderTop, width: '28px', minWidth: '28px' }} />}
+                <th className="sticky z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ top: tableHeaderTop, width: '64px', minWidth: '58px' }}>
                   Start
                 </th>
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
+                <th className="sticky z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ top: tableHeaderTop, width: '64px', minWidth: '58px' }}>
                   End
                 </th>
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
+                <th className="sticky z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ top: tableHeaderTop, width: '64px', minWidth: '58px' }}>
                   Duration
                 </th>
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '140px', minWidth: '110px' }}>
+                <th className="sticky z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ top: tableHeaderTop, width: '140px', minWidth: '110px' }}>
                   Activity Title
                 </th>
 
                 {dynamicAttrCols.map((col) => (
                   <th
                     key={col.id}
-                    className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold select-none overflow-hidden text-ellipsis text-slate-100"
-                    style={getColumnStyle(col.key, col.name)}
+                    className="sticky z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold select-none overflow-hidden text-ellipsis text-slate-100"
+                    style={{ ...getColumnStyle(col.key, col.name), top: tableHeaderTop }}
                     title={col.name}
                   >
                     {col.name}
                   </th>
                 ))}
 
-                {!readOnly && <th className="sticky top-0 z-30 bg-slate-900 p-1 text-center" style={{ width: '48px', minWidth: '48px' }} />}
+                {!readOnly && <th className="sticky z-30 bg-slate-900 p-1 text-center" style={{ top: tableHeaderTop, width: '48px', minWidth: '48px' }} />}
               </tr>
             </thead>
             <tbody>
@@ -2320,10 +2360,9 @@ export function RunsheetTableEditor({
                     <input
                       type="text"
                       disabled={readOnly}
-                      value={htmlToPlainText(processedRows[editingCardIndex].attributeValues?.ACTIVITYTITLE || processedRows[editingCardIndex].title || '')}
-                      onChange={(e) => {
-                        handleAttrValueChange(processedRows[editingCardIndex].id, 'title', e.target.value);
-                      }}
+                      value={cardTitleDraft}
+                      onChange={(e) => setCardTitleDraft(e.target.value)}
+                      onBlur={handleCommitCardTitleDraft}
                       placeholder="Enter activity title..."
                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 focus:border-slate-800 focus:ring-2 focus:ring-slate-800 focus:outline-none"
                     />

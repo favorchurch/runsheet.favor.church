@@ -3,7 +3,7 @@
 
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { canUserEditRunsheet } from '@/lib/permissions';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
 import { extractChannelTime } from '@/lib/runsheetDate';
@@ -47,6 +47,26 @@ export function RunsheetManager({
   const [showArchived, setShowArchived] = useState(false);
   const [compareSelection, setCompareSelection] = useState<Set<number>>(new Set());
   const [compareViewOpen, setCompareViewOpen] = useState(false);
+
+  /**
+   * The runsheet editor's own sticky title/toolbar bar needs to stick just
+   * below this header rather than at `top: 0` too, or the two sticky
+   * elements fight over the same spot once you scroll. Measured live (not
+   * hardcoded) since the header's height isn't fixed across breakpoints.
+   */
+  const appHeaderRef = useRef<HTMLElement | null>(null);
+  const [appHeaderHeight, setAppHeaderHeight] = useState(0);
+
+  useEffect(() => {
+    const el = appHeaderRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    // `getBoundingClientRect` (not the observer's own `contentRect`, which
+    // excludes padding/border) so this matches the header's actual occupied
+    // height — the exact offset the editor's sticky bar needs to sit below.
+    const observer = new ResizeObserver(() => setAppHeaderHeight(Math.ceil(el.getBoundingClientRect().height)));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const saveRunsheetRef = React.useRef<(() => Promise<boolean>) | null>(null);
   const activeChannelIdRef = React.useRef<number | null>(initialChannelId);
@@ -308,7 +328,10 @@ export function RunsheetManager({
   return (
     <div className="w-full max-w-none space-y-4">
       {/* Sticky App Header — always visible, even while editing */}
-      <header className="sticky top-0 z-40 -mx-3 sm:-mx-6 mb-2 bg-white/95 backdrop-blur border-b border-slate-200/80 px-4 sm:px-6 py-3 flex items-center justify-between shadow-xs">
+      <header
+        ref={appHeaderRef}
+        className="sticky top-0 z-40 -mx-3 sm:-mx-6 mb-2 bg-white/95 backdrop-blur border-b border-slate-200/80 px-4 sm:px-6 py-3 flex items-center justify-between shadow-xs"
+      >
         <button
           type="button"
           onClick={handleGoHome}
@@ -511,6 +534,7 @@ export function RunsheetManager({
               : parseStartTimeFromRunsheetName(runsheetData.name))
           }
           initialSubtitle={runsheetData.subtitle}
+          stickyTopOffset={appHeaderHeight}
           readOnly={!canEdit}
           runsheetCampuses={user?.access?.runsheetCampuses}
           onCreated={handleRunsheetCreated}

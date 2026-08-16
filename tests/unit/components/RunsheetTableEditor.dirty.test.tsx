@@ -349,4 +349,35 @@ describe('RunsheetTableEditor dirty state', () => {
     expect(praiseEntry?.duration).toBe(20);
     expect(welcomeEntry?.duration ?? 5).toBe(5); // untouched
   });
+
+  test('the Card view Activity Title field preserves spaces', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    (rockGetAvailableRunsheetChannels as jest.Mock).mockResolvedValue({ success: true, channels: [] });
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="10:00:00 AM"
+        onSaveRef={(fn) => (saveFn = fn)}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Cards'));
+    fireEvent.click(screen.getAllByText('Edit Card')[0]);
+
+    const titleInput = screen.getByPlaceholderText('Enter activity title...') as HTMLInputElement;
+    fireEvent.change(titleInput, { target: { value: 'Favor News' } });
+    expect(titleInput.value).toBe('Favor News');
+    fireEvent.blur(titleInput);
+
+    await saveFn?.();
+
+    const [, itemsToSave] = (rockBulkSaveRunsheetItems as jest.Mock).mock.calls[0];
+    const welcomeEntry = itemsToSave.find((item: RunsheetItemRow) => item.id === 101);
+    expect(welcomeEntry?.attributeValues?.ACTIVITYTITLE).toBe('Favor News');
+  });
 });
