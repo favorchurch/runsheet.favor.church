@@ -1,7 +1,9 @@
 'use server';
 
+import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import { cleanSongTitle } from '@/lib/songUtils';
+import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 
 export interface SongOption {
   id: number;
@@ -15,6 +17,10 @@ export async function rockSearchSongs(query = ''): Promise<{
   error?: string;
 }> {
   try {
+    const session = await getRockSession();
+    const access = assertRunsheetViewAccess(session);
+    if (!access.allowed) return { success: false, songs: [], error: access.error };
+
     const q = query.trim().replace(/'/g, "''");
     const filter = q
       ? `ContentChannelId eq 18 and substringof('${q}', Title)`
@@ -55,7 +61,7 @@ export async function rockSearchSongs(query = ''): Promise<{
     return {
       success: false,
       songs: [],
-      error: err?.message || 'Failed to search songs',
+      error: 'Failed to search songs',
     };
   }
 }

@@ -1,6 +1,8 @@
 'use server';
 
+import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
+import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 
 export interface ScheduleOption {
   id: number;
@@ -51,6 +53,10 @@ export async function rockGetScheduleOptions(
   error?: string;
 }> {
   try {
+    const session = await getRockSession();
+    const access = assertRunsheetViewAccess(session);
+    if (!access.allowed) return { success: false, schedules: [], error: access.error };
+
     const targetCategoryIds = categoryId && CATEGORY_SCHEDULE_MAP[categoryId]
       ? CATEGORY_SCHEDULE_MAP[categoryId]
       : [302, 311, 416, 417, 418, 303, 304];
@@ -189,7 +195,7 @@ export async function rockGetScheduleOptions(
     return {
       success: false,
       schedules: [],
-      error: err?.message || 'Failed to fetch schedule options',
+      error: 'Failed to fetch schedule options',
     };
   }
 }

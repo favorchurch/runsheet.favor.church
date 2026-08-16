@@ -1,17 +1,22 @@
 'use server';
 
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
-import { canUserEditRunsheet } from '@/lib/permissions';
 import { rockDelete, rockGet } from '@/server-actions/internal/rockFetch';
+import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
 
 export async function rockDeleteServiceRunsheet(channelId: number): Promise<{
   success: boolean;
   error?: string;
 }> {
   try {
+    if (!Number.isSafeInteger(channelId) || channelId <= 0) {
+      return { success: false, error: 'Invalid runsheet.' };
+    }
+
     const session = await getRockSession();
-    if (!canUserEditRunsheet(session)) {
-      return { success: false, error: 'Unauthorized: Only editors can delete runsheets.' };
+    const access = await assertRunsheetEditAccess(session, channelId);
+    if (!access.allowed) {
+      return { success: false, error: access.error };
     }
 
     // 1. Fetch items attached to the ContentChannel
@@ -33,6 +38,6 @@ export async function rockDeleteServiceRunsheet(channelId: number): Promise<{
     return { success: true };
   } catch (err: any) {
     console.error('Error deleting runsheet content channel:', err);
-    return { success: false, error: err?.message || 'Failed to delete runsheet.' };
+    return { success: false, error: 'Failed to delete runsheet.' };
   }
 }
