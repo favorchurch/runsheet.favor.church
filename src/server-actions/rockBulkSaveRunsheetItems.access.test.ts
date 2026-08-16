@@ -123,4 +123,19 @@ describe('rockBulkSaveRunsheetItems access ordering', () => {
     expect(mockRockDelete).not.toHaveBeenCalled();
     expectNoRockWrites();
   });
+
+  it('rejects a forged string channel id before treating it as a title or reading Rock', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+
+    const result = await rockBulkSaveRunsheetItems(
+      'MNL Service // August 16, 2026 // 10AM' as unknown as number,
+      [],
+      [],
+    );
+
+    expect(result).toEqual({ success: false, error: 'Invalid runsheet.' });
+    expect(mockGetRockSession).not.toHaveBeenCalled();
+    expect(mockRockGet).not.toHaveBeenCalled();
+    expectNoRockWrites();
+  });
 });

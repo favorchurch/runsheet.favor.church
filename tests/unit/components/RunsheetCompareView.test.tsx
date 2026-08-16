@@ -16,6 +16,7 @@ import '@testing-library/jest-dom';
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { RunsheetCompareView } from '@/components/runsheet/RunsheetCompareView';
+import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDetailsBatch';
 
 jest.mock('@auth0/nextjs-auth0', () => ({
@@ -90,5 +91,18 @@ describe('RunsheetCompareView', () => {
 
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /save comparison edits/i })).not.toBeInTheDocument();
+  });
+
+  it('does not open an editor or attempt a write when mounted read-only', async () => {
+    render(<RunsheetCompareView channelIds={[1, 2]} onClose={jest.fn()} readOnly />);
+    await waitFor(() => expect(screen.getByText('Doors open 8:30')).toBeInTheDocument());
+
+    const cell = screen.getByText('Doors open 8:30').closest('td');
+    expect(cell).not.toBeNull();
+    fireEvent.click(cell!);
+    fireEvent.doubleClick(cell!);
+
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(rockBulkSaveRunsheetItems).not.toHaveBeenCalled();
   });
 });

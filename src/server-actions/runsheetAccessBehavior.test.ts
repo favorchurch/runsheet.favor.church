@@ -225,6 +225,16 @@ describe('server-action access enforcement', () => {
     expect(mockRockGet).not.toHaveBeenCalled();
   });
 
+  it('rejects a forged string where runsheet details expects a channel id', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', false));
+
+    const result = await rockGetRunsheetDetails('42 MNL' as unknown as number);
+
+    expect(result).toEqual({ success: false, error: 'Invalid runsheet.' });
+    expect(mockGetRockSession).not.toHaveBeenCalled();
+    expect(mockRockGet).not.toHaveBeenCalled();
+  });
+
   it('keeps viewer-level runsheet content reads available', async () => {
     mockGetRockSession.mockResolvedValue(session('MNL', false));
     mockRockGet.mockResolvedValue([]);

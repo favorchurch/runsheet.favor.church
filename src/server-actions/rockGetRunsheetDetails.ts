@@ -155,6 +155,10 @@ async function resolvePersonNamesBatch(rawValues: string[]): Promise<Map<string,
 /** Loads a runsheet channel, its dynamic columns, and every segment row. */
 export async function rockGetRunsheetDetails(channelId: number) {
   try {
+    if (!Number.isSafeInteger(channelId) || channelId <= 0) {
+      return { success: false, error: 'Invalid runsheet.' };
+    }
+
     const session = await getRockSession();
     const access = assertRunsheetViewAccess(session);
     if (!access.allowed) {
