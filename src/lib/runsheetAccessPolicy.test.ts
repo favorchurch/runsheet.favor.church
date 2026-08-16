@@ -93,7 +93,7 @@ describe('runsheet access policy', () => {
     expect(result.runsheetCampuses).toEqual(['MNL']);
   });
 
-  it('resolves a campus when the authoritative root is absent from fetched groups', () => {
+  it('uses the supplied campus-root map when resolving a campus', () => {
     const result = resolveRunsheetAccessPolicy(
       [{ groupId: 7002, groupTypeId: 28, groupRoleId: 1 }],
       new Map([[7002, { groupId: 7002, groupTypeId: 28, name: 'MNL Staff', parentGroupId: 32893 }]]),

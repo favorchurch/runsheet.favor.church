@@ -42,7 +42,7 @@ type LeaderRoleIds = ReadonlySet<number>;
 function isGlobalEditGroup(membership: RunsheetPolicyMembership, group?: RunsheetPolicyGroup): boolean {
   return (
     (GLOBAL_EDIT_GROUP_IDS as readonly number[]).includes(membership.groupId) ||
-    (membership.groupTypeId === 1 && group?.name?.trim().toLocaleLowerCase() === 'glb | web developer')
+    (membership.groupTypeId === 1 && group?.name?.trim().toLowerCase() === 'glb | web developer')
   );
 }
 
