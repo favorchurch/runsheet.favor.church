@@ -146,4 +146,19 @@ describe('getRockSession rock_person_ids claim', () => {
     expect(result.personIds).toEqual([202, 101]);
     expect(mockRockResolveAccess).not.toHaveBeenCalled();
   });
+
+  it('does not use an unverified email for Rock fallback resolution', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        'https://auth.favor.church/rock_person_found': false,
+        email: 'unverified@example.com',
+        email_verified: false,
+      }),
+    );
+    mockRockResolveAccess.mockResolvedValue(resolvedResult(0));
+
+    await getRockSession();
+
+    expect(mockRockResolveAccess).toHaveBeenCalledWith(0, '');
+  });
 });

@@ -49,8 +49,9 @@ function withEffectivePersonId(personIds: number[], effectivePersonId: number): 
  * Return the current user's Rock-backed portal session.
  *
  * Auth0 proves identity. If Post-Login claims are missing or if personId is 0,
- * it attempts email resolution against Rock API and returns a valid Volunteer session
- * so that no authenticated user is blocked from viewing runsheets.
+ * it attempts email resolution against Rock API only when Auth0 has verified the
+ * email claim. A verified email that is not found in Rock remains denied by the
+ * access policy; authentication alone does not grant runsheet access.
  */
 export async function getRockSession(): Promise<RockSession> {
   const session = await getServerSession();
@@ -62,7 +63,7 @@ export async function getRockSession(): Promise<RockSession> {
   const personFound = profile[ROCK_PERSON_FOUND_CLAIM];
   const personId = personFound ? Number(profile[ROCK_PERSON_ID_CLAIM]) : 0;
   const personIds = parseRockPersonIds(profile[ROCK_PERSON_IDS_CLAIM], personId);
-  const email = profile.email || profile.name || '';
+  const email = profile.email_verified === true ? profile.email || '' : '';
 
   // Check cache first if valid personId
   if (personId > 0) {
