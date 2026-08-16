@@ -3,11 +3,13 @@
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockPost } from '@/server-actions/internal/rockFetch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
-import { canAccessRunsheetChannel, ALL_CAMPUSES } from '@/lib/runsheetCampus';
+import { extractRunsheetCampuses } from '@/lib/runsheetCampus';
+import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
 import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetDetails } from '@/types/Runsheet';
 
+const RUNSHEET_CONTENT_CHANNEL_TYPE_ID = 13;
+
 export async function rockDuplicateServiceRunsheet(
-  sourceChannelId: number,
   targetTitle: string,
   contentChannelTypeId: number = 13,
   categoryId?: number,
@@ -22,21 +24,24 @@ export async function rockDuplicateServiceRunsheet(
   try {
     const session = await getRockSession();
 
-    // 1. Enforce campus gating permissions on target runsheet title
-    if (!canAccessRunsheetChannel(session?.access?.runsheetCampuses, targetTitle)) {
-      const allowed = (session?.access?.runsheetCampuses || [])
-        .filter((c) => c !== ALL_CAMPUSES)
-        .join(', ');
-      return {
-        success: false,
-        error: `You are only authorized to create runsheets for your assigned campus (${allowed || 'none'}).`,
-      };
+    // 1. Enforce edit and campus gating before any Rock mutation.
+    const access = await assertRunsheetEditAccess(session, targetTitle);
+    if (!access.allowed) {
+      return { success: false, error: access.error };
+    }
+
+    if (extractRunsheetCampuses(targetTitle).length !== 1) {
+      return { success: false, error: 'Runsheet titles must contain exactly one campus marker.' };
+    }
+
+    if (contentChannelTypeId !== RUNSHEET_CONTENT_CHANNEL_TYPE_ID) {
+      return { success: false, error: 'Invalid runsheet content channel type.' };
     }
 
     // 2. Create the new ContentChannel in Rock RMS
     const result = await rockPost('/ContentChannels', {
       Name: targetTitle,
-      ContentChannelTypeId: contentChannelTypeId,
+      ContentChannelTypeId: RUNSHEET_CONTENT_CHANNEL_TYPE_ID,
       RequiresApproval: false,
       IsIndexEnabled: true,
       EnablePersonalization: true,
@@ -80,7 +85,7 @@ export async function rockDuplicateServiceRunsheet(
       data: {
         channelId: newChannelId,
         name: targetTitle,
-        contentChannelTypeId,
+        contentChannelTypeId: RUNSHEET_CONTENT_CHANNEL_TYPE_ID,
         columns: columns || [],
         items: preparedItems,
       },
@@ -89,7 +94,7 @@ export async function rockDuplicateServiceRunsheet(
     console.error('Error duplicating runsheet:', err);
     return {
       success: false,
-      error: err?.message || 'Failed to duplicate runsheet.',
+      error: 'Failed to duplicate runsheet.',
     };
   }
 }

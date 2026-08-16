@@ -4,6 +4,7 @@ import { readRunsheetCellValue } from '@/constants/runsheetColumns';
 import { htmlToPlainText } from '@/lib/richText';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockDelete, rockGet, rockPatch, rockPost } from '@/server-actions/internal/rockFetch';
+import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
 import type { BulkSaveResult, DynamicAttributeColumn, ItemResult, RunsheetItemRow } from '@/types/Runsheet';
 
 /** Rock's `ContentChannelItem` entity type, used to find item attributes. */
@@ -22,6 +23,27 @@ const FALLBACK_DURATION_ATTRIBUTE_ID = 8432;
 interface ResolvedChannel {
   contentChannelTypeId: number;
   columns: DynamicAttributeColumn[];
+}
+
+const INVALID_ITEM_ERROR = 'One or more runsheet items are not part of this runsheet.';
+
+/** Returns the existing item ids so a client cannot write another channel's rows. */
+async function fetchChannelItemIds(channelId: number): Promise<Set<number>> {
+  const rawItems = (await rockGet(
+    '/ContentChannelItems',
+    {
+      $filter: `ContentChannelId eq ${channelId}`,
+      $select: 'Id',
+      $top: 5000,
+    },
+    true,
+  )) as Array<{ Id?: number }> | null;
+
+  return new Set(
+    (rawItems || [])
+      .map((item) => item?.Id)
+      .filter((id): id is number => typeof id === 'number' && Number.isSafeInteger(id) && id > 0),
+  );
 }
 
 /** Reads a channel's type and item attributes straight from Rock. */
@@ -120,7 +142,41 @@ export async function rockBulkSaveRunsheetItems(
   startTime?: string,
 ): Promise<BulkSaveResult> {
   try {
-    await getRockSession();
+    if (!Number.isSafeInteger(channelId) || channelId <= 0) {
+      return { success: false, error: 'Invalid runsheet.' };
+    }
+
+    const session = await getRockSession();
+    // This must precede every write, including the self-healing
+    // ItemsManuallyOrdered patch inside resolveChannel below.
+    const access = await assertRunsheetEditAccess(session, channelId);
+    if (!access.allowed) {
+      return { success: false, error: access.error };
+    }
+
+    const existingItemIds = await fetchChannelItemIds(channelId);
+    const numericDeletedIds = deletedItemIds.filter(
+      (deletedId): deletedId is number =>
+        typeof deletedId === 'number' &&
+        Number.isSafeInteger(deletedId) &&
+        deletedId > 0,
+    );
+    const itemIdsToDelete = numericDeletedIds.filter((deletedId) => existingItemIds.has(deletedId));
+    const hasInvalidDeletedId = numericDeletedIds.length !== itemIdsToDelete.length;
+    const hasInvalidExistingItem = items.some((item) => {
+      const isNewItem = typeof item.id === 'string' || item.isNew;
+      if (isNewItem) return false;
+      return typeof item.id !== 'number' || !Number.isSafeInteger(item.id) || !existingItemIds.has(item.id);
+    });
+
+    if (hasInvalidDeletedId || hasInvalidExistingItem) {
+      return { success: false, error: INVALID_ITEM_ERROR };
+    }
+
+    // Resolve metadata only after the payload has passed the ownership check.
+    // This may self-heal ItemsManuallyOrdered, so it remains after the shared
+    // authorization gate and before any client-requested mutation.
+    const channel = await resolveChannel(channelId);
 
     if (subtitle !== undefined) {
       await rockPatch(`/ContentChannels/${channelId}`, { Description: subtitle });
@@ -134,16 +190,13 @@ export async function rockBulkSaveRunsheetItems(
     }
 
     // 1. Delete removed items in parallel
-    const deletePromises = deletedItemIds
-      .filter((deletedId): deletedId is number => typeof deletedId === 'number' && deletedId > 0)
-      .map((deletedId) => rockDelete(`/ContentChannelItems/${deletedId}`));
+    const deletePromises = itemIdsToDelete.map((deletedId) => rockDelete(`/ContentChannelItems/${deletedId}`));
 
     if (deletePromises.length > 0) {
       await Promise.all(deletePromises);
     }
 
-    // 2. Resolve channel & attribute metadata from Rock
-    const channel = await resolveChannel(channelId);
+    // 2. Use the channel & attribute metadata resolved above
     const allAttributeColumns = (columns?.length ? columns : channel.columns).filter(
       (col) => col.id && col.key !== 'DURATION' && col.key !== 'SONGITEMID',
     );
@@ -269,7 +322,7 @@ export async function rockBulkSaveRunsheetItems(
       return {
         clientId: items[index].id,
         ok: false,
-        error: res.reason?.message || 'Failed to save item',
+        error: 'Failed to save item',
       };
     });
 
@@ -281,6 +334,6 @@ export async function rockBulkSaveRunsheetItems(
     };
   } catch (err: any) {
     console.error('Error bulk-saving runsheet items:', err);
-    return { success: false, error: err.message || 'Failed to save changes to Rock' };
+    return { success: false, error: 'Failed to save changes to Rock' };
   }
 }

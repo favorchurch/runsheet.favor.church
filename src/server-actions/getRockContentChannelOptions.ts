@@ -1,6 +1,8 @@
 'use server';
 
+import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
+import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 
 export interface ContentChannelTypeOption {
   id: number;
@@ -14,6 +16,12 @@ export interface ContentChannelCategoryOption {
 
 export async function getRockContentChannelOptions() {
   try {
+    const session = await getRockSession();
+    const access = assertRunsheetViewAccess(session);
+    if (!access.allowed) {
+      return { success: false, types: [], categories: [], error: access.error };
+    }
+
     // 1. Fetch Content Channel Types (restricted to "Service Runsheet", Id 13)
     const types = (await rockGet("/ContentChannelTypes?$filter=Id eq 13 or Name eq 'Service Runsheet'&$select=Id,Name&$orderby=Name asc")) as Array<{ Id: number; Name: string }>;
 
@@ -36,7 +44,7 @@ export async function getRockContentChannelOptions() {
       success: false,
       types: [],
       categories: [],
-      error: err.message || 'Failed to fetch options from Rock',
+      error: 'Failed to fetch options from Rock',
     };
   }
 }

@@ -1,5 +1,7 @@
 'use server';
 
+import { getRockSession } from '@/auth0-hooks/server/getRockSession';
+import { canUserEditRunsheet } from '@/lib/permissions';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 
 const MIN_QUERY_LENGTH = 2;
@@ -27,6 +29,18 @@ function escapeODataString(value: string): string {
 export async function searchRockPeople(query: string): Promise<RockPersonSearchResult[]> {
   const trimmed = query?.trim() ?? '';
   if (trimmed.length < MIN_QUERY_LENGTH) return [];
+
+  let session;
+  try {
+    session = await getRockSession();
+  } catch (err) {
+    console.error('Could not resolve Rock session for person search:', err);
+    return [];
+  }
+
+  // Person search powers the assign affordance, so it is editor-only even
+  // though viewer-level runsheet content reads remain allowed by D4.
+  if (!canUserEditRunsheet(session)) return [];
 
   try {
     const searchResults = (await rockGet('/People/Search', { name: trimmed }, true)) as any[];

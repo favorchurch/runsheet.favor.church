@@ -958,7 +958,6 @@ export function RunsheetTableEditor({
     const allPreparedItems = [...runsheetPreparedItems, ...rosterPreparedItems];
 
     const res = await rockDuplicateServiceRunsheet(
-      channelId,
       finalTitle,
       13,
       duplicateCategoryId ? Number(duplicateCategoryId) : undefined,

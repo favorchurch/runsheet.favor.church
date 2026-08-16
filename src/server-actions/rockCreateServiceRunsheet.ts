@@ -4,27 +4,33 @@ import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockPost } from '@/server-actions/internal/rockFetch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
-import { canAccessRunsheetChannel, ALL_CAMPUSES } from '@/lib/runsheetCampus';
+import { extractRunsheetCampuses } from '@/lib/runsheetCampus';
+import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
 import type { RunsheetItemRow } from '@/types/Runsheet';
+
+const RUNSHEET_CONTENT_CHANNEL_TYPE_ID = 13;
 
 export async function rockCreateServiceRunsheet(title: string, contentChannelTypeId: number, categoryId?: number) {
   try {
     const session = await getRockSession();
 
-    if (!canAccessRunsheetChannel(session?.access?.runsheetCampuses, title)) {
-      const allowed = (session?.access?.runsheetCampuses || [])
-        .filter((c) => c !== ALL_CAMPUSES)
-        .join(', ');
-      return {
-        success: false,
-        error: `You are only authorized to create runsheets for your assigned campus (${allowed || 'none'}).`,
-      };
+    const access = await assertRunsheetEditAccess(session, title);
+    if (!access.allowed) {
+      return { success: false, error: access.error };
+    }
+
+    if (extractRunsheetCampuses(title).length !== 1) {
+      return { success: false, error: 'Runsheet titles must contain exactly one campus marker.' };
+    }
+
+    if (contentChannelTypeId !== RUNSHEET_CONTENT_CHANNEL_TYPE_ID) {
+      return { success: false, error: 'Invalid runsheet content channel type.' };
     }
 
     // 1. Create the Content Channel in Rock RMS using the selected ContentChannelTypeId
     const result = await rockPost('/ContentChannels', {
       Name: title,
-      ContentChannelTypeId: contentChannelTypeId,
+      ContentChannelTypeId: RUNSHEET_CONTENT_CHANNEL_TYPE_ID,
       RequiresApproval: false,
       IsIndexEnabled: true,
       EnablePersonalization: true,
@@ -88,13 +94,13 @@ export async function rockCreateServiceRunsheet(title: string, contentChannelTyp
       data: {
         channelId,
         name: title,
-        contentChannelTypeId,
+        contentChannelTypeId: RUNSHEET_CONTENT_CHANNEL_TYPE_ID,
         columns: [],
         items: preparedItems,
       },
     };
   } catch (err: any) {
     console.error('Error creating content channel:', err);
-    return { success: false, error: err.message || 'Unknown error occurred' };
+    return { success: false, error: 'Failed to create runsheet.' };
   }
 }
