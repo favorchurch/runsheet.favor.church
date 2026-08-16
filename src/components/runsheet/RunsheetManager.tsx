@@ -505,9 +505,10 @@ export function RunsheetManager({
           columns={runsheetData.columns}
           initialItems={runsheetData.items}
           initialStartTime={
-            runsheetData.subtitle && /^\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)$/i.test(runsheetData.subtitle.trim())
+            runsheetData.startTime ||
+            (runsheetData.subtitle && /^\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)$/i.test(runsheetData.subtitle.trim())
               ? runsheetData.subtitle.trim()
-              : parseStartTimeFromRunsheetName(runsheetData.name)
+              : parseStartTimeFromRunsheetName(runsheetData.name))
           }
           initialSubtitle={runsheetData.subtitle}
           readOnly={!canEdit}

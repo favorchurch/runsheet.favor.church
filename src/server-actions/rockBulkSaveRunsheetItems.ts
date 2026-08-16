@@ -117,7 +117,7 @@ export async function rockBulkSaveRunsheetItems(
   deletedItemIds: (number | string)[],
   columns?: DynamicAttributeColumn[],
   subtitle?: string,
-  newChannelName?: string,
+  startTime?: string,
 ): Promise<BulkSaveResult> {
   try {
     await getRockSession();
@@ -126,8 +126,11 @@ export async function rockBulkSaveRunsheetItems(
       await rockPatch(`/ContentChannels/${channelId}`, { Description: subtitle });
     }
 
-    if (newChannelName !== undefined) {
-      await rockPatch(`/ContentChannels/${channelId}`, { Name: newChannelName });
+    // Stored in Rock's `ForeignKey` field — a free-text field reserved for
+    // external app bookkeeping — so Start Time never touches the channel's
+    // Name/Description, keeping it fully independent of the runsheet title.
+    if (startTime !== undefined) {
+      await rockPatch(`/ContentChannels/${channelId}`, { ForeignKey: startTime });
     }
 
     // 1. Delete removed items in parallel

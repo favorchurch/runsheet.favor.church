@@ -59,6 +59,8 @@ export interface RunsheetDetails {
   channelId: number;
   name: string;
   subtitle?: string;
+  /** Persisted Start Time, stored independently of the channel name/subtitle in Rock's `ForeignKey` field. */
+  startTime?: string;
   contentChannelTypeId: number;
   columns: DynamicAttributeColumn[];
   items: RunsheetItemRow[];

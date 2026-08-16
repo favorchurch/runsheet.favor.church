@@ -38,6 +38,7 @@ import React from 'react';
 import { render, fireEvent, screen } from '@testing-library/react';
 import { RunsheetTableEditor } from '@/components/runsheet/RunsheetTableEditor';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
+import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 
 describe('RunsheetTableEditor dirty state', () => {
@@ -120,7 +121,7 @@ describe('RunsheetTableEditor dirty state', () => {
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
   });
 
-  test('saves an edited Start Time by rewriting the channel name', async () => {
+  test('saves an edited Start Time on its own, independent of the channel name/subtitle', async () => {
     (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
     let saveFn: (() => Promise<boolean>) | undefined;
 
@@ -131,6 +132,7 @@ describe('RunsheetTableEditor dirty state', () => {
         columns={columns}
         initialItems={initialItems}
         initialStartTime="09:00:00 AM"
+        initialSubtitle="Sunday Service"
         onSaveRef={(fn) => (saveFn = fn)}
       />
     );
@@ -139,13 +141,15 @@ describe('RunsheetTableEditor dirty state', () => {
 
     await saveFn?.();
 
+    // 6th arg is the persisted Start Time value — the channel name/subtitle
+    // are untouched (subtitle passed through unchanged as the 5th arg).
     expect(rockBulkSaveRunsheetItems).toHaveBeenCalledWith(
       1,
       expect.anything(),
       expect.anything(),
       columns,
-      expect.anything(),
-      'MNL // August 16, 2026 // 10:30AM'
+      'Sunday Service',
+      '09:30:00 AM'
     );
   });
 
@@ -218,5 +222,64 @@ describe('RunsheetTableEditor dirty state', () => {
       (item: RunsheetItemRow) => (item.attributeValues?.ACTIVITYTITLE || item.title) === 'New Segment'
     );
     expect(newRowEntry?.order).toBe(2);
+  });
+
+  test('editing a duration updates the correct row even when a previously-assigned roster row sorts ahead of it', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    (rockGetAvailableRunsheetChannels as jest.Mock).mockResolvedValue({ success: true, channels: [] });
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    // Once a roster role (e.g. "Roster: Music Director") has ever been assigned,
+    // it becomes a real ContentChannelItem in Rock with a large negative Order —
+    // so on the next load, Rock returns it (sorted `Order asc`) BEFORE the real
+    // segments. `ensureRosterItems` only appends still-unassigned roles; it
+    // never reorders one already present, so this hidden row sits ahead of
+    // "Welcome & Announcements" and "Praise & Worship" in the raw items array
+    // from the very first render — no drag-and-drop needed to trigger it.
+    const itemsWithAssignedRoster: RunsheetItemRow[] = [
+      {
+        id: 555,
+        title: 'Roster: Music Director',
+        order: -99,
+        duration: 0,
+        attributeValues: { ACTIVITYTITLE: 'Roster: Music Director' },
+      },
+      ...initialItems,
+    ];
+
+    const { container } = render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columns}
+        initialItems={itemsWithAssignedRoster}
+        initialStartTime="10:00:00 AM"
+        onSaveRef={(fn) => (saveFn = fn)}
+      />
+    );
+
+    // Edit the duration of the 2nd visible row, "Praise & Worship" — raw
+    // items[1] is actually "Welcome & Announcements" in this setup (index 0 is
+    // the roster row), which is exactly the mismatch the old code fell for.
+    const durationCells = screen.getAllByTitle('Click to edit duration');
+    expect(durationCells).toHaveLength(2);
+    fireEvent.click(durationCells[1]);
+
+    const durationInput = container.querySelector('tbody input') as HTMLInputElement;
+    expect(durationInput).toBeTruthy();
+    fireEvent.change(durationInput, { target: { value: '00:20:00' } });
+    fireEvent.blur(durationInput);
+
+    await saveFn?.();
+
+    const [, itemsToSave] = (rockBulkSaveRunsheetItems as jest.Mock).mock.calls[0];
+    const welcomeEntry = itemsToSave.find(
+      (item: RunsheetItemRow) => (item.attributeValues?.ACTIVITYTITLE || item.title) === 'Welcome & Announcements'
+    );
+    const praiseEntry = itemsToSave.find(
+      (item: RunsheetItemRow) => (item.attributeValues?.ACTIVITYTITLE || item.title) === 'Praise & Worship'
+    );
+    expect(praiseEntry?.duration).toBe(20);
+    expect(welcomeEntry?.duration ?? 5).toBe(5); // untouched
   });
 });

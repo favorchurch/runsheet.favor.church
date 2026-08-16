@@ -22,7 +22,6 @@ import {
   writeRunsheetCellValue,
 } from '@/constants/runsheetColumns';
 import {
-  applyStartTimeToRunsheetName,
   formatDurationToHMS,
   formatMinutesToTimeWithSeconds,
   parseDurationInputToMinutes,
@@ -201,7 +200,8 @@ export function RunsheetTableEditor({
 
   /** Duration edits happen per merged block, so drafts are keyed by row index. */
   const [editingDurationBlockIndex, setEditingDurationBlockIndex] = useState<number | null>(null);
-  const [durationDrafts, setDurationDrafts] = useState<{ [index: number]: string }>({});
+  /** Keyed by row id (not array index) — see handleCommitDurationDrafts for why. */
+  const [durationDrafts, setDurationDrafts] = useState<{ [id: string]: string }>({});
 
   const [isDirty, setIsDirty] = useState(() => !!initialTemplate);
   const [mobileViewMode, setMobileViewMode] = useState<'cards' | 'grid'>(() => {
@@ -716,15 +716,17 @@ export function RunsheetTableEditor({
     if (readOnly || editingDurationBlockIndex === null) return;
     saveSnapshot();
 
-    setItems((previous) => {
-      const updated = [...previous];
-      Object.entries(durationDrafts).forEach(([indexStr, draft]) => {
-        const index = parseInt(indexStr, 10);
-        if (!updated[index]) return;
-        updated[index] = { ...updated[index], duration: parseDurationInputToMinutes(draft) };
-      });
-      return updated;
-    });
+    // `durationDrafts` is keyed by row id, not by its position in `processedRows`
+    // — that position doesn't match a row's slot in the raw `items` array (which
+    // also holds hidden "Roster: ..." placeholder rows), especially after a
+    // drag reorder. Writing by `items[index]` there would silently edit
+    // whatever row happens to occupy that raw slot instead of the one shown.
+    setItems((previous) =>
+      previous.map((item) => {
+        const draft = durationDrafts[String(item.id)];
+        return draft === undefined ? item : { ...item, duration: parseDurationInputToMinutes(draft) };
+      })
+    );
 
     setIsDirty(true);
     setEditingDurationBlockIndex(null);
@@ -1051,9 +1053,14 @@ export function RunsheetTableEditor({
       return true;
     }
 
-    const newChannelName = startTimeChanged ? applyStartTimeToRunsheetName(channelName, startTime) : undefined;
-
-    const result = await rockBulkSaveRunsheetItems(channelId, itemsToSave, deletedIds, columns, subtitle, newChannelName);
+    const result = await rockBulkSaveRunsheetItems(
+      channelId,
+      itemsToSave,
+      deletedIds,
+      columns,
+      subtitle,
+      startTimeChanged ? startTime : undefined
+    );
 
     if (result.success) {
       // Snapshot propagation candidates against the PRE-save baseline before
@@ -1960,9 +1967,13 @@ export function RunsheetTableEditor({
                           rowSpan={spanInfo.count}
                           onClick={() => {
                             if (readOnly) return;
-                            const drafts: { [index: number]: string } = {};
+                            // Seed from `processedRows`, not raw `items` — the two arrays
+                            // don't share indices once hidden "Roster: ..." rows and
+                            // reordering are in play (see handleCommitDurationDrafts).
+                            const drafts: { [id: string]: string } = {};
                             for (let i = parentBlockIndex; i < parentBlockIndex + spanInfo.count; i++) {
-                              drafts[i] = formatDurationToHMS(Number(items[i].duration) || 0);
+                              const row = processedRows[i];
+                              if (row) drafts[String(row.id)] = formatDurationToHMS(Number(row.duration) || 0);
                             }
                             setDurationDrafts(drafts);
                             setEditingDurationBlockIndex(parentBlockIndex);
@@ -1984,9 +1995,9 @@ export function RunsheetTableEditor({
                             event.currentTarget.setSelectionRange(end, end);
                           }}
                           className="w-full min-w-0 rounded border border-pink-600 bg-white px-1 py-0.5 text-center font-mono text-[11px] font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-pink-600"
-                          value={durationDrafts[index] ?? '00:00:00'}
+                          value={durationDrafts[String(item.id)] ?? '00:00:00'}
                           onChange={(event) =>
-                            setDurationDrafts((previous) => ({ ...previous, [index]: event.target.value }))
+                            setDurationDrafts((previous) => ({ ...previous, [String(item.id)]: event.target.value }))
                           }
                           onBlur={(event) => {
                             if ((event.relatedTarget as HTMLElement | null)?.tagName === 'INPUT') return;

@@ -159,6 +159,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
       Id: number;
       Name: string;
       Description?: string;
+      ForeignKey?: string;
       ContentChannelTypeId: number;
     } | null;
 
@@ -282,6 +283,10 @@ export async function rockGetRunsheetDetails(channelId: number) {
         channelId: channel.Id,
         name: channel.Name,
         subtitle: channel.Description || '',
+        // Stored independently of Name/Description so editing Start Time never
+        // touches the runsheet's title — Rock's `ForeignKey` is a free-text
+        // field reserved for exactly this kind of external app bookkeeping.
+        startTime: channel.ForeignKey || '',
         contentChannelTypeId: typeId,
         columns,
         items,
