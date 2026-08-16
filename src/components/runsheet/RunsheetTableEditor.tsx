@@ -3,7 +3,7 @@
 import type { Editor } from '@tiptap/react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiTableCells, HiTrash } from 'react-icons/hi2';
+import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiChevronDown, HiChevronUp, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiTableCells, HiTrash } from 'react-icons/hi2';
 
 import { htmlToPlainText } from '@/lib/richText';
 
@@ -294,19 +294,28 @@ export function RunsheetTableEditor({
 
   const handleInsertRow = (targetIndex: number, position: 'above' | 'below') => {
     if (readOnly) return;
+    // targetIndex is a position within the roster-filtered `processedRows`, which
+    // is not necessarily the same slot in the raw `items` array — resolve by the
+    // target row's stable id so this stays correct regardless of where roster
+    // placeholder rows currently sit.
+    const targetId = processedRows[targetIndex]?.id;
+    if (targetId === undefined) return;
+
     saveSnapshot();
-    const insertIndex = position === 'above' ? targetIndex : targetIndex + 1;
     const newRow: RunsheetItemRow = {
       id: `new_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       isNew: true,
       title: 'New Segment',
-      order: insertIndex + 1,
+      order: targetIndex + 1,
       duration: 5,
       attributeValues: { ACTIVITYTITLE: 'New Segment' },
       detail: '',
     };
 
     setItems((previous) => {
+      const realTargetIndex = previous.findIndex((item) => item.id === targetId);
+      if (realTargetIndex === -1) return previous;
+      const insertIndex = position === 'above' ? realTargetIndex : realTargetIndex + 1;
       const updated = [...previous];
       updated.splice(insertIndex, 0, newRow);
       return updated;
@@ -741,7 +750,16 @@ export function RunsheetTableEditor({
       audio: '',
     };
 
-    setItems((previous) => [...previous, newRow]);
+    setItems((previous) => {
+      // Auto-injected "Roster: ..." placeholders trail every real segment, so a
+      // plain push would land the new row after them instead of at the visible
+      // end of the runsheet — insert just before that roster block instead.
+      const rosterStartIndex = previous.findIndex((item) => item.title && item.title.startsWith('Roster:'));
+      const insertIndex = rosterStartIndex === -1 ? previous.length : rosterStartIndex;
+      const updated = [...previous];
+      updated.splice(insertIndex, 0, newRow);
+      return updated;
+    });
     setIsDirty(true);
     setEditingCell({ itemId: newRow.id, key: 'title' });
   };
@@ -787,20 +805,53 @@ export function RunsheetTableEditor({
     }
   };
 
-  const handleDrop = (targetIndex: number) => {
-    if (readOnly || draggedIndex === null || draggedIndex === targetIndex) return;
-
+  /**
+   * Moves the item with `draggedId` to sit where `targetId` currently is.
+   * Resolved by stable id rather than array index, since a row's position in
+   * `items` (which also holds hidden "Roster: ..." placeholder rows) doesn't
+   * necessarily match its position in the roster-filtered, user-visible list.
+   */
+  const moveItemById = (draggedId: number | string, targetId: number | string) => {
     saveSnapshot();
     setItems((previous) => {
       const updated = [...previous];
-      const [moved] = updated.splice(draggedIndex, 1);
-      updated.splice(targetIndex, 0, moved);
+      const fromIndex = updated.findIndex((item) => item.id === draggedId);
+      if (fromIndex === -1) return previous;
+      const [moved] = updated.splice(fromIndex, 1);
+      const toIndex = updated.findIndex((item) => item.id === targetId);
+      updated.splice(toIndex === -1 ? fromIndex : toIndex, 0, moved);
       return updated;
     });
+    setIsDirty(true);
+  };
 
+  const handleDrop = (targetIndex: number) => {
+    if (readOnly || draggedIndex === null || draggedIndex === targetIndex) return;
+
+    // Both indices are positions within the roster-filtered `processedRows`,
+    // not the raw `items` array — resolve by stable id so a dragged row always
+    // lands next to the row the user actually dropped it on, even when roster
+    // placeholder rows have thrown off a plain index-to-index splice.
+    const draggedId = processedRows[draggedIndex]?.id;
+    const targetId = processedRows[targetIndex]?.id;
+    if (draggedId === undefined || targetId === undefined) return;
+
+    moveItemById(draggedId, targetId);
     setDraggedIndex(null);
     setEditingCell(null);
-    setIsDirty(true);
+  };
+
+  /** Up/down reorder for the mobile Card view, where HTML5 drag-and-drop doesn't work reliably on touch. */
+  const handleMoveCard = (index: number, direction: 'up' | 'down') => {
+    if (readOnly) return;
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= processedRows.length) return;
+
+    const draggedId = processedRows[index]?.id;
+    const targetId = processedRows[targetIndex]?.id;
+    if (draggedId === undefined || targetId === undefined) return;
+
+    moveItemById(draggedId, targetId);
   };
 
   const handleConfirmDuplicate = async (e: React.FormEvent) => {
@@ -2053,6 +2104,29 @@ export function RunsheetTableEditor({
                       <span className="inline-flex items-center rounded bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-900 border border-slate-300">
                         Song
                       </span>
+                    )}
+
+                    {!readOnly && (
+                      <div className="flex items-center overflow-hidden rounded border border-slate-300">
+                        <button
+                          type="button"
+                          onClick={() => handleMoveCard(index, 'up')}
+                          disabled={index === 0}
+                          title="Move up"
+                          className="flex items-center justify-center bg-white p-1 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white cursor-pointer"
+                        >
+                          <HiChevronUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMoveCard(index, 'down')}
+                          disabled={index === processedRows.length - 1}
+                          title="Move down"
+                          className="flex items-center justify-center border-l border-slate-300 bg-white p-1 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white cursor-pointer"
+                        >
+                          <HiChevronDown className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     )}
 
                     {!readOnly && (

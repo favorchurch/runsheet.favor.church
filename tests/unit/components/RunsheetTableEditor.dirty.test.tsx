@@ -148,4 +148,75 @@ describe('RunsheetTableEditor dirty state', () => {
       'MNL // August 16, 2026 // 10:30AM'
     );
   });
+
+  test('a newly added row can be dragged to the top, and the save reflects the new order', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    const { container } = render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="10:00:00 AM"
+        onSaveRef={(fn) => (saveFn = fn)}
+      />
+    );
+
+    // Adding a row pushes it past the auto-injected "Roster: ..." placeholders
+    // in the underlying items array — the exact setup that used to desync
+    // visible row position from raw array position and silently break drag.
+    fireEvent.click(screen.getByText('Add Row'));
+
+    const dragHandles = screen.getAllByTitle('Drag handle cell to move whole row');
+    expect(dragHandles).toHaveLength(3);
+
+    const rows = container.querySelectorAll('tbody tr');
+    expect(rows).toHaveLength(3);
+
+    fireEvent.dragStart(dragHandles[2]);
+    fireEvent.drop(rows[0]);
+
+    await saveFn?.();
+
+    const [, itemsToSave] = (rockBulkSaveRunsheetItems as jest.Mock).mock.calls[0];
+    const newRowEntry = itemsToSave.find(
+      (item: RunsheetItemRow) => (item.attributeValues?.ACTIVITYTITLE || item.title) === 'New Segment'
+    );
+    expect(newRowEntry?.order).toBe(1);
+  });
+
+  test('a card can be reordered with the Move Up button in Card view', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="10:00:00 AM"
+        onSaveRef={(fn) => (saveFn = fn)}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Add Row'));
+    fireEvent.click(screen.getByText('Cards'));
+
+    const moveUpButtons = screen.getAllByTitle('Move up');
+    expect(moveUpButtons).toHaveLength(3);
+
+    // The new row is the last card (index 2) — move it up one slot, past "Praise & Worship".
+    fireEvent.click(moveUpButtons[2]);
+
+    await saveFn?.();
+
+    const [, itemsToSave] = (rockBulkSaveRunsheetItems as jest.Mock).mock.calls[0];
+    const newRowEntry = itemsToSave.find(
+      (item: RunsheetItemRow) => (item.attributeValues?.ACTIVITYTITLE || item.title) === 'New Segment'
+    );
+    expect(newRowEntry?.order).toBe(2);
+  });
 });
