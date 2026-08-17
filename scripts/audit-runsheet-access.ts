@@ -146,7 +146,7 @@ export const ROCK_MAX_CONCURRENT_REQUESTS = 5;
  * security report instead of an error. Failing loudly is mandatory here;
  * under-reporting access is worse than erroring.
  */
-async function mapWithConcurrency<T>(
+export async function mapWithConcurrency<T>(
   items: readonly T[],
   limit: number,
   task: (item: T) => Promise<void>,

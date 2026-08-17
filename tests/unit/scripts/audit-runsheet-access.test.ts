@@ -1,6 +1,7 @@
 import {
   collectRunsheetAccessAudit,
   createReadOnlyRockReader,
+  mapWithConcurrency,
   ROCK_MAX_CONCURRENT_REQUESTS,
 } from '../../../scripts/audit-runsheet-access';
 import {
@@ -202,5 +203,25 @@ describe('runsheet access audit', () => {
     // ceiling assertion vacuous: there must be more chunked requests than the cap,
     // otherwise "peak <= cap" would hold even with no limiter at all.
     expect(chunkedRequestCount).toBeGreaterThan(ROCK_MAX_CONCURRENT_REQUESTS);
+  });
+
+  it('mapWithConcurrency floors a non-positive limit at 1 worker instead of processing nothing', async () => {
+    // Array.from({ length: Math.min(limit, items.length) }) with limit <= 0
+    // would spawn zero workers and resolve without ever calling `task` — an
+    // audit silently reporting zero editors and zero memberships instead of
+    // erroring. The Math.max(1, ...) floor is what prevents that.
+    const items = [1, 2, 3, 4, 5];
+
+    const zeroSeen: number[] = [];
+    await mapWithConcurrency(items, 0, async (item) => {
+      zeroSeen.push(item);
+    });
+    expect(zeroSeen.sort()).toEqual(items);
+
+    const negativeSeen: number[] = [];
+    await mapWithConcurrency(items, -3, async (item) => {
+      negativeSeen.push(item);
+    });
+    expect(negativeSeen.sort()).toEqual(items);
   });
 });

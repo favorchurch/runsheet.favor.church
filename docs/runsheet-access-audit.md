@@ -59,14 +59,20 @@ list.
 **Status: COMPLETE.** Read-only pass via `pnpm audit:access`. No writes were
 issued; the reader exposes only `get()`.
 
-**Reproducibility caveat.** These figures were produced by the script as it stood
-*before* two fixes landed in the same change set as this section: the OData filter
-parenthesisation and the concurrency cap. The pre-fix filter returned archived and
-inactive rows for all but the last id in each batch (the client-side
-`isActiveMembership` re-filter is why the counts below are still correct), and
-`/GroupMembers` uses `$top: 5000` with no truncation detection. A re-run with the
-shipped script is therefore expected to agree but is not guaranteed to reproduce
-these counts exactly. Re-run before relying on them for a decision.
+**Reproducibility — confirmed.** The figures below were first produced by the
+script as it stood *before* two fixes landed in the same change set as this
+section: the OData filter parenthesisation and the concurrency cap. The pre-fix
+filter returned archived and inactive rows for all but the last id in each batch
+(the client-side `isActiveMembership` re-filter is why the original counts were
+still correct despite that). A second read-only pass against prod
+(`rock.favor.church`) was run on 2026-08-17 with the shipped, post-fix script,
+and every figure reproduced **exactly** — see the summary table and the
+per-group, per-role breakdowns below. These numbers are confirmed, not merely
+expected to agree.
+
+The one residual limitation is real and stays open: `/GroupMembers` uses
+`$top: 5000` with no truncation detection, so a future org with more than 5,000
+memberships in a single batch would silently under-report rather than error.
 
 ### Summary
 
@@ -226,6 +232,7 @@ edit, or narrow `GLOBAL_EDIT_GROUP_IDS` in `src/lib/runsheetAccessPolicy.ts`.
 
 The access-control work (M1-M4) was promoted to production on 2026-08-17 (PR #14,
 `main` @ `949807a`) after the live pass confirmed the above and after
-`IsArchived eq false` was verified against prod Rock. Note that the audit-tooling
-changes and this section itself ship separately and target `staging` first; they
-contain no app code, so production behaviour is unaffected by them.
+`IsArchived eq false` was verified against prod Rock. This change set — the
+audit-tooling fixes and this doc section — touches only `scripts/`, `tests/`,
+and `docs/`; it contains no app code, so production runsheet behaviour is
+unaffected by it regardless of when or where it merges.
