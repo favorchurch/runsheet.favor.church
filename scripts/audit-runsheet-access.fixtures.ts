@@ -84,8 +84,8 @@ export const RUNSHEET_ACCESS_AUDIT_FIXTURE: RunsheetAccessAuditFixture = {
     { Id: 107, FirstName: 'Orphan', LastName: 'Leader', Email: 'orphan@example.test' },
     { Id: 108, FirstName: 'Potential', LastName: 'Captain', Email: 'potential@example.test' },
     { Id: 109, FirstName: 'BNE', LastName: 'Staff', Email: 'bne@example.test' },
-    { Id: 110, FirstName: 'Archived', LastName: 'Member', Email: 'archived@example.test' },
-    { Id: 111, FirstName: 'Archived', LastName: 'Member Two', Email: 'archived-two@example.test' },
+    { Id: 110, FirstName: 'Inactive', LastName: 'Member', Email: 'inactive@example.test' },
+    { Id: 111, FirstName: 'Archived', LastName: 'Member', Email: 'archived@example.test' },
   ],
   leaderRoles: [
     { Id: 19, Name: 'Member', IsLeader: false },
