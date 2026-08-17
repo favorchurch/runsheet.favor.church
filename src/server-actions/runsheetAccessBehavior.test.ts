@@ -192,7 +192,11 @@ describe('server-action access enforcement', () => {
     const result = await rockDeleteServiceRunsheet(42);
 
     expect(result.success).toBe(true);
-    expect(mockRockDelete).toHaveBeenCalledTimes(1);
+    expect(mockRockGet).toHaveBeenCalledWith('/ContentChannelItems', {
+      $filter: 'ContentChannelId eq 42',
+      $select: 'Id',
+    });
+    expect(mockRockDelete).toHaveBeenCalledWith('/ContentChannels/42');
   });
 
   it('does not return upstream errors from duplicate', async () => {
@@ -222,6 +226,16 @@ describe('server-action access enforcement', () => {
 
     expect(result.success).toBe(false);
     expectNoRockWrites();
+    expect(mockRockGet).not.toHaveBeenCalled();
+  });
+
+  it('rejects a forged string where runsheet details expects a channel id', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', false));
+
+    const result = await rockGetRunsheetDetails('42 MNL' as unknown as number);
+
+    expect(result).toEqual({ success: false, error: 'Invalid runsheet.' });
+    expect(mockGetRockSession).not.toHaveBeenCalled();
     expect(mockRockGet).not.toHaveBeenCalled();
   });
 

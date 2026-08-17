@@ -165,6 +165,9 @@ export async function rockBulkSaveRunsheetItems(
     const hasInvalidDeletedId = numericDeletedIds.length !== itemIdsToDelete.length;
     const hasInvalidExistingItem = items.some((item) => {
       const isNewItem = typeof item.id === 'string' || item.isNew;
+      // A numeric foreign id marked isNew skips ownership today only because the
+      // isNew branch always POSTs with ContentChannelId and never PATCHes that id.
+      // Preserve this invariant if the create/patch branch is refactored.
       if (isNewItem) return false;
       return typeof item.id !== 'number' || !Number.isSafeInteger(item.id) || !existingItemIds.has(item.id);
     });

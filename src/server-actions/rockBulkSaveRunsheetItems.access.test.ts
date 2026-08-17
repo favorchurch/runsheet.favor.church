@@ -82,6 +82,25 @@ describe('rockBulkSaveRunsheetItems access ordering', () => {
     expectNoRockWrites();
   });
 
+  it('fails closed when channel lookup throws before any Rock write', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+    let channelLookups = 0;
+    mockRockGet.mockImplementation(async (url) => {
+      if (url.startsWith('/ContentChannels/')) {
+        channelLookups += 1;
+        if (channelLookups === 1) throw new Error('Rock lookup failed');
+        return { Name: 'MNL Service // August 16, 2026 // 10AM', ContentChannelTypeId: 13 };
+      }
+      if (url === '/ContentChannelItems') return [];
+      return [];
+    });
+
+    const result = await rockBulkSaveRunsheetItems(42, [newItem], []);
+
+    expect(result.success).toBe(false);
+    expectNoRockWrites();
+  });
+
   it('accepts an editor on the channel campus after resolving the channel', async () => {
     mockGetRockSession.mockResolvedValue(session('MNL', true));
     mockRockGet.mockImplementation(channelReads('MNL Service // August 16, 2026 // 10AM'));
@@ -121,6 +140,21 @@ describe('rockBulkSaveRunsheetItems access ordering', () => {
 
     expect(result.success).toBe(false);
     expect(mockRockDelete).not.toHaveBeenCalled();
+    expectNoRockWrites();
+  });
+
+  it('rejects a forged string channel id before treating it as a title or reading Rock', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+
+    const result = await rockBulkSaveRunsheetItems(
+      'MNL Service // August 16, 2026 // 10AM' as unknown as number,
+      [],
+      [],
+    );
+
+    expect(result).toEqual({ success: false, error: 'Invalid runsheet.' });
+    expect(mockGetRockSession).not.toHaveBeenCalled();
+    expect(mockRockGet).not.toHaveBeenCalled();
     expectNoRockWrites();
   });
 });

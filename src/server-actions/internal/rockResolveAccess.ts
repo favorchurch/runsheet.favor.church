@@ -8,30 +8,11 @@ import {
   resolveRunsheetAccessPolicy,
   type RunsheetPolicyGroup,
 } from '@/lib/runsheetAccessPolicy';
+import { CAMPUS_MINISTRY_TEAM_ROOT_IDS, CAMPUS_ORG_UNIT_ROOT_IDS } from '@/lib/runsheetAccessRoots';
 import { readRockObjectCache, writeRockObjectCache } from '@/server-actions/internal/rockObjectCache';
 import { AuthAccess, AuthContact, AuthRolesMap } from '@/types/AuthUser';
 
 const ROCK_RECORD_STATUS_ACTIVE = 3;
-
-/**
- * Rock's own per-campus organizational folders under Global Staff (Group
- * Type 28) — "Manila" (32893), "Brisbane" (32898), "Seoul" (32902). These
- * folders grant no access by themselves; a membership's *specific* staff
- * role group (e.g. "MNL Staff") is a descendant of one of these, and that
- * ancestry is what tells us which campus the role belongs to.
- */
-const CAMPUS_ORG_UNIT_ROOT_IDS: Record<number, RunsheetCampusCode> = {
-  32893: 'MNL',
-  32898: 'BNE',
-  32902: 'SEL',
-};
-
-/** Rock's per-campus Ministry Team (Group Type 23) roots under "Ministry Teams" (56). */
-const CAMPUS_MINISTRY_TEAM_ROOT_IDS: Record<number, RunsheetCampusCode> = {
-  57: 'MNL',
-  59: 'BNE',
-  58: 'SEL',
-};
 
 export class NoRockPersonError extends Error {
   constructor() {
