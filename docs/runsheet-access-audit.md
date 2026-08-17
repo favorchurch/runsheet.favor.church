@@ -70,9 +70,13 @@ and every figure reproduced **exactly** — see the summary table and the
 per-group, per-role breakdowns below. These numbers are confirmed, not merely
 expected to agree.
 
-The one residual limitation is real and stays open: `/GroupMembers` uses
+The residual limitations are real and stay open: `/GroupMembers` uses
 `$top: 5000` with no truncation detection, so a future org with more than 5,000
 memberships in a single batch would silently under-report rather than error.
+The three `/Groups` lookups (GroupType 1, 28, 23) carry the same gap at
+`$top: 2000` — with 171 groups live today there is ample headroom, but a future
+org with more than 2,000 groups of one of those types would silently drop the
+excess rather than error.
 
 ### Summary
 

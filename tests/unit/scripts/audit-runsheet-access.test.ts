@@ -61,6 +61,22 @@ describe('runsheet access audit', () => {
     expect(report.summary.allCampusEditorCount).toBe(3);
   });
 
+  it('drops inactive and archived memberships via isActiveMembership rather than counting them', async () => {
+    // Fixture carries 12 raw memberships: 10 active ones (persons 100-109) plus
+    // two that isActiveMembership must exclude — Id 11 (person 110,
+    // GroupMemberStatus: 2, Inactive) and Id 12 (person 111, IsArchived: true).
+    // If the predicate is ever stubbed to `return true`, both counts below rise
+    // to 12/12 and the two excluded people appear in `principals`, so this test
+    // fails instead of the whole suite staying green.
+    const report = await collectRunsheetAccessAudit(fixtureReader());
+    const byName = new Map(report.principals.map((principal) => [principal.name, principal]));
+
+    expect(report.summary.principalCount).toBe(10);
+    expect(report.summary.activeMembershipCount).toBe(10);
+    expect(byName.has('Inactive Member')).toBe(false);
+    expect(byName.has('Archived Member')).toBe(false);
+  });
+
   it('uses only GET requests in the Rock reader', async () => {
     const methods: string[] = [];
     const fetchImpl = async (input: string, init?: RequestInit) => {
