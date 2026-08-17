@@ -55,30 +55,73 @@ test figures only. The fixture also proves that a live `IsLeader: false` Captain
 does not become an editor merely because role id 69 was once in the fallback
 list.
 
-## Live audit placeholder
+## Live audit — prod (`rock.favor.church`), 2026-08-17
 
-**Status: PENDING PLANNER LIVE PASS — no live figures are recorded here.**
+**Status: COMPLETE.** Read-only pass, run with the shipped script
+(`pnpm audit:access`). No writes were issued; the reader exposes only `get()`.
 
-The non-interactive `rock-mcp` session was probed three times on 2026-08-16 and
-returned `user cancelled MCP tool call` each time. The fallback is therefore
-active: the script and fixture verification ship now, while the planner fills
-this section from an interactive read-only Rock pass.
+### Summary
 
-Planner to record after the live run:
+| Metric | Live value |
+|---|---|
+| Groups audited | 171 |
+| Active memberships | 3,384 |
+| Principals with any access | 1,494 |
+| View-only | 1,488 |
+| Editors | 112 |
+| **Edit on every campus** | **20** |
+| Events Teams resolving to no campus | 0 |
+| Required global group ids missing from Rock | none |
 
-- audit timestamp and environment;
-- active principal count and membership count;
-- editor count and viewer count;
-- count and identities of people with edit on every campus;
-- membership counts for groups 2, 46, 32879, 4, and 5;
-- GroupType 28 organization-unit membership counts;
-- GroupType 23 Events Team membership counts;
-- the live GroupType 23 `IsLeader` role table; and
-- any Events Team matching the policy pattern but resolving to no campus.
+### Global edit groups — live member counts
 
-The live command should be run with the read-only script, for example
-`pnpm audit:access`, with `ROCK_API_URL` (or `NEXT_PUBLIC_ROCK_API_URL`) and
-`ROCK_API_KEY` supplied. The script must not be changed to add a write path.
+| Group | Id | Members |
+|---|---|---|
+| `RSR - Rock Administration` | 2 | 19 |
+| `Global Staff` | 46 | 2 |
+| `GLB \| Dashboard Creator` | 32879 | 1 |
+| `WEB - Administration` | 4 | **0** |
+| `WEB - General Editor` | 5 | **0** |
+
+### Live GroupType 23 `IsLeader` table
+
+| Role | Id | `IsLeader` |
+|---|---|---|
+| Overall Head | 20 | true |
+| Unit Head | 55 | true |
+| Captain | 69 | true |
+| Team Lead | 75 | true |
+| Member | 19 | false |
+| Potential Captain | 70 | false |
+
+### What the live pass established
+
+- **The §1.1 deviation is currently theoretical, not live.** `WEB - Administration`
+  and `WEB - General Editor` have **zero members**, so no one actually holds
+  runsheet edit through the "CMS only, no person-data pages" roles. The watch item
+  below stays open — membership can change at any time — but as of this pass the
+  exposure is empty.
+- **All-campus edit is 20 people**, essentially Rock Administration (19) plus
+  Global Staff and one Dashboard Creator. Against 112 editors total, this is the
+  set one would expect to hold full access.
+- **The live leader roles match the hardcoded fallback `[20, 55, 69, 75]` exactly.**
+  The assumption was correct and is now verified rather than trusted. Note that
+  the *fixture* records Captain (69) as `isLeader: false` while live reports
+  `true`; that divergence is deliberate and must not be "corrected" — it is what
+  proves the audit reads the live roles feed rather than its own fixture.
+- **`IsArchived eq false` is accepted by prod Rock (HTTP 200, verified
+  2026-08-17).** This closes the total-outage risk noted below: had Rock v17
+  rejected the field, `rawRockGet` would throw and every user would be denied.
+- **No Events Team fails campus resolution** (`eventsTeamWithoutCampusCount: 0`),
+  so the all-campus lockout this run guarded hardest against does not occur in
+  real data.
+
+### Deferred
+
+The old-model gain/loss delta and the §1.0–§1.3 staff/non-staff drift comparison
+remain unimplemented: there is no old-model baseline to diff against, and
+producing either would mean fabricating a comparison. Recorded here so the gap is
+visible rather than silent.
 
 ## Recorded deviations from `rock-security/SECURITY-POLICY.md`
 
@@ -143,9 +186,17 @@ Proposal only; this text is not applied to `~/Git/rock-security` by this run:
 
 Groups 4 and 5 are legacy WEB roles receiving edit access on **every** campus.
 Their real membership may be much wider than the intended Web Developer role.
-The live audit must report their actual membership counts and identities before
-anyone considers a production promotion. This run stops at `staging`.
 
-The old-model gain/loss delta and the §1.0–§1.3 drift comparison are deferred
-because no offline old-model baseline or planner-owned live Rock data exists in
-this run; implementing them now would fabricate results.
+**Resolved for now (live pass, prod, 2026-08-17): both groups have ZERO members.**
+Nobody currently holds runsheet edit through them, so the §1.1 deviation is
+theoretical rather than live.
+
+This item stays open regardless, for two reasons: membership can be added at any
+time without touching this app, and the grant is unconditional — anyone added to
+either group immediately gets edit on every campus. Re-run `pnpm audit:access`
+periodically and check the `WEB - Administration` / `WEB - General Editor` rows.
+If either becomes non-empty, confirm the members are intended to hold runsheet
+edit, or narrow `GLOBAL_EDIT_GROUP_IDS` in `src/lib/runsheetAccessPolicy.ts`.
+
+This run was promoted to production on 2026-08-17 after the live pass confirmed
+the above and after `IsArchived eq false` was verified against prod Rock.
