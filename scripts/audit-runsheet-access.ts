@@ -23,8 +23,9 @@ import {
 
 const RELEVANT_GROUP_TYPE_IDS = new Set([1, 23, 28]);
 const EVENTS_TEAM_NAME_PATTERN = /events team$/i;
-const GROUP_MEMBER_BATCH_SIZE = 40;
-const PEOPLE_BATCH_SIZE = 40;
+// Rock rejects filters over 100 OData nodes. Ten equality clauses leave ample
+// room for the ORs and the active-membership predicates in each request.
+const ROCK_FILTER_BATCH_SIZE = 10;
 
 function makeCampusRoots(
   roots: Record<number, string>,
@@ -303,7 +304,7 @@ export async function collectRunsheetAccessAudit(reader: RockReader): Promise<Ru
   const rawMemberships: AuditMembership[] = [];
 
   await Promise.all(
-    chunks(groupIds, GROUP_MEMBER_BATCH_SIZE).map(async (batch) => {
+    chunks(groupIds, ROCK_FILTER_BATCH_SIZE).map(async (batch) => {
       const members = asArray<AuditMembership>(
         await reader.get('/GroupMembers', {
           $filter: `${makeGroupFilter(batch)} and GroupMemberStatus eq '1' and IsArchived eq false`,
@@ -332,13 +333,13 @@ export async function collectRunsheetAccessAudit(reader: RockReader): Promise<Ru
   const personIds = Array.from(new Set(memberships.map((membership) => membership.PersonId)));
   const rawPeople: AuditPerson[] = [];
   await Promise.all(
-    chunks(personIds, PEOPLE_BATCH_SIZE).map(async (batch) => {
+    chunks(personIds, ROCK_FILTER_BATCH_SIZE).map(async (batch) => {
       rawPeople.push(
         ...asArray<AuditPerson>(
           await reader.get('/People', {
             $filter: makePeopleFilter(batch),
             $select: 'Id,FirstName,LastName,Email',
-            $top: PEOPLE_BATCH_SIZE,
+            $top: ROCK_FILTER_BATCH_SIZE,
           }),
         ),
       );
