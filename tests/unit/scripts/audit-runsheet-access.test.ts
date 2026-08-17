@@ -71,6 +71,19 @@ describe('runsheet access audit', () => {
     const report = await collectRunsheetAccessAudit(fixtureReader());
     const byName = new Map(report.principals.map((principal) => [principal.name, principal]));
 
+    // Anti-vacuity, same pattern as the concurrency test's chunk-count guard
+    // below: the 10 asserted next is only meaningful while the fixture still
+    // CARRIES the two rows the predicate has to drop. Delete them and the raw
+    // count becomes 10 legitimately, at which point stubbing the predicate is
+    // invisible again — the exact hole this test was added to close. Assert the
+    // derivation (12 raw − 2 excluded = 10), not just the result.
+    const excluded = RUNSHEET_ACCESS_AUDIT_FIXTURE.memberships.filter(
+      (membership) => String(membership.GroupMemberStatus) !== '1' || membership.IsArchived === true,
+    );
+    expect(RUNSHEET_ACCESS_AUDIT_FIXTURE.memberships).toHaveLength(12);
+    expect(excluded).toHaveLength(2);
+    expect(report.summary.principalCount).toBe(RUNSHEET_ACCESS_AUDIT_FIXTURE.memberships.length - excluded.length);
+
     expect(report.summary.principalCount).toBe(10);
     expect(report.summary.activeMembershipCount).toBe(10);
     expect(byName.has('Inactive Member')).toBe(false);
