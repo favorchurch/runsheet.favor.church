@@ -5,9 +5,11 @@ import { rockGet } from '@/server-actions/internal/rockFetch';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 import { isPersonColumn, HIDDEN_ATTRIBUTE_KEYS } from '@/constants/runsheetColumns';
 import { canAccessRunsheetChannel } from '@/lib/runsheetCampus';
+import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 
 /** Rock's `ContentChannelItem` entity type, used to find item attributes. */
 const CONTENT_CHANNEL_ITEM_ENTITY_TYPE_ID = 208;
+const RUNSHEET_CONTENT_CHANNEL_TYPE_ID = 13;
 
 /** Resolved person names, memoised per server instance. */
 const personNameCache = new Map<string, string>();
@@ -153,7 +155,15 @@ async function resolvePersonNamesBatch(rawValues: string[]): Promise<Map<string,
 /** Loads a runsheet channel, its dynamic columns, and every segment row. */
 export async function rockGetRunsheetDetails(channelId: number) {
   try {
+    if (!Number.isSafeInteger(channelId) || channelId <= 0) {
+      return { success: false, error: 'Invalid runsheet.' };
+    }
+
     const session = await getRockSession();
+    const access = assertRunsheetViewAccess(session);
+    if (!access.allowed) {
+      return { success: false, error: access.error };
+    }
 
     const channel = (await rockGet(`/ContentChannels/${channelId}`, undefined, true)) as {
       Id: number;
@@ -164,13 +174,17 @@ export async function rockGetRunsheetDetails(channelId: number) {
     } | null;
 
     if (!channel) {
-      throw new Error(`Content Channel ${channelId} not found`);
+      return { success: false, error: 'Runsheet not found.' };
+    }
+
+    if (channel.ContentChannelTypeId !== RUNSHEET_CONTENT_CHANNEL_TYPE_ID) {
+      return { success: false, error: 'Runsheet not found.' };
     }
 
     // Defense in depth: the channel list already scopes by campus, but this
     // blocks a direct/shared link to a channel outside the user's campus too.
     if (!canAccessRunsheetChannel(session.access?.runsheetCampuses, channel.Name)) {
-      throw new Error('You do not have access to this runsheet.');
+      return { success: false, error: 'You do not have access to this runsheet.' };
     }
 
     const typeId = channel.ContentChannelTypeId;
@@ -296,7 +310,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
     console.error('Error fetching runsheet details:', err);
     return {
       success: false,
-      error: err.message || 'Failed to fetch runsheet details',
+      error: 'Failed to fetch runsheet details',
     };
   }
 }

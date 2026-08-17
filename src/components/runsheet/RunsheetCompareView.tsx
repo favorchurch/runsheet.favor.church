@@ -13,6 +13,7 @@ import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 interface RunsheetCompareViewProps {
   channelIds: number[];
   onClose: () => void;
+  readOnly?: boolean;
 }
 
 interface LoadedSheet {
@@ -73,7 +74,7 @@ function RenderPeopleCell({ value, textClass = 'text-slate-800' }: { value: stri
   );
 }
 
-export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareViewProps) {
+export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: RunsheetCompareViewProps) {
   const [sheets, setSheets] = useState<LoadedSheet[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPeopleColumns, setShowPeopleColumns] = useState(false);
@@ -115,6 +116,15 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
       active = false;
     };
   }, [fetchSheets]);
+
+  useEffect(() => {
+    if (!readOnly) return;
+    setEditingCell(null);
+    setEditDraft('');
+    setDirtyEdits(new Map());
+    setMatrixSaveStatus(null);
+    setShowUnsavedModal(false);
+  }, [readOnly]);
 
   const allColumns = useMemo(() => {
     const seen = new Map<string, DynamicAttributeColumn>();
@@ -167,6 +177,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
   );
 
   const handleStartEditCell = (channelId: number, itemTitle: string, columnKey: string, currentValue: string) => {
+    if (readOnly) return;
     setEditingCell({ channelId, itemTitle, columnKey });
     setEditDraft(htmlToPlainText(currentValue));
   };
@@ -214,7 +225,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
   };
 
   const handleSaveEditCell = () => {
-    if (!editingCell) return;
+    if (readOnly || !editingCell) return;
     const { channelId, itemTitle, columnKey } = editingCell;
     commitCellValue(channelId, itemTitle, columnKey, editDraft);
     setEditingCell(null);
@@ -222,7 +233,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
   };
 
   const handleSelectPersonInCell = (selectedName: string) => {
-    if (!editingCell) return;
+    if (readOnly || !editingCell) return;
     const { channelId, itemTitle, columnKey } = editingCell;
     setEditDraft(selectedName);
     commitCellValue(channelId, itemTitle, columnKey, selectedName);
@@ -238,7 +249,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
   }, [dirtyEdits]);
 
   const handleSaveAllMatrixEdits = async (): Promise<boolean> => {
-    if (!hasDirtyEdits || savingMatrix) return true;
+    if (readOnly || !hasDirtyEdits || savingMatrix) return true;
     setSavingMatrix(true);
     setMatrixSaveStatus(null);
 
@@ -421,7 +432,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
                 <button
                   type="button"
                   onClick={handleSaveAndClose}
-                  disabled={savingMatrix}
+                  disabled={readOnly || savingMatrix}
                   className="w-full rounded-lg bg-pink-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-pink-800 cursor-pointer disabled:opacity-50"
                 >
                   {savingMatrix ? 'Saving to Rock...' : '1. Save & Leave'}
@@ -478,14 +489,16 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
               <span className="font-medium text-slate-700 bg-slate-200 px-2 py-1 rounded">{matrixSaveStatus}</span>
             )}
 
-            <button
-              type="button"
-              disabled={!hasDirtyEdits || savingMatrix}
-              onClick={handleSaveAllMatrixEdits}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-pink-700 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-pink-800 disabled:opacity-40 cursor-pointer transition-all"
-            >
-              {savingMatrix ? 'Saving Edits...' : 'Save Comparison Edits'}
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                disabled={!hasDirtyEdits || savingMatrix}
+                onClick={handleSaveAllMatrixEdits}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-pink-700 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-pink-800 disabled:opacity-40 cursor-pointer transition-all"
+              >
+                {savingMatrix ? 'Saving Edits...' : 'Save Comparison Edits'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -571,7 +584,7 @@ export function RunsheetCompareView({ channelIds, onClose }: RunsheetCompareView
                                 className={`group relative border-r border-slate-200 p-2.5 align-top last:border-r-0 ${differs ? 'border-amber-200/80' : ''
                                   } ${isCellDirty ? 'bg-pink-50/80 ring-1 ring-pink-300 inset-0' : ''} ${!isMissing && !isEditingThisCell ? 'cursor-pointer hover:bg-blue-50/40' : ''}`}
                                 onClick={() => {
-                                  if (!isMissing && !isEditingThisCell) {
+                                  if (!readOnly && !isMissing && !isEditingThisCell) {
                                     handleStartEditCell(sheet.channelId, segment.title, col.key, val);
                                   }
                                 }}

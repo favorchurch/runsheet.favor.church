@@ -26,16 +26,28 @@ const CAMPUS_NAME_MARKERS: Record<RunsheetCampusCode, string[]> = {
   SEL: ['SEL', 'SEOUL'],
 };
 
-/** Reads the campus code off a runsheet channel's own name, e.g. `"MNL Crowne // ..."` → `"MNL"`. */
-export function extractRunsheetCampus(channelName: string): RunsheetCampusCode | null {
-  if (!channelName) return null;
+function hasCampusMarker(value: string, marker: string): boolean {
+  return new RegExp(`\\b${marker}\\b`, 'i').test(value);
+}
+
+/** Return every distinct campus marker in a runsheet title. */
+export function extractRunsheetCampuses(channelName: string): RunsheetCampusCode[] {
+  if (!channelName) return [];
   const upper = channelName.toUpperCase();
 
-  for (const code of RUNSHEET_CAMPUS_CODES) {
-    if (CAMPUS_NAME_MARKERS[code].some((marker) => upper.includes(marker))) return code;
-  }
+  return RUNSHEET_CAMPUS_CODES.filter((code) =>
+    CAMPUS_NAME_MARKERS[code].some((marker) => hasCampusMarker(upper, marker)),
+  );
+}
 
-  return null;
+/**
+ * Reads a single, unambiguous campus code from a runsheet channel name.
+ * Substring matches such as `COUNSEL`/`VESSEL` do not count, and an
+ * ambiguous title containing two campus markers fails closed.
+ */
+export function extractRunsheetCampus(channelName: string): RunsheetCampusCode | null {
+  const campuses = extractRunsheetCampuses(channelName);
+  return campuses.length === 1 ? campuses[0] : null;
 }
 
 /**

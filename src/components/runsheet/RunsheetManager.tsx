@@ -45,6 +45,7 @@ export function RunsheetManager({
   const [isSavingModal, setIsSavingModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingNavigationAction>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [editorMode, setEditorMode] = useState<'view' | 'edit'>('view');
   const [compareSelection, setCompareSelection] = useState<Set<number>>(new Set());
   const [compareViewOpen, setCompareViewOpen] = useState(false);
 
@@ -117,6 +118,7 @@ export function RunsheetManager({
 
   const loadChannelDetails = React.useCallback(async (id: number) => {
     activeChannelIdRef.current = id;
+    setEditorMode('view');
     setSelectedChannelId(id);
     setLoading(true);
     updateUrl(`/${id}`);
@@ -155,6 +157,20 @@ export function RunsheetManager({
       }
     }
   }, []);
+
+  const handleModeChange = (nextMode: 'view' | 'edit') => {
+    if (nextMode === 'edit' && !canUserEditRunsheet(user)) {
+      setEditorMode('view');
+      return;
+    }
+    setEditorMode(nextMode);
+  };
+
+  const isEditMode = canEdit && editorMode === 'edit';
+
+  useEffect(() => {
+    if (!canEdit) setEditorMode('view');
+  }, [canEdit]);
 
   // On initial mount with a channelId in URL (e.g. /45 on refresh), load the channel details immediately
   useEffect(() => {
@@ -210,6 +226,7 @@ export function RunsheetManager({
         setSelectedChannelId(null);
         setRunsheetData(null);
         setLoading(false);
+        setEditorMode('view');
       }
       setShowCreateForm(nextShow);
       if (nextShow) updateUrl('/create');
@@ -219,6 +236,7 @@ export function RunsheetManager({
       setSelectedChannelId(null);
       setRunsheetData(null);
       setLoading(false);
+      setEditorMode('view');
       updateUrl('/');
     } else if (action.type === 'browserBack') {
       window.history.go(-2);
@@ -264,6 +282,7 @@ export function RunsheetManager({
     setAvailableChannels((prev) => [{ id: newChannelId, name: title, time: extractChannelTime(title) }, ...prev]);
     setShowCreateForm(false);
     setIsEditorDirty(false);
+    setEditorMode('view');
     activeChannelIdRef.current = newChannelId;
     setSelectedChannelId(newChannelId);
     updateUrl(`/${newChannelId}`);
@@ -442,6 +461,33 @@ export function RunsheetManager({
               Compare ({compareSelection.size})
             </button>
           )}
+
+          {canEdit && (
+            <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-50 p-0.5">
+              <button
+                type="button"
+                aria-pressed={editorMode === 'view'}
+                onClick={() => handleModeChange('view')}
+                className={`rounded-md px-2.5 py-1.5 text-xs font-semibold cursor-pointer ${editorMode === 'view'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                View
+              </button>
+              <button
+                type="button"
+                aria-pressed={editorMode === 'edit'}
+                onClick={() => handleModeChange('edit')}
+                className={`rounded-md px-2.5 py-1.5 text-xs font-semibold cursor-pointer ${editorMode === 'edit'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Edit
+              </button>
+            </div>
+          )}
         </div>
 
         {canEdit && (
@@ -535,7 +581,7 @@ export function RunsheetManager({
           }
           initialSubtitle={runsheetData.subtitle}
           stickyTopOffset={appHeaderHeight}
-          readOnly={!canEdit}
+          readOnly={!isEditMode}
           runsheetCampuses={user?.access?.runsheetCampuses}
           onCreated={handleRunsheetCreated}
           onDeleted={() => handleRunsheetDeleted(runsheetData.channelId)}
@@ -547,10 +593,10 @@ export function RunsheetManager({
       {compareViewOpen && (
         <RunsheetCompareView
           channelIds={Array.from(compareSelection)}
+          readOnly={!isEditMode}
           onClose={() => setCompareViewOpen(false)}
         />
       )}
     </div>
   );
 }
-

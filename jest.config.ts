@@ -24,6 +24,7 @@ const config: Config = {
     '^server-only$': '<rootDir>/tests/mocks/server-only.ts',
   },
   preset: 'ts-jest',
+  watchman: false,
   testEnvironment: 'jest-environment-node',
   setupFiles: ['<rootDir>/tests/setup.ts'],
   testPathIgnorePatterns: [

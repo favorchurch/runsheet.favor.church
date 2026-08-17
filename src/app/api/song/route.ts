@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { getRockSession } from '@/auth0-hooks/server/getRockSession';
+import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import { cleanSongTitle } from '@/lib/songUtils';
 
@@ -10,10 +12,29 @@ export async function GET(request: Request) {
   const idParam = searchParams.get('id') || '';
 
   try {
+    const session = await getRockSession();
+    const access = assertRunsheetViewAccess(session);
+    if (!access.allowed) {
+      return NextResponse.json({ error: access.error }, { status: 403 });
+    }
+
     let songItem: any = null;
 
     if (idParam) {
-      songItem = await rockGet(`/ContentChannelItems/${idParam}`);
+      if (!/^[1-9]\d*$/.test(idParam)) {
+        return NextResponse.json({ error: 'Invalid song id.' }, { status: 400 });
+      }
+
+      const itemId = Number(idParam);
+      if (!Number.isSafeInteger(itemId)) {
+        return NextResponse.json({ error: 'Invalid song id.' }, { status: 400 });
+      }
+
+      const items = (await rockGet('/ContentChannelItems', {
+        $filter: `ContentChannelId eq 18 and Id eq ${itemId}`,
+        $top: 1,
+      })) as any[];
+      songItem = items?.[0] || null;
     } else if (titleParam) {
       const clean = cleanSongTitle(titleParam);
       const q = clean.replace(/'/g, "''");
@@ -43,7 +64,8 @@ export async function GET(request: Request) {
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Failed to fetch song' }, { status: 500 });
+    console.error('Error fetching song:', err);
+    return NextResponse.json({ error: 'Failed to fetch song.' }, { status: 500 });
   }
 }
 

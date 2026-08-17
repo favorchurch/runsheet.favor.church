@@ -1,6 +1,6 @@
 {
   "name": "runsheet-favor-church",
-  "version": "1.5.6",
+  "version": "1.5.12",
   "private": true,
   "ts-node": {
     "esm": true,
@@ -20,6 +20,7 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "list:channels": "ts-node scripts/list-runsheet-channels.ts",
+    "audit:access": "TS_NODE_ESM=false ts-node --compiler-options '{\"module\":\"CommonJS\",\"moduleResolution\":\"node\"}' scripts/audit-runsheet-access.ts",
     "analyze": "cross-env ANALYZE=true next build"
   },
   "dependencies": {

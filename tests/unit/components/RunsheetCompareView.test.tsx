@@ -14,8 +14,9 @@ if (typeof (global as any).Response === 'undefined') {
 
 import '@testing-library/jest-dom';
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { RunsheetCompareView } from '@/components/runsheet/RunsheetCompareView';
+import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDetailsBatch';
 
 jest.mock('@auth0/nextjs-auth0', () => ({
@@ -75,5 +76,33 @@ describe('RunsheetCompareView', () => {
     render(<RunsheetCompareView channelIds={[1]} onClose={jest.fn()} />);
     await waitFor(() => expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument());
     expect(screen.queryByText('Jane Doe')).not.toBeInTheDocument();
+  });
+
+  it('does not expose compare editing or saving in View mode', async () => {
+    const { rerender } = render(<RunsheetCompareView channelIds={[1, 2]} onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText('Doors open 8:30')).toBeInTheDocument());
+
+    const cell = screen.getByText('Doors open 8:30').closest('td');
+    expect(cell).not.toBeNull();
+    fireEvent.click(cell!);
+
+    expect(screen.getByRole('textbox')).toHaveValue('Doors open 8:30');
+    rerender(<RunsheetCompareView channelIds={[1, 2]} onClose={jest.fn()} readOnly />);
+
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /save comparison edits/i })).not.toBeInTheDocument();
+  });
+
+  it('does not open an editor or attempt a write when mounted read-only', async () => {
+    render(<RunsheetCompareView channelIds={[1, 2]} onClose={jest.fn()} readOnly />);
+    await waitFor(() => expect(screen.getByText('Doors open 8:30')).toBeInTheDocument());
+
+    const cell = screen.getByText('Doors open 8:30').closest('td');
+    expect(cell).not.toBeNull();
+    fireEvent.click(cell!);
+    fireEvent.doubleClick(cell!);
+
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(rockBulkSaveRunsheetItems).not.toHaveBeenCalled();
   });
 });

@@ -7,22 +7,27 @@
  * lives in `constants/client.ts` instead.
  */
 import 'server-only';
+import { clampCacheTtlSeconds } from '@/lib/cacheTtl';
 
 export const ROCK_API_KEY = process.env.ROCK_API_KEY || '';
 export const ROCK_API_URL = process.env.NEXT_PUBLIC_ROCK_API_URL || process.env.ROCK_API_URL || '';
-export const ROCK_FETCH_REVALIDATE_SECONDS = Number(process.env.ROCK_FETCH_REVALIDATE_SECONDS || '30');
-export const ROCK_CACHE_TTL_SECONDS = Number(process.env.ROCK_CACHE_TTL_SECONDS || '30');
-export const ROCK_CACHE_VERSION_TTL_SECONDS = Number(process.env.ROCK_CACHE_VERSION_TTL_SECONDS || '5');
-export const ROCK_CACHE_DEBUG = process.env.ROCK_CACHE_DEBUG === 'true';
-/**
- * Dedicated long-lived cache for Connect Materials (see connectMaterialsCache.ts).
- * Materials change roughly every 2 weeks and are only edited via Manage Connect
- * Materials, so this cache is intentionally decoupled from the global Rock-write
- * bust and lives far longer than the general object cache. Default 3 days.
- */
-export const CONNECT_MATERIALS_CACHE_TTL_SECONDS = Number(
-  process.env.CONNECT_MATERIALS_CACHE_TTL_SECONDS || String(60 * 60 * 24 * 3),
+/** Next data-cache revalidation for Rock reads, capped with authorization TTLs. */
+export const ROCK_FETCH_REVALIDATE_SECONDS = clampCacheTtlSeconds(
+  process.env.ROCK_FETCH_REVALIDATE_SECONDS || '30',
+  30,
+  0,
 );
+/** General Rock object-cache TTL is capped at five minutes to bound auth-data staleness. */
+export const ROCK_CACHE_TTL_SECONDS = Math.min(
+  300,
+  clampCacheTtlSeconds(process.env.ROCK_CACHE_TTL_SECONDS || '30', 30, 0),
+);
+export const ROCK_CACHE_VERSION_TTL_SECONDS = clampCacheTtlSeconds(
+  process.env.ROCK_CACHE_VERSION_TTL_SECONDS || '5',
+  5,
+  0,
+);
+export const ROCK_CACHE_DEBUG = process.env.ROCK_CACHE_DEBUG === 'true';
 /** Gates verbose server-side debug logging (see `src/lib/serverLog.ts`). Off in production by default. */
 export const ROCK_DEBUG = process.env.ROCK_DEBUG === 'true';
 export const REDIS_URL = process.env.REDIS_URL || '';

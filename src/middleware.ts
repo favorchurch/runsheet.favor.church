@@ -45,6 +45,8 @@ function maybeRedirectFacebookApp(req: NextRequest, expectedUrl: URL | null): Ne
 }
 
 export function middleware(req: NextRequest) {
+  // This middleware performs no authentication or authorization; server
+  // actions and route handlers must enforce their own session/access gates.
   const expectedUrl = getExpectedUrl();
 
   const canonicalRedirect = maybeRedirectToCanonicalHost(req, expectedUrl);
@@ -63,4 +65,3 @@ export function middleware(req: NextRequest) {
 
   return response;
 }
-

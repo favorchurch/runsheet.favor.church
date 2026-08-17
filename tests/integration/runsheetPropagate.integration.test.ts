@@ -4,7 +4,12 @@ import type { PropagationPlan } from '@/lib/runsheetPropagate';
 import type { RunsheetItemRow } from '@/types/Runsheet';
 
 jest.mock('@/server-actions/internal/rockFetch');
-jest.mock('@/auth0-hooks/server/getRockSession', () => ({ getRockSession: jest.fn().mockResolvedValue({}) }));
+jest.mock('@/auth0-hooks/server/getRockSession', () => ({
+  getRockSession: jest.fn().mockResolvedValue({
+    rolesMap: { editor: ['integration-editor'], viewer: ['integration-editor'] },
+    access: { runsheetCampuses: ['ALL'] },
+  }),
+}));
 jest.mock('@/lib/permissions', () => ({ canUserEditRunsheet: jest.fn().mockReturnValue(true) }));
 
 function targetRow(id: number, title: string): RunsheetItemRow {
@@ -24,11 +29,12 @@ describe('propagation write path (integration)', () => {
       if (url.includes('/ContentChannels/')) {
         const parts = url.split('/');
         const idStr = parts[parts.length - 1].split('?')[0];
-        return { Id: parseInt(idStr, 10) || 2, ContentChannelTypeId: 13, ItemsManuallyOrdered: true };
+        return { Id: parseInt(idStr, 10) || 2, Name: 'X', ContentChannelTypeId: 13, ItemsManuallyOrdered: true };
       }
       if (url.includes('/Attributes')) {
         return [{ Id: 100, Key: 'NOTES', Name: 'Notes', FieldTypeId: 1 }];
       }
+      if (url === '/ContentChannelItems') return [{ Id: 10 }, { Id: 20 }];
       if (url.includes('AttributeValues')) return [];
       return {};
     });
@@ -65,11 +71,12 @@ describe('propagation write path (integration)', () => {
       if (url.includes('/ContentChannels/')) {
         const parts = url.split('/');
         const idStr = parts[parts.length - 1].split('?')[0];
-        return { Id: parseInt(idStr, 10) || 2, ContentChannelTypeId: 13, ItemsManuallyOrdered: true };
+        return { Id: parseInt(idStr, 10) || 2, Name: 'X', ContentChannelTypeId: 13, ItemsManuallyOrdered: true };
       }
       if (url.includes('/Attributes')) {
         return [{ Id: 100, Key: 'NOTES', Name: 'Notes', FieldTypeId: 1 }];
       }
+      if (url === '/ContentChannelItems') return [{ Id: 10 }, { Id: 20 }];
       if (url.includes('AttributeValues')) return [];
       return {};
     });

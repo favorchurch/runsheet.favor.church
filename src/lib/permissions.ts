@@ -22,11 +22,5 @@ export function canUserEditRunsheet(user?: HasRolesMap | AuthUser | null): boole
  * If user has no assigned roles/permissions, returns false so they can be gated.
  */
 export function canUserAccessRunsheet(user?: HasRolesMap | AuthUser | null): boolean {
-  if (!user) return false;
-
-  if (user.rolesMap && user.rolesMap['viewer'] && user.rolesMap['viewer'].length > 0) {
-    return true;
-  }
-
-  return false;
+  return canUserEditRunsheet(user) || Boolean(user?.rolesMap?.viewer?.length);
 }
