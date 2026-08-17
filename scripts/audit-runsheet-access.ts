@@ -15,6 +15,7 @@ import {
   type RunsheetPolicyGroup,
   type RunsheetPolicyMembership,
 } from '../src/lib/runsheetAccessPolicy';
+import { CAMPUS_MINISTRY_TEAM_ROOT_IDS, CAMPUS_ORG_UNIT_ROOT_IDS } from '../src/lib/runsheetAccessRoots';
 import {
   RUNSHEET_ACCESS_AUDIT_FIXTURE,
   type RunsheetAccessAuditFixture,
@@ -25,13 +26,19 @@ const EVENTS_TEAM_NAME_PATTERN = /events team$/i;
 const GROUP_MEMBER_BATCH_SIZE = 40;
 const PEOPLE_BATCH_SIZE = 40;
 
+function makeCampusRoots(
+  roots: Record<number, string>,
+  groupTypeId: number,
+): ReadonlyArray<readonly [number, RunsheetPolicyGroup]> {
+  return Object.entries(roots).map(([groupId, campus]) => [
+    Number(groupId),
+    { groupId: Number(groupId), groupTypeId, parentGroupId: null, campus: campus as RunsheetPolicyGroup['campus'] },
+  ]);
+}
+
 const CAMPUS_ROOTS: ReadonlyArray<readonly [number, RunsheetPolicyGroup]> = [
-  [32893, { groupId: 32893, groupTypeId: 28, parentGroupId: null, campus: 'MNL' }],
-  [32898, { groupId: 32898, groupTypeId: 28, parentGroupId: null, campus: 'BNE' }],
-  [32902, { groupId: 32902, groupTypeId: 28, parentGroupId: null, campus: 'SEL' }],
-  [57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' }],
-  [59, { groupId: 59, groupTypeId: 23, parentGroupId: null, campus: 'BNE' }],
-  [58, { groupId: 58, groupTypeId: 23, parentGroupId: null, campus: 'SEL' }],
+  ...makeCampusRoots(CAMPUS_ORG_UNIT_ROOT_IDS, 28),
+  ...makeCampusRoots(CAMPUS_MINISTRY_TEAM_ROOT_IDS, 23),
 ];
 
 export interface RockReader {
@@ -88,7 +95,6 @@ export interface RunsheetAccessAuditReport {
   generatedAt: string;
   readOnly: true;
   leaderRoles: Array<{ id: number; name?: string; isLeader: boolean }>;
-  usedLeaderRoleFallback: boolean;
   requiredGlobalGroups: Array<{ id: number; present: boolean; name?: string; memberCount: number }>;
   groups: Array<{
     id: number;
@@ -205,14 +211,12 @@ function groupPolicy(
   group: AuditGroup,
   policyMaps: ReturnType<typeof buildPolicyMaps>,
   leaderRoleIds: ReadonlySet<number>,
-  leaderRoleLookupFailed: boolean,
 ) {
   return resolveRunsheetAccessPolicy(
     [{ groupId: group.Id, groupTypeId: group.GroupTypeId }],
     policyMaps.groups,
     policyMaps.campusRoots,
     leaderRoleIds,
-    leaderRoleLookupFailed,
   );
 }
 
@@ -220,7 +224,6 @@ function principalPolicy(
   memberships: readonly AuditMembership[],
   policyMaps: ReturnType<typeof buildPolicyMaps>,
   leaderRoleIds: ReadonlySet<number>,
-  leaderRoleLookupFailed: boolean,
 ) {
   const policyMemberships: RunsheetPolicyMembership[] = memberships.map((membership) => ({
     groupId: membership.GroupId,
@@ -233,7 +236,6 @@ function principalPolicy(
     policyMaps.groups,
     policyMaps.campusRoots,
     leaderRoleIds,
-    leaderRoleLookupFailed,
   );
 }
 
@@ -356,7 +358,6 @@ export async function collectRunsheetAccessAudit(reader: RockReader): Promise<Ru
         personMemberships,
         policyMaps,
         leaderData.leaderRoleIds,
-        false,
       );
       const person = people.get(personId);
       return {
@@ -390,7 +391,7 @@ export async function collectRunsheetAccessAudit(reader: RockReader): Promise<Ru
 
   const eventsTeamGroupsWithoutCampus = groups
     .filter((group) => group.GroupTypeId === 23 && EVENTS_TEAM_NAME_PATTERN.test(group.Name.trim()))
-    .filter((group) => groupPolicy(group, policyMaps, leaderData.leaderRoleIds, false).runsheetCampuses.length === 0)
+    .filter((group) => groupPolicy(group, policyMaps, leaderData.leaderRoleIds).runsheetCampuses.length === 0)
     .map((group) => ({ groupId: group.Id, name: group.Name }))
     .sort((a, b) => a.groupId - b.groupId);
 
@@ -412,7 +413,6 @@ export async function collectRunsheetAccessAudit(reader: RockReader): Promise<Ru
     generatedAt: new Date().toISOString(),
     readOnly: true,
     leaderRoles: leaderData.roles,
-    usedLeaderRoleFallback: false,
     requiredGlobalGroups,
     groups: groups
       .map((group) => ({

@@ -102,6 +102,14 @@ These are recorded deviations only. This run does not modify
    campus, regardless of roster membership (Rico, 2026-08-16). This is tracked
    in issue #10.
 
+## Revocation window (G13 / D2)
+
+A revoked grant can remain live for **at most 300 seconds (5 minutes)**. The
+session cache and the `/GroupMembers` object cache are both capped at **≤300s**;
+`ROCK_FETCH_REVALIDATE_SECONDS` is clamped to the same cap as well. Capping only
+one cache would leave the revocation window unchanged if the other cache could
+still serve stale authorization data, which is why both are clamped.
+
 ## Proposed amendment text for SECURITY-POLICY §1.1
 
 Proposal only; this text is not applied to `~/Git/rock-security` by this run:
@@ -135,3 +143,7 @@ Groups 4 and 5 are legacy WEB roles receiving edit access on **every** campus.
 Their real membership may be much wider than the intended Web Developer role.
 The live audit must report their actual membership counts and identities before
 anyone considers a production promotion. This run stops at `staging`.
+
+The old-model gain/loss delta and the §1.0–§1.3 drift comparison are deferred
+because no offline old-model baseline or planner-owned live Rock data exists in
+this run; implementing them now would fabricate results.
