@@ -104,10 +104,12 @@ These are recorded deviations only. This run does not modify
 
 ## Revocation window (G13 / D2)
 
-A revoked grant can remain live for **at most 300 seconds (5 minutes)**. The
-session cache and the `/GroupMembers` object cache are both capped at **≤300s**;
-`ROCK_FETCH_REVALIDATE_SECONDS` is clamped to the same cap as well. Capping only
-one cache would leave the revocation window unchanged if the other cache could
+Each cache is capped at **≤300 seconds (5 minutes)**: the session cache, the
+`/GroupMembers` object cache, and `ROCK_FETCH_REVALIDATE_SECONDS`. The
+compounded worst-case revocation window is the object-cache TTL plus the session
+TTL: approximately **330 seconds with the defaults** (30s + 300s), and up to
+**600 seconds at the configured caps** (300s + 300s). Capping only one cache
+would leave the revocation window effectively unchanged if the other cache could
 still serve stale authorization data, which is why both are clamped.
 
 ## Proposed amendment text for SECURITY-POLICY §1.1

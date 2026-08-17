@@ -192,7 +192,11 @@ describe('server-action access enforcement', () => {
     const result = await rockDeleteServiceRunsheet(42);
 
     expect(result.success).toBe(true);
-    expect(mockRockDelete).toHaveBeenCalledTimes(1);
+    expect(mockRockGet).toHaveBeenCalledWith('/ContentChannelItems', {
+      $filter: 'ContentChannelId eq 42',
+      $select: 'Id',
+    });
+    expect(mockRockDelete).toHaveBeenCalledWith('/ContentChannels/42');
   });
 
   it('does not return upstream errors from duplicate', async () => {
