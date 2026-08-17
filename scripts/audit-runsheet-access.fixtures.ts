@@ -84,8 +84,8 @@ export const RUNSHEET_ACCESS_AUDIT_FIXTURE: RunsheetAccessAuditFixture = {
     { Id: 107, FirstName: 'Orphan', LastName: 'Leader', Email: 'orphan@example.test' },
     { Id: 108, FirstName: 'Potential', LastName: 'Captain', Email: 'potential@example.test' },
     { Id: 109, FirstName: 'BNE', LastName: 'Staff', Email: 'bne@example.test' },
-    { Id: 110, FirstName: 'Archived', LastName: 'Member', Email: 'archived@example.test' },
-    { Id: 111, FirstName: 'Archived', LastName: 'Member Two', Email: 'archived-two@example.test' },
+    { Id: 110, FirstName: 'Inactive', LastName: 'Member', Email: 'inactive@example.test' },
+    { Id: 111, FirstName: 'Archived', LastName: 'Member', Email: 'archived@example.test' },
   ],
   leaderRoles: [
     { Id: 19, Name: 'Member', IsLeader: false },
@@ -94,4 +94,29 @@ export const RUNSHEET_ACCESS_AUDIT_FIXTURE: RunsheetAccessAuditFixture = {
     { Id: 70, Name: 'Potential Captain', IsLeader: false },
     { Id: 75, Name: 'Team Lead', IsLeader: true },
   ],
+};
+
+/**
+ * Regression fixture with enough groups to exceed Rock's OData node budget if
+ * all group ids are sent in the old 40-id batches.
+ */
+export const RUNSHEET_ACCESS_AUDIT_NODE_LIMIT_FIXTURE: RunsheetAccessAuditFixture = {
+  groups: [
+    ...RUNSHEET_ACCESS_AUDIT_FIXTURE.groups,
+    ...Array.from({ length: 45 }, (_, index) => ({
+      Id: 10000 + index,
+      GroupTypeId: 28,
+      Name: `Node Budget Group ${index}`,
+      ParentGroupId: null,
+    })),
+  ],
+  memberships: [
+    ...RUNSHEET_ACCESS_AUDIT_FIXTURE.memberships,
+    { Id: 1000, PersonId: 2000, GroupId: 10000, GroupTypeId: 28, GroupMemberStatus: 1 },
+  ],
+  people: [
+    ...RUNSHEET_ACCESS_AUDIT_FIXTURE.people,
+    { Id: 2000, FirstName: 'Chunked', LastName: 'Member', Email: 'chunked@example.test' },
+  ],
+  leaderRoles: RUNSHEET_ACCESS_AUDIT_FIXTURE.leaderRoles,
 };

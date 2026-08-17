@@ -23,8 +23,9 @@ import {
 
 const RELEVANT_GROUP_TYPE_IDS = new Set([1, 23, 28]);
 const EVENTS_TEAM_NAME_PATTERN = /events team$/i;
-const GROUP_MEMBER_BATCH_SIZE = 40;
-const PEOPLE_BATCH_SIZE = 40;
+// Rock rejects filters over 100 OData nodes. Ten equality clauses leave ample
+// room for the ORs and the active-membership predicates in each request.
+const ROCK_FILTER_BATCH_SIZE = 10;
 
 function makeCampusRoots(
   roots: Record<number, string>,
@@ -126,6 +127,44 @@ function asArray<T>(value: unknown): T[] {
   return [];
 }
 
+// Rock is flaky under request bursts (Cloudflare 524s / read timeouts), so each
+// CHUNKED fetch loop keeps at most this many GETs in flight. Without a cap, a
+// large org would fan out one request per chunk simultaneously — ~150 for a
+// 1500-principal audit at batch size 10.
+//
+// Note this bounds the chunk loops only. The three group-type lookups plus the
+// leader-role lookup are issued together up front (a fixed 4 requests), outside
+// this limiter.
+export const ROCK_MAX_CONCURRENT_REQUESTS = 5;
+
+/**
+ * Run `task` over `items` with at most `limit` promises in flight at once.
+ *
+ * `limit` is floored at 1: a non-positive limit would otherwise spawn zero
+ * workers and resolve without ever invoking `task`, which in an audit means
+ * silently reporting zero memberships and zero editors — a clean-looking
+ * security report instead of an error. Failing loudly is mandatory here;
+ * under-reporting access is worse than erroring.
+ */
+export async function mapWithConcurrency<T>(
+  items: readonly T[],
+  limit: number,
+  task: (item: T) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return;
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  let cursor = 0;
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      await task(items[index] as T);
+    }
+  });
+  // Promise.all rejects on the first failure, so a Rock error propagates out of
+  // the audit rather than yielding a partial report.
+  await Promise.all(workers);
+}
+
 function chunks<T>(values: readonly T[], size: number): T[][] {
   const result: T[][] = [];
   for (let index = 0; index < values.length; index += size) {
@@ -199,12 +238,18 @@ function normalizeLeaderRoles(rawRoles: readonly AuditLeaderRole[]) {
   };
 }
 
+// The disjunction MUST be parenthesised. OData binds `and` tighter than `or`, so
+// `GroupId eq 1 or GroupId eq 2 and IsArchived eq false` applies the archived
+// predicate to id 2 only, and every other id returns archived and inactive rows.
+// `isActiveMembership` re-filters client-side, so the unparenthesised form
+// over-returned rather than under-reported — but the server-side predicates were
+// inert for all but the last id in each batch. Parentheses cost 0 OData nodes.
 function makeGroupFilter(groupIds: readonly number[]): string {
-  return groupIds.map((id) => `GroupId eq ${id}`).join(' or ');
+  return `(${groupIds.map((id) => `GroupId eq ${id}`).join(' or ')})`;
 }
 
 function makePeopleFilter(personIds: readonly number[]): string {
-  return personIds.map((id) => `Id eq ${id}`).join(' or ');
+  return `(${personIds.map((id) => `Id eq ${id}`).join(' or ')})`;
 }
 
 function groupPolicy(
@@ -302,8 +347,10 @@ export async function collectRunsheetAccessAudit(reader: RockReader): Promise<Ru
   const groupIds = groups.map((group) => group.Id);
   const rawMemberships: AuditMembership[] = [];
 
-  await Promise.all(
-    chunks(groupIds, GROUP_MEMBER_BATCH_SIZE).map(async (batch) => {
+  await mapWithConcurrency(
+    chunks(groupIds, ROCK_FILTER_BATCH_SIZE),
+    ROCK_MAX_CONCURRENT_REQUESTS,
+    async (batch) => {
       const members = asArray<AuditMembership>(
         await reader.get('/GroupMembers', {
           $filter: `${makeGroupFilter(batch)} and GroupMemberStatus eq '1' and IsArchived eq false`,
@@ -312,7 +359,7 @@ export async function collectRunsheetAccessAudit(reader: RockReader): Promise<Ru
         }),
       );
       rawMemberships.push(...members);
-    }),
+    },
   );
 
   const uniqueMemberships = new Map<string, AuditMembership>();
@@ -331,18 +378,20 @@ export async function collectRunsheetAccessAudit(reader: RockReader): Promise<Ru
 
   const personIds = Array.from(new Set(memberships.map((membership) => membership.PersonId)));
   const rawPeople: AuditPerson[] = [];
-  await Promise.all(
-    chunks(personIds, PEOPLE_BATCH_SIZE).map(async (batch) => {
+  await mapWithConcurrency(
+    chunks(personIds, ROCK_FILTER_BATCH_SIZE),
+    ROCK_MAX_CONCURRENT_REQUESTS,
+    async (batch) => {
       rawPeople.push(
         ...asArray<AuditPerson>(
           await reader.get('/People', {
             $filter: makePeopleFilter(batch),
             $select: 'Id,FirstName,LastName,Email',
-            $top: PEOPLE_BATCH_SIZE,
+            $top: ROCK_FILTER_BATCH_SIZE,
           }),
         ),
       );
-    }),
+    },
   );
 
   const people = new Map<number, AuditPerson>();
