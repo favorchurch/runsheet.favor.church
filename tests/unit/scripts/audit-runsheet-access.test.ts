@@ -1,4 +1,8 @@
-import { collectRunsheetAccessAudit, createReadOnlyRockReader } from '../../../scripts/audit-runsheet-access';
+import {
+  collectRunsheetAccessAudit,
+  createReadOnlyRockReader,
+  ROCK_MAX_CONCURRENT_REQUESTS,
+} from '../../../scripts/audit-runsheet-access';
 import {
   RUNSHEET_ACCESS_AUDIT_FIXTURE,
   RUNSHEET_ACCESS_AUDIT_NODE_LIMIT_FIXTURE,
@@ -131,18 +135,29 @@ describe('runsheet access audit', () => {
     expect(report.principals.find((principal) => principal.name === 'Chunked Member')?.personId).toBe(2000);
   });
 
-  it('never exceeds its concurrent-request cap', async () => {
-    // Rock is flaky under request bursts, so the audit must not fan out one
-    // request per chunk simultaneously. Without a limiter a 61-group fixture
-    // issues every /GroupMembers call at once; this pins the ceiling.
-    const CAP = 5;
+  it('never exceeds its concurrent-request cap on the chunked fetch loops', async () => {
+    // Rock is flaky under request bursts, so the chunk loops must not fan out one
+    // request per chunk simultaneously.
+    //
+    // Measure the CHUNKED endpoints only. The audit also issues a fixed 4
+    // requests up front (three /Groups lookups + /GroupTypeRoles) via a plain
+    // Promise.all outside the limiter; counting those made an earlier version of
+    // this test vacuous — its "peak > 1" assertion was satisfied by that header
+    // burst alone, so the test still passed with the cap set to 1, i.e. with the
+    // limiter fully serialising every chunk.
+    const CHUNKED = ['/GroupMembers', '/People'];
     let inFlight = 0;
     let peakInFlight = 0;
+    let chunkedRequestCount = 0;
 
     const fetchImpl = async (input: string, init?: RequestInit) => {
       expect(init?.method).toBe('GET');
-      inFlight += 1;
-      peakInFlight = Math.max(peakInFlight, inFlight);
+      const counted = CHUNKED.some((path) => new URL(input).pathname.endsWith(path));
+      if (counted) {
+        inFlight += 1;
+        chunkedRequestCount += 1;
+        peakInFlight = Math.max(peakInFlight, inFlight);
+      }
       // Yield twice so genuinely-parallel calls overlap and register a peak.
       await Promise.resolve();
       await Promise.resolve();
@@ -169,7 +184,7 @@ describe('runsheet access audit', () => {
         body = RUNSHEET_ACCESS_AUDIT_NODE_LIMIT_FIXTURE.leaderRoles;
       }
 
-      inFlight -= 1;
+      if (counted) inFlight -= 1;
       return { ok: true, status: 200, text: async () => JSON.stringify(body) } as Response;
     };
 
@@ -177,7 +192,15 @@ describe('runsheet access audit', () => {
       createReadOnlyRockReader('https://rock.test.invalid/api', 'fixture-key', fetchImpl),
     );
 
-    expect(peakInFlight).toBeGreaterThan(1); // proves batches really do run in parallel
-    expect(peakInFlight).toBeLessThanOrEqual(CAP);
+    // Floor: the chunk loops really do run in parallel. Fails if the limiter is
+    // removed and replaced with a serial loop, or if the cap is set to 1.
+    expect(peakInFlight).toBeGreaterThan(1);
+    // Ceiling: never more than the production constant. Imported rather than
+    // hardcoded, so raising the constant tracks instead of failing misleadingly.
+    expect(peakInFlight).toBeLessThanOrEqual(ROCK_MAX_CONCURRENT_REQUESTS);
+    // Guard against a future fixture shrinking below the cap and making the
+    // ceiling assertion vacuous: there must be more chunked requests than the cap,
+    // otherwise "peak <= cap" would hold even with no limiter at all.
+    expect(chunkedRequestCount).toBeGreaterThan(ROCK_MAX_CONCURRENT_REQUESTS);
   });
 });

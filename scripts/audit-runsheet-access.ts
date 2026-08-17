@@ -127,25 +127,41 @@ function asArray<T>(value: unknown): T[] {
   return [];
 }
 
-// Rock is flaky under request bursts (Cloudflare 524s / read timeouts), so the
-// audit never has more than this many GETs in flight. Without a cap, a large org
-// would fan out one request per chunk simultaneously — ~150 for a 1500-principal
-// audit at batch size 10.
-const ROCK_MAX_CONCURRENT_REQUESTS = 5;
+// Rock is flaky under request bursts (Cloudflare 524s / read timeouts), so each
+// CHUNKED fetch loop keeps at most this many GETs in flight. Without a cap, a
+// large org would fan out one request per chunk simultaneously — ~150 for a
+// 1500-principal audit at batch size 10.
+//
+// Note this bounds the chunk loops only. The three group-type lookups plus the
+// leader-role lookup are issued together up front (a fixed 4 requests), outside
+// this limiter.
+export const ROCK_MAX_CONCURRENT_REQUESTS = 5;
 
-/** Run `task` over `items` with at most `limit` promises in flight at once. */
+/**
+ * Run `task` over `items` with at most `limit` promises in flight at once.
+ *
+ * `limit` is floored at 1: a non-positive limit would otherwise spawn zero
+ * workers and resolve without ever invoking `task`, which in an audit means
+ * silently reporting zero memberships and zero editors — a clean-looking
+ * security report instead of an error. Failing loudly is mandatory here;
+ * under-reporting access is worse than erroring.
+ */
 async function mapWithConcurrency<T>(
   items: readonly T[],
   limit: number,
   task: (item: T) => Promise<void>,
 ): Promise<void> {
+  if (items.length === 0) return;
+  const workerCount = Math.max(1, Math.min(limit, items.length));
   let cursor = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+  const workers = Array.from({ length: workerCount }, async () => {
     while (cursor < items.length) {
       const index = cursor++;
       await task(items[index] as T);
     }
   });
+  // Promise.all rejects on the first failure, so a Rock error propagates out of
+  // the audit rather than yielding a partial report.
   await Promise.all(workers);
 }
 

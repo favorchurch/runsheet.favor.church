@@ -1,13 +1,12 @@
 # Runsheet access audit
 
-**Audit status:** fixture-verified; live Rock figures pending the planner's
-interactive pass.
+**Audit status:** fixture-verified, and a live read-only pass against prod
+(`rock.favor.church`) was completed on 2026-08-17 — see *Live audit* below.
 
 This report documents the access model implemented by the runsheet app and the
-read-only audit shipped in `scripts/audit-runsheet-access.ts`. The fixture
-output in this document is not a production membership report. No live Rock
-figures are claimed until the planner can run the live pass with an interactive
-Rock session.
+read-only audit shipped in `scripts/audit-runsheet-access.ts`. Figures labelled
+*fixture* are illustrative only; the production membership figures are in the
+*Live audit* section and are labelled as such.
 
 ## Access model as built
 
@@ -57,8 +56,17 @@ list.
 
 ## Live audit — prod (`rock.favor.church`), 2026-08-17
 
-**Status: COMPLETE.** Read-only pass, run with the shipped script
-(`pnpm audit:access`). No writes were issued; the reader exposes only `get()`.
+**Status: COMPLETE.** Read-only pass via `pnpm audit:access`. No writes were
+issued; the reader exposes only `get()`.
+
+**Reproducibility caveat.** These figures were produced by the script as it stood
+*before* two fixes landed in the same change set as this section: the OData filter
+parenthesisation and the concurrency cap. The pre-fix filter returned archived and
+inactive rows for all but the last id in each batch (the client-side
+`isActiveMembership` re-filter is why the counts below are still correct), and
+`/GroupMembers` uses `$top: 5000` with no truncation detection. A re-run with the
+shipped script is therefore expected to agree but is not guaranteed to reproduce
+these counts exactly. Re-run before relying on them for a decision.
 
 ### Summary
 
@@ -66,14 +74,30 @@ list.
 |---|---|
 | Groups audited | 171 |
 | Active memberships | 3,384 |
-| Principals with any access | 1,494 |
-| View-only | 1,488 |
-| Editors | 112 |
+| Principals scanned | 1,494 |
+| — of those, holding **any** runsheet access | 1,488 |
+| — of those, holding **no** access | 6 |
+| **View-only** (viewer, not editor) | **1,376** |
+| **Editors** | **112** |
 | **Edit on every campus** | **20** |
 | Events Teams resolving to no campus | 0 |
 | Required global group ids missing from Rock | none |
 
-### Global edit groups — live member counts
+**Reading these rows.** The script's raw `viewerCount` is **1,488**, which counts
+every principal with any view access **including all 112 editors** — editors are
+added to `viewerGroupIds` unconditionally, and `canEdit ⇒ canView`. View-only is
+therefore `1,488 − 112 = 1,376`. Do not add the viewer and editor rows together;
+the buckets overlap completely on editors. The 6 remaining principals are members
+of scanned GroupType 1 groups that are not global edit groups, so they resolve to
+no runsheet access at all.
+
+### Global edit groups — live membership counts
+
+**These are membership counts, not distinct people.** Memberships are deduped on
+`personId:groupId:groupRoleId`, so one person holding two roles in a group counts
+twice. The three non-empty rows sum to 22 memberships, which resolve to **20
+distinct people** — the difference is people who belong to more than one of these
+groups, which is why the all-campus editor count is 20 rather than 22.
 
 | Group | Id | Members |
 |---|---|---|
@@ -174,10 +198,12 @@ Proposal only; this text is not applied to `~/Git/rock-security` by this run:
 
 - The `|| profile.name` fallback was removed from `getRockSession`; Rock email
   fallback is attempted only for an Auth0 claim with `email_verified === true`.
-- `IsArchived eq false` on `/GroupMembers` is not verified against live Rock.
-  If Rock v17 rejects that field, `rawRockGet` throws and every user is denied,
-  creating a total-outage path. The planner's live pass must verify this query
-  shape before any production consideration.
+- `IsArchived eq false` on `/GroupMembers` — **RESOLVED 2026-08-17.** Verified
+  accepted by prod Rock (`HTTP 200`, rows returned) before the production
+  promotion. Had Rock v17 rejected the field, `rawRockGet` would throw and every
+  user would be denied — a total-outage path. It fails closed, so the risk was an
+  outage rather than a breach; it is now closed either way. Re-verify if the Rock
+  version changes.
 - **N6:** after a genuinely deleted item is replayed, server behavior correctly
   rejects the non-owned numeric id, but the client can retain `deletedIds` after
   a failed save. This is a client fix and a follow-up issue, outside this audit.
@@ -198,5 +224,8 @@ periodically and check the `WEB - Administration` / `WEB - General Editor` rows.
 If either becomes non-empty, confirm the members are intended to hold runsheet
 edit, or narrow `GLOBAL_EDIT_GROUP_IDS` in `src/lib/runsheetAccessPolicy.ts`.
 
-This run was promoted to production on 2026-08-17 after the live pass confirmed
-the above and after `IsArchived eq false` was verified against prod Rock.
+The access-control work (M1-M4) was promoted to production on 2026-08-17 (PR #14,
+`main` @ `949807a`) after the live pass confirmed the above and after
+`IsArchived eq false` was verified against prod Rock. Note that the audit-tooling
+changes and this section itself ship separately and target `staging` first; they
+contain no app code, so production behaviour is unaffected by them.
