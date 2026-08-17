@@ -95,3 +95,28 @@ export const RUNSHEET_ACCESS_AUDIT_FIXTURE: RunsheetAccessAuditFixture = {
     { Id: 75, Name: 'Team Lead', IsLeader: true },
   ],
 };
+
+/**
+ * Regression fixture with enough groups to exceed Rock's OData node budget if
+ * all group ids are sent in the old 40-id batches.
+ */
+export const RUNSHEET_ACCESS_AUDIT_NODE_LIMIT_FIXTURE: RunsheetAccessAuditFixture = {
+  groups: [
+    ...RUNSHEET_ACCESS_AUDIT_FIXTURE.groups,
+    ...Array.from({ length: 45 }, (_, index) => ({
+      Id: 10000 + index,
+      GroupTypeId: 28,
+      Name: `Node Budget Group ${index}`,
+      ParentGroupId: null,
+    })),
+  ],
+  memberships: [
+    ...RUNSHEET_ACCESS_AUDIT_FIXTURE.memberships,
+    { Id: 1000, PersonId: 2000, GroupId: 10000, GroupTypeId: 28, GroupMemberStatus: 1 },
+  ],
+  people: [
+    ...RUNSHEET_ACCESS_AUDIT_FIXTURE.people,
+    { Id: 2000, FirstName: 'Chunked', LastName: 'Member', Email: 'chunked@example.test' },
+  ],
+  leaderRoles: RUNSHEET_ACCESS_AUDIT_FIXTURE.leaderRoles,
+};
