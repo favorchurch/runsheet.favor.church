@@ -48,7 +48,7 @@ behavioral test asserts that no `POST`, `PATCH`, or `DELETE` request is made.
 The `--fixture` mode and fixture tests make the policy path verifiable without
 credentials.
 
-The fixture run proves the following shape: 10 active principals, 7 editors,
+The fixture run proves the following shape: 11 active principals, 7 editors,
 3 all-campus editors, and one Events Team with no resolvable campus. These are
 test figures only. The fixture also proves that a live `IsLeader: false` Captain
 does not become an editor merely because role id 69 was once in the fallback
