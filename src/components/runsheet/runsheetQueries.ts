@@ -17,6 +17,12 @@ function sortedStrings(values: string[] | undefined): string[] {
   return [...(values || [])].sort();
 }
 
+function sortedRoles(rolesMap: AuthUser['rolesMap']): Array<{ name: string; groupIds: string[] }> {
+  return Object.entries(rolesMap || {})
+    .map(([name, groupIds]) => ({ name, groupIds: sortedStrings(groupIds) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /**
  * Stable, non-secret discriminator for the authorized runsheet result set.
  * The access fields are included so an in-place permission change cannot reuse
@@ -44,6 +50,7 @@ export function getRunsheetAccessScope(user?: AuthUser | null): string {
       runsheetCampuses: sortedStrings(access?.runsheetCampuses),
       sections,
     },
+    roles: sortedRoles(user?.rolesMap),
   });
 }
 

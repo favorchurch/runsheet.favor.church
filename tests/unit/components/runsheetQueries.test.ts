@@ -40,4 +40,28 @@ describe('runsheet query keys', () => {
       runsheetQueryKeys.details(42, getRunsheetAccessScope(changed)),
     );
   });
+
+  it('changes the discriminator when roles change and ignores role ordering', () => {
+    const editor = {
+      sub: 'auth0|person-1',
+      rolesMap: { viewer: ['viewer-group'], editor: ['editor-group', 'shared-group'] },
+      access: { runsheetCampuses: ['MNL'], campusIds: [1] },
+    } as any;
+    const equivalent = {
+      sub: 'auth0|person-1',
+      rolesMap: { editor: ['shared-group', 'editor-group'], viewer: ['viewer-group'] },
+      access: { runsheetCampuses: ['MNL'], campusIds: [1] },
+    } as any;
+    const viewer = {
+      sub: 'auth0|person-1',
+      rolesMap: { viewer: ['viewer-group'] },
+      access: { runsheetCampuses: ['MNL'], campusIds: [1] },
+    } as any;
+
+    expect(getRunsheetAccessScope(editor)).toBe(getRunsheetAccessScope(equivalent));
+    expect(getRunsheetAccessScope(editor)).not.toBe(getRunsheetAccessScope(viewer));
+    expect(runsheetQueryKeys.channels(true, getRunsheetAccessScope(editor))).not.toEqual(
+      runsheetQueryKeys.channels(true, getRunsheetAccessScope(viewer)),
+    );
+  });
 });
