@@ -15,6 +15,14 @@ export { NoRockPersonError, NoAccessError, CloudflareBlockError };
 
 interface RockSession extends ResolveResult {
   personId: number;
+  /**
+   * The raw parsed `rock_person_ids` claim plus the effective person id —
+   * **display/matching only, NEVER an authorization input.** It is deliberately
+   * NOT gated on `personFound`/`email_verified`, so a session the app distrusted
+   * can still populate it. Authorization uses the gated set built by
+   * `buildUnionPersonIds` and passed to `rockResolveAccess`; read `rolesMap` and
+   * `access` for anything access-related.
+   */
   personIds: number[];
 }
 
@@ -45,6 +53,41 @@ function withEffectivePersonId(personIds: number[], effectivePersonId: number): 
   return personIds;
 }
 
+/** The scalar `rock_person_id`/`rock_person_found` resolution shared by `getRockSession` and `invalidateRockSession`. */
+function resolvePersonIdFromClaims(profile: Record<string, any>): { personId: number; personFound: unknown } {
+  const personFound = profile[ROCK_PERSON_FOUND_CLAIM];
+  const rawPersonId = profile[ROCK_PERSON_ID_CLAIM];
+  let personId = 0;
+  if (personFound !== false && rawPersonId != null) {
+    const parsed = Number(rawPersonId);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      personId = parsed;
+    }
+  }
+  return { personId, personFound };
+}
+
+/**
+ * Build the person-id set actually used for *authorization* (union of Rock
+ * memberships). Gated on the same signal that governs the scalar id (a0cfeac
+ * / G14): when the app distrusted the scalar id, the claimed id array must
+ * not resurrect roles. Ungated resolution is exactly `[personId]` (or `[]`),
+ * matching pre-union behavior one-for-one.
+ *
+ * When gated, the primary id is placed first explicitly:
+ * `[personId, ...claimedPersonIds.filter(id => id !== personId)]`. The claim
+ * arrives sorted ascending (post-login.js:677), not primary-first, so passing
+ * it through unchanged would bind identity/ordering to the lowest household
+ * id instead of the actual signed-in person.
+ */
+function buildUnionPersonIds(personId: number, personFound: unknown, claimedPersonIds: number[]): number[] {
+  const isGated = personFound !== false && personId > 0;
+  if (!isGated) {
+    return personId > 0 ? [personId] : [];
+  }
+  return [personId, ...claimedPersonIds.filter((id) => id !== personId)];
+}
+
 /**
  * Return the current user's Rock-backed portal session.
  *
@@ -60,45 +103,57 @@ export async function getRockSession(): Promise<RockSession> {
   }
 
   const profile = session.user as Record<string, any>;
-  const personFound = profile[ROCK_PERSON_FOUND_CLAIM];
-  const rawPersonId = profile[ROCK_PERSON_ID_CLAIM];
-  let personId = 0;
-  if (personFound !== false && rawPersonId != null) {
-    const parsed = Number(rawPersonId);
-    if (Number.isInteger(parsed) && parsed > 0) {
-      personId = parsed;
-    }
-  }
-  const personIds = parseRockPersonIds(profile[ROCK_PERSON_IDS_CLAIM], personId);
+  const { personId, personFound } = resolvePersonIdFromClaims(profile);
+  const claimedPersonIds = parseRockPersonIds(profile[ROCK_PERSON_IDS_CLAIM], personId);
+  // Authorization id set (may be `[personId]`/`[]` when ungated) — computed
+  // once, used for the cache read, the Rock resolve call, and the cache
+  // write, so all three agree on what was actually unioned.
+  const unionPersonIds = buildUnionPersonIds(personId, personFound, claimedPersonIds);
 
   const rawEmail = typeof profile.email === 'string' ? profile.email.trim() : '';
   const emailVerifiedClaim = profile.email_verified;
-  const isEmailVerified =
-    emailVerifiedClaim === true ||
-    emailVerifiedClaim === 'true' ||
-    (emailVerifiedClaim !== false && rawEmail.length > 0);
+  // Only an affirmatively verified claim admits the email fallback (G14). An
+  // omitted or non-affirmative claim must NOT resolve: the fallback hands back
+  // that Rock person's full rolesMap, so an unverified address matching a staff
+  // email would inherit staff access. `'true'` covers IdPs that stringify the
+  // claim; every other shape, absence included, fails closed.
+  const isEmailVerified = emailVerifiedClaim === true || emailVerifiedClaim === 'true';
   const email = isEmailVerified ? rawEmail : '';
 
   // Check cache first if valid personId
   if (personId > 0) {
-    const cached = await getSessionCache(personId);
+    const cached = await getSessionCache(personId, unionPersonIds);
     if (cached) {
-      return { ...cached, personId, personIds: withEffectivePersonId(personIds, personId) };
+      return { ...cached, personId, personIds: withEffectivePersonId(claimedPersonIds, personId) };
     }
   }
 
   // Resolve from Rock API (with email fallback lookup)
-  const resolved = await rockResolveAccess(personId, email);
+  const resolved = await rockResolveAccess(unionPersonIds, email);
   const resolvedPersonId = resolved.contact.id || personId || 0;
 
-  if (resolvedPersonId > 0) {
-    await setSessionCache(resolvedPersonId, resolved);
+  // The write MUST key on the same primaryId the read above used, or
+  // invalidation and re-reads silently miss (the v4 bug: the write keyed on
+  // `resolvedPersonId` while the read keyed on `personId`).
+  //
+  // We therefore only write when `personId > 0` — exactly the condition the
+  // read at the top is gated on. On the pure email-fallback path
+  // (`personId === 0`) there is deliberately NO write: nothing could ever read
+  // that entry back, and `invalidateRockSession` cannot derive its key from the
+  // claims either, so writing it would leave an unevictable entry serving
+  // resolved access for the full TTL after logout.
+  //
+  // Never cache a degraded result either: a `partial` resolve dropped a
+  // secondary id after a real fetch failure, so caching it would keep serving
+  // an incomplete union for the rest of the TTL.
+  if (personId > 0 && resolved.partial !== true) {
+    await setSessionCache(personId, unionPersonIds, resolved);
   }
 
   return {
     ...resolved,
     personId: resolvedPersonId,
-    personIds: withEffectivePersonId(personIds, resolvedPersonId),
+    personIds: withEffectivePersonId(claimedPersonIds, resolvedPersonId),
   };
 }
 
@@ -112,9 +167,14 @@ export async function invalidateRockSession(): Promise<void> {
     if (!session?.user) return;
 
     const profile = session.user as Record<string, any>;
-    const personId = Number(profile[ROCK_PERSON_ID_CLAIM]);
-    if (personId) {
-      await clearSessionCache(personId);
+    const { personId, personFound } = resolvePersonIdFromClaims(profile);
+    if (personId > 0) {
+      // Re-derive the same union set `getRockSession` would have written
+      // with, through the same helpers, so logout/profile-change clears the
+      // key a session actually wrote instead of one nothing wrote.
+      const claimedPersonIds = parseRockPersonIds(profile[ROCK_PERSON_IDS_CLAIM], personId);
+      const unionPersonIds = buildUnionPersonIds(personId, personFound, claimedPersonIds);
+      await clearSessionCache(personId, unionPersonIds);
     }
   } catch {
     // Silently ignore if session is unavailable
