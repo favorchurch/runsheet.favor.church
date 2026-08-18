@@ -9,6 +9,7 @@
  */
 import 'server-only';
 
+import { createHash } from 'crypto';
 import NodeCache from 'node-cache';
 import { REDIS_KEY_PREFIX } from '@/constants/server';
 import { clampCacheTtlSeconds } from '@/lib/cacheTtl';
@@ -31,13 +32,32 @@ const CHECK_PERIOD = 600;
 
 const localCache = new NodeCache({ stdTTL: SESSION_TTL_SECONDS, checkperiod: CHECK_PERIOD });
 
-function sessionCacheKey(personId: number): string {
-  return `${REDIS_KEY_PREFIX}session:v4:${personId}`;
+/**
+ * The single key builder for the session cache. `getSessionCache`,
+ * `setSessionCache`, and `invalidateRockSession` (in `getRockSession.ts`)
+ * must all derive their key through this helper, from the same
+ * `(primaryId, unionIds)` pair, or invalidation silently stops evicting what
+ * a read/write actually touched.
+ *
+ * `unionIds` is the full authorization id set (primary included). When it is
+ * just the primary id — an ungated session, or a claim-less/rejected claim —
+ * the digest is the fixed string `none`, so ungated sessions keep the single
+ * stable key they always had. Otherwise the digest is a short SHA-256 over
+ * the sorted, deduped union set, so two different id-sets sharing one
+ * primary id land in different cache entries.
+ */
+export function sessionCacheKey(primaryId: number, unionIds: number[]): string {
+  const sortedUnion = [...new Set(unionIds)].sort((a, b) => a - b);
+  const isPrimaryOnly = sortedUnion.length === 0 || (sortedUnion.length === 1 && sortedUnion[0] === primaryId);
+  const digest = isPrimaryOnly
+    ? 'none'
+    : createHash('sha256').update(sortedUnion.join(',')).digest('hex').slice(0, 12);
+  return `${REDIS_KEY_PREFIX}session:v5:${primaryId}:${digest}`;
 }
 
 /** Read a cached session; falls back to Redis when enabled, otherwise in-memory only. Returns `undefined` on miss. */
-export async function getSessionCache(personId: number): Promise<CachedSession | undefined> {
-  const key = sessionCacheKey(personId);
+export async function getSessionCache(primaryId: number, unionIds: number[]): Promise<CachedSession | undefined> {
+  const key = sessionCacheKey(primaryId, unionIds);
   if (!isRedisEnabled()) {
     return localCache.get<CachedSession>(key);
   }
@@ -56,8 +76,8 @@ export async function getSessionCache(personId: number): Promise<CachedSession |
 }
 
 /** Write/refresh a cached session in both NodeCache and (if enabled) Redis with the <=5m TTL. */
-export async function setSessionCache(personId: number, data: CachedSession): Promise<void> {
-  const key = sessionCacheKey(personId);
+export async function setSessionCache(primaryId: number, unionIds: number[], data: CachedSession): Promise<void> {
+  const key = sessionCacheKey(primaryId, unionIds);
   localCache.set(key, data);
 
   if (!isRedisEnabled()) {
@@ -72,8 +92,8 @@ export async function setSessionCache(personId: number, data: CachedSession): Pr
 }
 
 /** Evict a cached session (logout / profile change) from NodeCache and Redis. */
-export async function clearSessionCache(personId: number): Promise<void> {
-  const key = sessionCacheKey(personId);
+export async function clearSessionCache(primaryId: number, unionIds: number[]): Promise<void> {
+  const key = sessionCacheKey(primaryId, unionIds);
   localCache.del(key);
 
   if (!isRedisEnabled()) {
