@@ -165,7 +165,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
       return { success: false, error: access.error };
     }
 
-    const channel = (await rockGet(`/ContentChannels/${channelId}`, undefined, true)) as {
+    const channel = (await rockGet(`/ContentChannels/${channelId}`)) as {
       Id: number;
       Name: string;
       Description?: string;
@@ -190,7 +190,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
     const typeId = channel.ContentChannelTypeId;
 
     // Item attributes can be attached to the channel type or to this channel.
-    const rawAttrs = (await rockGet(
+    const rawAttrsPromise = rockGet(
       '/Attributes',
       {
         $filter:
@@ -199,8 +199,16 @@ export async function rockGetRunsheetDetails(channelId: number) {
           `(EntityTypeQualifierColumn eq 'ContentChannelId' and EntityTypeQualifierValue eq '${channelId}'))`,
         $orderby: 'Order asc,Id asc',
       },
-      true,
-    )) as any[];
+    );
+
+    const rawItemsPromise = rockGet('/ContentChannelItems', {
+      $filter: `ContentChannelId eq ${channelId}`,
+      $orderby: 'Order asc',
+      loadAttributes: 'simple',
+    });
+
+    const [resolvedAttrs, resolvedItems] = await Promise.all([rawAttrsPromise, rawItemsPromise]);
+    const rawAttrs = resolvedAttrs as any[];
 
     // DURATION drives the dedicated Start/End/Duration columns, SONGITEMID
     // is an internal reference to the linked Song, and SIBLINGKEY is the shared row key.
@@ -213,15 +221,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
         fieldTypeId: attr.FieldTypeId,
       }));
 
-    const rawItems = (await rockGet(
-      '/ContentChannelItems',
-      {
-        $filter: `ContentChannelId eq ${channelId}`,
-        $orderby: 'Order asc',
-        loadAttributes: 'simple',
-      },
-      true,
-    )) as any[];
+    const rawItems = resolvedItems as any[];
 
     // Collect every person-column cell's raw value up front so all of them can
     // be resolved to display names in one or two batched Rock calls, instead

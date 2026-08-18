@@ -15,6 +15,7 @@ if (typeof (global as any).Response === 'undefined') {
 import '@testing-library/jest-dom';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from 'react-query';
 import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
 import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
 
@@ -32,6 +33,11 @@ jest.mock('@/components/runsheet/RunsheetCompareView', () => ({
   ),
 }));
 
+function renderManager(ui: React.ReactElement) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
+
 describe('RunsheetManager compare entry point', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -45,7 +51,7 @@ describe('RunsheetManager compare entry point', () => {
   });
 
   it('enables Compare only once 2 or more channels are checked, and opens the compare view with those ids', async () => {
-    render(<RunsheetManager />);
+    renderManager(<RunsheetManager />);
     await waitFor(() => expect(screen.getAllByText(/9AM/)[0]).toBeInTheDocument());
 
     const compareButton = screen.getByRole('button', { name: /compare/i });

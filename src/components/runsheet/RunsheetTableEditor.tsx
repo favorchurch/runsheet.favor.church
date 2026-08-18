@@ -105,6 +105,7 @@ interface RunsheetTableEditorProps {
   onDeleted?: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
   onSaveRef?: (saveFn: () => Promise<boolean>) => void;
+  onOptimisticSave?: (updatedData: RunsheetDetails) => void;
 }
 
 /** A row plus the clock values derived from the durations above it. */
@@ -169,6 +170,7 @@ export function RunsheetTableEditor({
   onDeleted,
   onDirtyChange,
   onSaveRef,
+  onOptimisticSave,
 }: RunsheetTableEditorProps) {
   /**
    * A brand-new (or emptied-out) runsheet has nothing to lose, so it starts
@@ -1196,6 +1198,22 @@ export function RunsheetTableEditor({
       setIsDirty(false);
       setDeletedIds([]);
 
+      const optimisticItems = allPreparedItems
+        .map((item) => {
+          const savedResult = (result.results || []).find((res) => res.ok && res.clientId === item.id);
+          return savedResult?.rockId ? { ...item, id: savedResult.rockId, isNew: false } : { ...item, isNew: false };
+        })
+        .filter((item) => !deletedIds.includes(item.id));
+      onOptimisticSave?.({
+        channelId,
+        name: channelName,
+        subtitle,
+        startTime,
+        contentChannelTypeId: 13,
+        columns,
+        items: optimisticItems,
+      });
+
       if (candidates.length > 0) {
         const channelsRes = await rockGetAvailableRunsheetChannels(false);
         if (channelsRes.success) {
@@ -1243,7 +1261,7 @@ export function RunsheetTableEditor({
       setStatus({ type: 'error', message });
       return false;
     }
-  }, [readOnly, computeDiffPayload, deletedIds, subtitle, normalizedInitialSubtitle, startTime, initialStartTime, channelId, channelName, columns, createRowFingerprint]);
+  }, [readOnly, computeDiffPayload, deletedIds, subtitle, normalizedInitialSubtitle, startTime, initialStartTime, channelId, channelName, columns, createRowFingerprint, onOptimisticSave]);
 
   useEffect(() => {
     onSaveRef?.(handleSave);

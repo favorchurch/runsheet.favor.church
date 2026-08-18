@@ -102,6 +102,38 @@ describe('RunsheetTableEditor dirty state', () => {
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
 
+  test('publishes the successfully saved local state for optimistic query reconciliation', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    (rockGetAvailableRunsheetChannels as jest.Mock).mockResolvedValue({ success: true, channels: [] });
+    const onOptimisticSave = jest.fn();
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="10:00:00 AM"
+        onSaveRef={(fn) => (saveFn = fn)}
+        onOptimisticSave={onOptimisticSave}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Start:'), { target: { value: '09:30:00 AM' } });
+    await expect(saveFn?.()).resolves.toBe(true);
+
+    expect(onOptimisticSave).toHaveBeenCalledWith(expect.objectContaining({
+      channelId: 1,
+      contentChannelTypeId: 13,
+      startTime: '09:30:00 AM',
+      items: expect.arrayContaining([
+        expect.objectContaining({ id: 101 }),
+        expect.objectContaining({ id: 102 }),
+      ]),
+    }));
+  });
+
   test('marks editor dirty when only the Start Time field is edited', () => {
     const onDirtyChange = jest.fn();
 

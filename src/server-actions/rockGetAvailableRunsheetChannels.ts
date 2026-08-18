@@ -74,8 +74,7 @@ export async function rockGetAvailableRunsheetChannels(includeArchived = false):
         $select: 'Id,Name,ContentChannelTypeId',
         $orderby: 'Id desc',
         $top: 200,
-      },
-      true
+      }
     )) as Array<{ Id: number; Name: string }> | null;
 
     let available = channels || [];
