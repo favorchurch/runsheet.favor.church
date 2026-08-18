@@ -124,7 +124,18 @@ export async function getRockSession(): Promise<RockSession> {
   if (personId > 0) {
     const cached = await getSessionCache(personId, unionPersonIds);
     if (cached) {
-      return { ...cached, personId, personIds: withEffectivePersonId(claimedPersonIds, personId) };
+      // Mirror the cache-miss path's precedence (`resolved.contact.id || personId`).
+      // Returning the bare claim scalar here made `session.personId` flip between
+      // hit and miss whenever the primary id failed Rock's validity filter and the
+      // verified-email fallback resolved a different household member: the miss
+      // returned the person who actually resolved, the hit returned a scalar that
+      // resolved to nobody. Same precedence on both paths, one answer. (#25)
+      const cachedPersonId = cached.contact.id || personId;
+      return {
+        ...cached,
+        personId: cachedPersonId,
+        personIds: withEffectivePersonId(claimedPersonIds, cachedPersonId),
+      };
     }
   }
 
