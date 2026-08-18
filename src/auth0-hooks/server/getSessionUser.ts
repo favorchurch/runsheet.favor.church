@@ -20,7 +20,8 @@ export async function getSessionUser(): Promise<AuthUser> {
       rolesMap: rockSession.rolesMap,
       access: rockSession.access,
     };
-  } catch {
+  } catch (err) {
+    console.warn('[getSessionUser] getRockSession failed:', err);
     return user;
   }
 }

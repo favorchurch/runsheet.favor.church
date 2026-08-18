@@ -108,8 +108,8 @@ async function fetchPersonById(personId: number) {
 }
 
 async function fetchPersonByEmail(email: string) {
-  if (!email) return null;
-  const escaped = email.replace(/'/g, "''");
+  if (!email || !email.trim()) return null;
+  const escaped = email.trim().replace(/'/g, "''");
   const people = await rawRockGet('/People', {
     $filter: `Email eq '${escaped}' and RecordStatusValueId eq ${ROCK_RECORD_STATUS_ACTIVE} and IsDeceased eq false`,
     $select: 'Id,FirstName,LastName,NickName,Email,PrimaryCampusId,PrimaryAliasId,RecordStatusValueId',
@@ -127,8 +127,8 @@ async function fetchTeamMemberships(personId: number) {
   })) || [];
 
   return memberships.filter((m: any) => {
-    const typeId = Number(m.GroupTypeId);
-    const groupId = Number(m.GroupId);
+    const typeId = Number(m.GroupTypeId ?? m.groupTypeId);
+    const groupId = Number(m.GroupId ?? m.groupId);
     // Include GroupType 1, Ministry Team (23), Organization Unit (28), and
     // every id-based global grant so the policy module remains authoritative.
     return (
@@ -273,9 +273,9 @@ export async function rockResolveAccess(personId: number, fallbackEmail?: string
     ]);
     const policy = resolveRunsheetAccessPolicy(
       memberships.map((m: any) => ({
-        groupId: Number(m.GroupId),
-        groupTypeId: Number(m.GroupTypeId),
-        groupRoleId: Number(m.GroupRoleId),
+        groupId: Number(m.GroupId ?? m.groupId),
+        groupTypeId: Number(m.GroupTypeId ?? m.groupTypeId),
+        groupRoleId: Number(m.GroupRoleId ?? m.groupRoleId),
       })),
       groups,
       campusRoots,

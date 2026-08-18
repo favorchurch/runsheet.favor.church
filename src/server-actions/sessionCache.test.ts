@@ -30,11 +30,11 @@ describe('session cache key', () => {
     mockRedisCommand.mockClear();
   });
 
-  it('runsheet-session-key-v3', async () => {
+  it('runsheet-session-key-v4', async () => {
     await setSessionCache(42, cacheEntry);
 
     const command = mockRedisCommand.mock.calls[0]?.[0];
-    expect(command?.[1]).toBe(`${REDIS_KEY_PREFIX}session:v3:42`);
+    expect(command?.[1]).toBe(`${REDIS_KEY_PREFIX}session:v4:42`);
   });
 
   it('caps the authorization cache TTL at five minutes', () => {
