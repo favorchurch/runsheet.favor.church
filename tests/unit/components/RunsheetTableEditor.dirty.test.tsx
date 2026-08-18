@@ -134,6 +134,32 @@ describe('RunsheetTableEditor dirty state', () => {
     }));
   });
 
+  test('invalidates the detail query after a failed or partial save', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({
+      success: false,
+      results: [{ clientId: 101, ok: true, rockId: 101 }, { clientId: 102, ok: false }],
+    });
+    const onSaveSettled = jest.fn();
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    const props = {
+      channelId: 1,
+      channelName: 'Sun 10:00 AM',
+      columns,
+      initialItems,
+      initialStartTime: '10:00:00 AM',
+      onSaveRef: (fn: () => Promise<boolean>) => (saveFn = fn),
+      onSaveSettled,
+    } as any;
+
+    render(<RunsheetTableEditor {...props} />);
+
+    fireEvent.change(screen.getByLabelText('Start:'), { target: { value: '09:30:00 AM' } });
+    await expect(saveFn?.()).resolves.toBe(false);
+
+    expect(onSaveSettled).toHaveBeenCalledWith(1);
+  });
+
   test('marks editor dirty when only the Start Time field is edited', () => {
     const onDirtyChange = jest.fn();
 

@@ -105,4 +105,21 @@ describe('RunsheetCompareView', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(rockBulkSaveRunsheetItems).not.toHaveBeenCalled();
   });
+
+  it('notifies the manager after successful compare writes', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    const onSaveSettled = jest.fn();
+    const props = { channelIds: [1, 2], onClose: jest.fn(), onSaveSettled } as any;
+
+    render(<RunsheetCompareView {...props} />);
+    await waitFor(() => expect(screen.getByText('Doors open 8:30')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('Doors open 8:30').closest('td')!);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Doors open 9:00' } });
+    fireEvent.blur(screen.getByRole('textbox'));
+    fireEvent.click(screen.getByRole('button', { name: /save comparison edits/i }));
+
+    await waitFor(() => expect(onSaveSettled).toHaveBeenCalledWith(1));
+    expect(onSaveSettled).toHaveBeenCalledTimes(1);
+  });
 });

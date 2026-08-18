@@ -20,7 +20,11 @@ jest.mock('@/server-actions/rockGetAvailableRunsheetChannels');
 jest.mock('@/server-actions/rockGetRunsheetDetails');
 jest.mock('@/components/runsheet/CreateRunsheetForm', () => ({ CreateRunsheetForm: () => null }));
 jest.mock('@/components/runsheet/RunsheetCompareView', () => ({ RunsheetCompareView: () => null }));
-jest.mock('@/components/runsheet/RunsheetTableEditor', () => ({ RunsheetTableEditor: () => <div data-testid="runsheet-editor" /> }));
+jest.mock('@/components/runsheet/RunsheetTableEditor', () => ({
+  RunsheetTableEditor: ({ channelId }: { channelId: number }) => (
+    <div data-testid="runsheet-editor" data-channel-id={channelId} />
+  ),
+}));
 
 const mockCanUserEditRunsheet = jest.mocked(canUserEditRunsheet);
 const mockGetAvailableRunsheetChannels = jest.mocked(rockGetAvailableRunsheetChannels);
@@ -41,11 +45,20 @@ const details = (channelId: number) => ({
 
 function renderManager(initialChannelId?: number) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <RunsheetManager user={{ access: { runsheetCampuses: ['MNL'] } } as any} initialChannelId={initialChannelId} />
     </QueryClientProvider>,
   );
+  return {
+    ...result,
+    rerenderManager: (nextInitialChannelId?: number) =>
+      result.rerender(
+        <QueryClientProvider client={queryClient}>
+          <RunsheetManager user={{ access: { runsheetCampuses: ['MNL'] } } as any} initialChannelId={nextInitialChannelId} />
+        </QueryClientProvider>,
+      ),
+  };
 }
 
 describe('RunsheetManager progressive loading', () => {
@@ -85,5 +98,16 @@ describe('RunsheetManager progressive loading', () => {
 
     await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toBeInTheDocument());
     expect(mockGetRunsheetDetails.mock.calls.filter(([id]) => id === 1)).toHaveLength(1);
+  });
+
+  it('synchronizes the mounted manager when the route prop changes channels', async () => {
+    const { rerenderManager } = renderManager(1);
+
+    await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-channel-id', '1'));
+
+    rerenderManager(2);
+
+    await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-channel-id', '2'));
+    expect(mockGetRunsheetDetails).toHaveBeenCalledWith(2);
   });
 });

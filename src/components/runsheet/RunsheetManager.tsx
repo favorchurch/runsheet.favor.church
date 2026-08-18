@@ -11,7 +11,12 @@ import { extractChannelTime } from '@/lib/runsheetDate';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import type { AuthUser } from '@/types/AuthUser';
 import type { RunsheetDetails } from '@/types/Runsheet';
-import { runsheetQueryKeys, useAvailableRunsheetChannels, useRunsheetDetails } from './runsheetQueries';
+import {
+  getRunsheetAccessScope,
+  runsheetQueryKeys,
+  useAvailableRunsheetChannels,
+  useRunsheetDetails,
+} from './runsheetQueries';
 import { CreateRunsheetForm } from './CreateRunsheetForm';
 import { RunsheetTableEditor } from './RunsheetTableEditor';
 import { RunsheetCompareView } from './RunsheetCompareView';
@@ -69,13 +74,17 @@ export function RunsheetManager({
 
   const saveRunsheetRef = React.useRef<(() => Promise<boolean>) | null>(null);
   const activeChannelIdRef = React.useRef<number | null>(initialChannelId);
+  const lastInitialChannelIdRef = React.useRef<number | null>(initialChannelId);
+  const localRouteTargetRef = React.useRef<number | null | undefined>(undefined);
+  const restoredRouteRef = React.useRef<number | null | undefined>(undefined);
   const deletedChannelIdsRef = React.useRef<Set<number>>(new Set());
 
   const canEdit = canUserEditRunsheet(user);
   const router = useRouter();
   const queryClient = useQueryClient();
-  const channelsQuery = useAvailableRunsheetChannels(showArchived);
-  const detailsQuery = useRunsheetDetails(selectedChannelId);
+  const accessScope = getRunsheetAccessScope(user);
+  const channelsQuery = useAvailableRunsheetChannels(showArchived, accessScope);
+  const detailsQuery = useRunsheetDetails(selectedChannelId, accessScope);
 
   const availableChannels: RunsheetChannelOption[] = (channelsQuery.data?.channels || []).filter(
     (channel) => !deletedChannelIdsRef.current.has(channel.id),
@@ -124,7 +133,47 @@ export function RunsheetManager({
     return () => window.removeEventListener('popstate', handlePopState);
   }, [isEditorDirty]);
 
+  /**
+   * Dynamic route pages can remain mounted while Next supplies a new server
+   * prop. Treat that prop as an external navigation unless it is the target
+   * of a navigation this manager already accepted. Dirty editors keep their
+   * active channel until the existing confirmation flow accepts or discards
+   * the pending route.
+   */
+  useEffect(() => {
+    if (initialChannelId === lastInitialChannelIdRef.current) return;
+    lastInitialChannelIdRef.current = initialChannelId;
+
+    if (restoredRouteRef.current === initialChannelId) {
+      restoredRouteRef.current = undefined;
+      return;
+    }
+
+    if (localRouteTargetRef.current === initialChannelId) {
+      localRouteTargetRef.current = undefined;
+      return;
+    }
+
+    const pendingRouteAction: PendingNavigationAction = initialChannelId
+      ? { type: 'selectChannel', id: initialChannelId }
+      : { type: 'selectEmptyChannel' };
+
+    if (isEditorDirty) {
+      setPendingAction(pendingRouteAction);
+      setShowUnsavedModal(true);
+      restoredRouteRef.current = activeChannelIdRef.current;
+      updateUrl(activeChannelIdRef.current === null ? '/' : `/${activeChannelIdRef.current}`);
+      return;
+    }
+
+    activeChannelIdRef.current = initialChannelId;
+    setSelectedChannelId(initialChannelId);
+    setEditorMode('view');
+    if (initialChannelId !== null) setShowCreateForm(false);
+  }, [initialChannelId, isEditorDirty, updateUrl]);
+
   const loadChannelDetails = React.useCallback((id: number) => {
+    localRouteTargetRef.current = id;
     activeChannelIdRef.current = id;
     setEditorMode('view');
     setSelectedChannelId(id);
@@ -168,6 +217,7 @@ export function RunsheetManager({
     } else if (action.type === 'toggleCreateForm') {
       const nextShow = !showCreateForm;
       if (nextShow) {
+        localRouteTargetRef.current = null;
         activeChannelIdRef.current = null;
         setSelectedChannelId(null);
         setEditorMode('view');
@@ -175,6 +225,7 @@ export function RunsheetManager({
       setShowCreateForm(nextShow);
       if (nextShow) updateUrl('/create');
     } else if (action.type === 'selectEmptyChannel') {
+      localRouteTargetRef.current = null;
       activeChannelIdRef.current = null;
       setShowCreateForm(false);
       setSelectedChannelId(null);
@@ -222,7 +273,7 @@ export function RunsheetManager({
 
   const handleRunsheetCreated = (newChannelId: number, title: string, createdData?: RunsheetDetails) => {
     const newChannel = { id: newChannelId, name: title, time: extractChannelTime(title) };
-    queryClient.setQueryData(runsheetQueryKeys.channels(showArchived), (current: any) => ({
+    queryClient.setQueryData(runsheetQueryKeys.channels(showArchived, accessScope), (current: any) => ({
       success: true,
       channels: [newChannel, ...(current?.channels || []).filter((channel: RunsheetChannelOption) => channel.id !== newChannelId)],
     }));
@@ -230,13 +281,14 @@ export function RunsheetManager({
     setShowCreateForm(false);
     setIsEditorDirty(false);
     setEditorMode('view');
+    localRouteTargetRef.current = newChannelId;
     activeChannelIdRef.current = newChannelId;
     setSelectedChannelId(newChannelId);
     updateUrl(`/${newChannelId}`);
 
     if (createdData && createdData.items) {
-      queryClient.setQueryData(runsheetQueryKeys.details(newChannelId), { success: true, data: createdData });
-      queryClient.invalidateQueries(runsheetQueryKeys.details(newChannelId));
+      queryClient.setQueryData(runsheetQueryKeys.details(newChannelId, accessScope), { success: true, data: createdData });
+      queryClient.invalidateQueries(runsheetQueryKeys.details(newChannelId, accessScope));
     } else {
       loadChannelDetails(newChannelId);
     }
@@ -246,24 +298,29 @@ export function RunsheetManager({
   // another runsheet, so the address bar and the displayed content agree
   // instead of racing each other.
   const handleRunsheetDeleted = async (deletedId: number) => {
+    localRouteTargetRef.current = null;
     deletedChannelIdsRef.current.add(deletedId);
     activeChannelIdRef.current = null;
     setIsEditorDirty(false);
     setSelectedChannelId(null);
     updateUrl('/');
 
-    queryClient.setQueryData(runsheetQueryKeys.channels(showArchived), (current: any) => ({
+    queryClient.setQueryData(runsheetQueryKeys.channels(showArchived, accessScope), (current: any) => ({
       success: true,
       channels: (current?.channels || []).filter((channel: RunsheetChannelOption) => channel.id !== deletedId),
     }));
     queryClient.invalidateQueries(runsheetQueryKeys.channelsRoot);
-    queryClient.invalidateQueries(runsheetQueryKeys.details(deletedId));
+    queryClient.invalidateQueries(runsheetQueryKeys.details(deletedId, accessScope));
   };
 
   const handleOptimisticSave = React.useCallback((updatedData: RunsheetDetails) => {
-    queryClient.setQueryData(runsheetQueryKeys.details(updatedData.channelId), { success: true, data: updatedData });
-    queryClient.invalidateQueries(runsheetQueryKeys.details(updatedData.channelId));
-  }, [queryClient]);
+    queryClient.setQueryData(runsheetQueryKeys.details(updatedData.channelId, accessScope), { success: true, data: updatedData });
+    queryClient.invalidateQueries(runsheetQueryKeys.details(updatedData.channelId, accessScope));
+  }, [accessScope, queryClient]);
+
+  const handleSaveSettled = React.useCallback((channelId: number) => {
+    queryClient.invalidateQueries(runsheetQueryKeys.details(channelId, accessScope));
+  }, [accessScope, queryClient]);
 
   const handleSaveAndLeave = async () => {
     if (saveRunsheetRef.current) {
@@ -546,6 +603,7 @@ export function RunsheetManager({
           onDirtyChange={(dirty) => setIsEditorDirty(dirty)}
           onSaveRef={(saveFn) => (saveRunsheetRef.current = saveFn)}
           onOptimisticSave={handleOptimisticSave}
+          onSaveSettled={handleSaveSettled}
         />
       ) : null}
 
@@ -553,6 +611,7 @@ export function RunsheetManager({
         <RunsheetCompareView
           channelIds={Array.from(compareSelection)}
           readOnly={!isEditMode}
+          onSaveSettled={handleSaveSettled}
           onClose={() => setCompareViewOpen(false)}
         />
       )}
