@@ -23,6 +23,8 @@ import {
 
 const RELEVANT_GROUP_TYPE_IDS = new Set([1, 23, 28]);
 const EVENTS_TEAM_NAME_PATTERN = /events team$/i;
+// Rock rejects filters over 100 OData nodes. Ten equality clauses leave ample
+// room for the ORs and the active-membership predicates in each request.
 const ROCK_FILTER_BATCH_SIZE = 10;
 const ROCK_GROUPS_FETCH_LIMIT = 2000;
 const ROCK_LEADER_ROLES_FETCH_LIMIT = 100;
