@@ -61,9 +61,23 @@ export async function getRockSession(): Promise<RockSession> {
 
   const profile = session.user as Record<string, any>;
   const personFound = profile[ROCK_PERSON_FOUND_CLAIM];
-  const personId = personFound ? Number(profile[ROCK_PERSON_ID_CLAIM]) : 0;
+  const rawPersonId = profile[ROCK_PERSON_ID_CLAIM];
+  let personId = 0;
+  if (personFound !== false && rawPersonId != null) {
+    const parsed = Number(rawPersonId);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      personId = parsed;
+    }
+  }
   const personIds = parseRockPersonIds(profile[ROCK_PERSON_IDS_CLAIM], personId);
-  const email = profile.email_verified === true ? profile.email || '' : '';
+
+  const rawEmail = typeof profile.email === 'string' ? profile.email.trim() : '';
+  const emailVerifiedClaim = profile.email_verified;
+  const isEmailVerified =
+    emailVerifiedClaim === true ||
+    emailVerifiedClaim === 'true' ||
+    (emailVerifiedClaim !== false && rawEmail.length > 0);
+  const email = isEmailVerified ? rawEmail : '';
 
   // Check cache first if valid personId
   if (personId > 0) {

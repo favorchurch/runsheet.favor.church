@@ -290,8 +290,8 @@ describe('server-action access enforcement', () => {
   it('filters the channel list to the viewer campus', async () => {
     mockGetRockSession.mockResolvedValue(session('MNL', false));
     mockRockGet.mockResolvedValue([
-      { Id: 1, Name: 'MNL Service // August 17, 2026 // 10AM' },
-      { Id: 2, Name: 'BNE Service // August 17, 2026 // 10AM' },
+      { Id: 1, Name: 'MNL Service // August 17, 2099 // 10AM' },
+      { Id: 2, Name: 'BNE Service // August 17, 2099 // 10AM' },
     ]);
 
     const result = await rockGetAvailableRunsheetChannels();
@@ -316,8 +316,8 @@ describe('server-action access enforcement', () => {
   it('shows viewers every authorized-campus channel without roster filtering', async () => {
     mockGetRockSession.mockResolvedValue(session('MNL', false));
     mockRockGet.mockResolvedValue([
-      { Id: 1, Name: 'MNL Service // August 17, 2026 // 10AM' },
-      { Id: 2, Name: 'MNL Service // August 18, 2026 // 5PM' },
+      { Id: 1, Name: 'MNL Service // August 17, 2099 // 10AM' },
+      { Id: 2, Name: 'MNL Service // August 18, 2099 // 5PM' },
     ]);
 
     const result = await rockGetAvailableRunsheetChannels();

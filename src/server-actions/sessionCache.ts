@@ -32,7 +32,7 @@ const CHECK_PERIOD = 600;
 const localCache = new NodeCache({ stdTTL: SESSION_TTL_SECONDS, checkperiod: CHECK_PERIOD });
 
 function sessionCacheKey(personId: number): string {
-  return `${REDIS_KEY_PREFIX}session:v3:${personId}`;
+  return `${REDIS_KEY_PREFIX}session:v4:${personId}`;
 }
 
 /** Read a cached session; falls back to Redis when enabled, otherwise in-memory only. Returns `undefined` on miss. */

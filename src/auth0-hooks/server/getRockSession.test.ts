@@ -161,4 +161,34 @@ describe('getRockSession rock_person_ids claim', () => {
 
     expect(mockRockResolveAccess).toHaveBeenCalledWith(0, '');
   });
+
+  it('uses email fallback when email_verified is true or omitted', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        email: 'staff@favor.church',
+        email_verified: true,
+      }),
+    );
+    mockRockResolveAccess.mockResolvedValue(resolvedResult(152));
+
+    const result = await getRockSession();
+
+    expect(mockRockResolveAccess).toHaveBeenCalledWith(0, 'staff@favor.church');
+    expect(result.personId).toBe(152);
+  });
+
+  it('tolerates rock_person_id without explicit rock_person_found claim', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        'https://auth.favor.church/rock_person_id': 152,
+        email: 'staff@favor.church',
+      }),
+    );
+    mockRockResolveAccess.mockResolvedValue(resolvedResult(152));
+
+    const result = await getRockSession();
+
+    expect(mockRockResolveAccess).toHaveBeenCalledWith(152, 'staff@favor.church');
+    expect(result.personId).toBe(152);
+  });
 });
