@@ -73,10 +73,12 @@ export async function getRockSession(): Promise<RockSession> {
 
   const rawEmail = typeof profile.email === 'string' ? profile.email.trim() : '';
   const emailVerifiedClaim = profile.email_verified;
-  const isEmailVerified =
-    emailVerifiedClaim === true ||
-    emailVerifiedClaim === 'true' ||
-    (emailVerifiedClaim !== false && rawEmail.length > 0);
+  // Only an affirmatively verified claim admits the email fallback (G14). An
+  // omitted or non-affirmative claim must NOT resolve: the fallback hands back
+  // that Rock person's full rolesMap, so an unverified address matching a staff
+  // email would inherit staff access. `'true'` covers IdPs that stringify the
+  // claim; every other shape, absence included, fails closed.
+  const isEmailVerified = emailVerifiedClaim === true || emailVerifiedClaim === 'true';
   const email = isEmailVerified ? rawEmail : '';
 
   // Check cache first if valid personId

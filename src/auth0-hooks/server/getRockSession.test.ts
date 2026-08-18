@@ -162,7 +162,7 @@ describe('getRockSession rock_person_ids claim', () => {
     expect(mockRockResolveAccess).toHaveBeenCalledWith(0, '');
   });
 
-  it('uses email fallback when email_verified is true or omitted', async () => {
+  it('uses the email fallback when email_verified is affirmatively true', async () => {
     mockGetServerSession.mockResolvedValue(
       sessionFor({
         email: 'staff@favor.church',
@@ -177,7 +177,52 @@ describe('getRockSession rock_person_ids claim', () => {
     expect(result.personId).toBe(152);
   });
 
-  it('tolerates rock_person_id without explicit rock_person_found claim', async () => {
+  it('uses the email fallback when email_verified arrives as the string "true"', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        email: 'staff@favor.church',
+        email_verified: 'true',
+      }),
+    );
+    mockRockResolveAccess.mockResolvedValue(resolvedResult(152));
+
+    const result = await getRockSession();
+
+    expect(mockRockResolveAccess).toHaveBeenCalledWith(0, 'staff@favor.church');
+    expect(result.personId).toBe(152);
+  });
+
+  // G14: an omitted claim is not a verified claim. Without this, any Auth0
+  // connection that does not assert email_verified turns a staff email address
+  // into a staff-access path.
+  it('does not use the email fallback when the email_verified claim is omitted', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        email: 'staff@favor.church',
+      }),
+    );
+    mockRockResolveAccess.mockResolvedValue(resolvedResult(0));
+
+    await getRockSession();
+
+    expect(mockRockResolveAccess).toHaveBeenCalledWith(0, '');
+  });
+
+  it('does not use the email fallback for a non-boolean email_verified claim', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        email: 'staff@favor.church',
+        email_verified: 'yes',
+      }),
+    );
+    mockRockResolveAccess.mockResolvedValue(resolvedResult(0));
+
+    await getRockSession();
+
+    expect(mockRockResolveAccess).toHaveBeenCalledWith(0, '');
+  });
+
+  it('tolerates rock_person_id without an explicit rock_person_found claim, but still withholds the unverified email', async () => {
     mockGetServerSession.mockResolvedValue(
       sessionFor({
         'https://auth.favor.church/rock_person_id': 152,
@@ -188,7 +233,7 @@ describe('getRockSession rock_person_ids claim', () => {
 
     const result = await getRockSession();
 
-    expect(mockRockResolveAccess).toHaveBeenCalledWith(152, 'staff@favor.church');
+    expect(mockRockResolveAccess).toHaveBeenCalledWith(152, '');
     expect(result.personId).toBe(152);
   });
 });

@@ -207,7 +207,23 @@ Proposal only; this text is not applied to `~/Git/rock-security` by this run:
 ## Carried items and risks
 
 - The `|| profile.name` fallback was removed from `getRockSession`; Rock email
-  fallback is attempted only for an Auth0 claim with `email_verified === true`.
+  fallback is attempted only for an Auth0 claim with `email_verified === true`
+  (or the string `'true'`, for IdPs that stringify it).
+- **G14 regression — reopened and re-closed 2026-08-18.** Commit `8b57b66`
+  ("tolerate social/enterprise claims") widened the gate to
+  `emailVerifiedClaim !== false && rawEmail.length > 0`, so an *omitted*
+  `email_verified` claim once again resolved by email and inherited that Rock
+  person's full `rolesMap` — the exact G14 finding. The widened branch shipped
+  with **no test**: its test asserted only the `email_verified: true` case that
+  already passed beforehand, while its name claimed to cover the omitted case.
+  Now narrowed back to affirmative-only and pinned by three tests (omitted
+  claim, non-boolean claim, and `rock_person_id` present with an unverified
+  email), each verified to fail against the reverted source. Note that
+  `src/app/api/auth/[auth0]/route.ts` pins no `connection`, so every connection
+  enabled on the Auth0 app is a live login path — this check, not the current
+  tenant config, is what keeps a future non-verifying connection from becoming
+  a staff-access path. If a real login breaks for missing claims, fix the
+  Auth0 Post-Login Action; do not widen this gate.
 - `IsArchived eq false` on `/GroupMembers` — **RESOLVED 2026-08-17.** Verified
   accepted by prod Rock (`HTTP 200`, rows returned) before the production
   promotion. Had Rock v17 rejected the field, `rawRockGet` would throw and every
