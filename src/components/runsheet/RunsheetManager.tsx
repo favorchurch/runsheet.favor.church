@@ -4,16 +4,23 @@
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from 'react-query';
 import { canUserEditRunsheet } from '@/lib/permissions';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
 import { extractChannelTime } from '@/lib/runsheetDate';
-import { rockGetAvailableRunsheetChannels, type RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
-import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
+import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import type { AuthUser } from '@/types/AuthUser';
 import type { RunsheetDetails } from '@/types/Runsheet';
+import {
+  getRunsheetAccessScope,
+  runsheetQueryKeys,
+  useAvailableRunsheetChannels,
+  useRunsheetDetails,
+} from './runsheetQueries';
 import { CreateRunsheetForm } from './CreateRunsheetForm';
 import { RunsheetTableEditor } from './RunsheetTableEditor';
 import { RunsheetCompareView } from './RunsheetCompareView';
+import { RunsheetTableSkeleton } from './RunsheetTableSkeleton';
 
 interface RunsheetManagerProps {
   user?: AuthUser;
@@ -33,11 +40,7 @@ export function RunsheetManager({
   initialChannelId = null,
   initialShowCreate = false,
 }: RunsheetManagerProps) {
-  const [availableChannels, setAvailableChannels] = useState<RunsheetChannelOption[]>([]);
-  const [channelsLoading, setChannelsLoading] = useState(true);
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(initialChannelId);
-  const [runsheetData, setRunsheetData] = useState<RunsheetDetails | null>(null);
-  const [loading, setLoading] = useState(initialChannelId !== null);
   const [showCreateForm, setShowCreateForm] = useState(initialShowCreate);
 
   const [isEditorDirty, setIsEditorDirty] = useState(false);
@@ -71,10 +74,24 @@ export function RunsheetManager({
 
   const saveRunsheetRef = React.useRef<(() => Promise<boolean>) | null>(null);
   const activeChannelIdRef = React.useRef<number | null>(initialChannelId);
+  const lastInitialChannelIdRef = React.useRef<number | null>(initialChannelId);
+  const localRouteTargetRef = React.useRef<number | null | undefined>(undefined);
+  const restoredRouteRef = React.useRef<number | null | undefined>(undefined);
   const deletedChannelIdsRef = React.useRef<Set<number>>(new Set());
 
   const canEdit = canUserEditRunsheet(user);
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const accessScope = getRunsheetAccessScope(user);
+  const channelsQuery = useAvailableRunsheetChannels(showArchived, accessScope);
+  const detailsQuery = useRunsheetDetails(selectedChannelId, accessScope);
+
+  const availableChannels: RunsheetChannelOption[] = (channelsQuery.data?.channels || []).filter(
+    (channel) => !deletedChannelIdsRef.current.has(channel.id),
+  );
+  const runsheetData: RunsheetDetails | null = detailsQuery.data?.data || null;
+  const channelsLoading = channelsQuery.isLoading && !channelsQuery.data;
+  const loading = selectedChannelId !== null && detailsQuery.isLoading;
 
   /**
    * Switching channels used to call `window.history.pushState` directly —
@@ -88,9 +105,9 @@ export function RunsheetManager({
    * `router.push` keeps Next's router state and the URL bar in agreement,
    * so that fallback reload never has a reason to fire.
    */
-  const updateUrl = (path: string) => {
+  const updateUrl = React.useCallback((path: string) => {
     router.push(path, { scroll: false });
-  };
+  }, [router]);
 
   // A view-only account landing directly on a page it has no access to
   // (e.g. `/create`) correctly renders nothing — but without this, the URL
@@ -116,47 +133,52 @@ export function RunsheetManager({
     return () => window.removeEventListener('popstate', handlePopState);
   }, [isEditorDirty]);
 
-  const loadChannelDetails = React.useCallback(async (id: number) => {
+  /**
+   * Dynamic route pages can remain mounted while Next supplies a new server
+   * prop. Treat that prop as an external navigation unless it is the target
+   * of a navigation this manager already accepted. Dirty editors keep their
+   * active channel until the existing confirmation flow accepts or discards
+   * the pending route.
+   */
+  useEffect(() => {
+    if (initialChannelId === lastInitialChannelIdRef.current) return;
+    lastInitialChannelIdRef.current = initialChannelId;
+
+    if (restoredRouteRef.current === initialChannelId) {
+      restoredRouteRef.current = undefined;
+      return;
+    }
+
+    if (localRouteTargetRef.current === initialChannelId) {
+      localRouteTargetRef.current = undefined;
+      return;
+    }
+
+    const pendingRouteAction: PendingNavigationAction = initialChannelId
+      ? { type: 'selectChannel', id: initialChannelId }
+      : { type: 'selectEmptyChannel' };
+
+    if (isEditorDirty) {
+      setPendingAction(pendingRouteAction);
+      setShowUnsavedModal(true);
+      restoredRouteRef.current = activeChannelIdRef.current;
+      updateUrl(activeChannelIdRef.current === null ? '/' : `/${activeChannelIdRef.current}`);
+      return;
+    }
+
+    activeChannelIdRef.current = initialChannelId;
+    setSelectedChannelId(initialChannelId);
+    setEditorMode('view');
+    if (initialChannelId !== null) setShowCreateForm(false);
+  }, [initialChannelId, isEditorDirty, updateUrl]);
+
+  const loadChannelDetails = React.useCallback((id: number) => {
+    localRouteTargetRef.current = id;
     activeChannelIdRef.current = id;
     setEditorMode('view');
     setSelectedChannelId(id);
-    setLoading(true);
     updateUrl(`/${id}`);
-    try {
-      let res = await rockGetRunsheetDetails(id);
-
-      // Retry once after 400ms if initial read fails (e.g. right after channel creation or cold start)
-      if (!res.success && activeChannelIdRef.current === id) {
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        if (activeChannelIdRef.current === id) {
-          res = await rockGetRunsheetDetails(id);
-        }
-      }
-
-      if (activeChannelIdRef.current !== id) return;
-
-      if (res.success && res.data) {
-        setRunsheetData(res.data);
-      } else {
-        alert(res.error || 'Could not load runsheet');
-        activeChannelIdRef.current = null;
-        setSelectedChannelId(null);
-        setRunsheetData(null);
-        updateUrl('/');
-      }
-    } catch (err: any) {
-      if (activeChannelIdRef.current !== id) return;
-      alert(err?.message || 'Could not load runsheet');
-      activeChannelIdRef.current = null;
-      setSelectedChannelId(null);
-      setRunsheetData(null);
-      updateUrl('/');
-    } finally {
-      if (activeChannelIdRef.current === id) {
-        setLoading(false);
-      }
-    }
-  }, []);
+  }, [updateUrl]);
 
   const handleModeChange = (nextMode: 'view' | 'edit') => {
     if (nextMode === 'edit' && !canUserEditRunsheet(user)) {
@@ -172,45 +194,18 @@ export function RunsheetManager({
     if (!canEdit) setEditorMode('view');
   }, [canEdit]);
 
-  // On initial mount with a channelId in URL (e.g. /45 on refresh), load the channel details immediately
   useEffect(() => {
-    if (initialChannelId) {
-      loadChannelDetails(initialChannelId);
-    }
-  }, [initialChannelId, loadChannelDetails]);
+    if (channelsQuery.error) console.error('Error loading channels:', channelsQuery.error);
+  }, [channelsQuery.error]);
 
   useEffect(() => {
-    let isCancelled = false;
-    async function loadChannels() {
-      setChannelsLoading(true);
-      try {
-        const res = await rockGetAvailableRunsheetChannels(showArchived);
-        if (isCancelled) return;
+    if (!detailsQuery.error || selectedChannelId === null || activeChannelIdRef.current !== selectedChannelId) return;
 
-        if (res.success && res.channels) {
-          const filtered = res.channels.filter((c) => !deletedChannelIdsRef.current.has(c.id));
-          setAvailableChannels(filtered);
-        }
-        // A channel missing from this list (deleted, no campus access, or a
-        // transient race right after a write) is NOT treated as fatal here —
-        // this effect only populates the picker dropdown. Whether the
-        // currently open channel is actually valid is loadChannelDetails's
-        // job alone; duplicating that check against this separately-fetched
-        // list previously wiped the whole session (including an open
-        // propagate review) whenever the two fetches raced.
-      } catch (err) {
-        console.error('Error loading channels:', err);
-      } finally {
-        if (!isCancelled) {
-          setChannelsLoading(false);
-        }
-      }
-    }
-    loadChannels();
-    return () => {
-      isCancelled = true;
-    };
-  }, [initialChannelId, showArchived]);
+    alert(detailsQuery.error instanceof Error ? detailsQuery.error.message : 'Could not load runsheet');
+    activeChannelIdRef.current = null;
+    setSelectedChannelId(null);
+    updateUrl('/');
+  }, [detailsQuery.error, selectedChannelId, updateUrl]);
 
   const executeAction = (action: PendingNavigationAction) => {
     if (!action) return;
@@ -222,20 +217,18 @@ export function RunsheetManager({
     } else if (action.type === 'toggleCreateForm') {
       const nextShow = !showCreateForm;
       if (nextShow) {
+        localRouteTargetRef.current = null;
         activeChannelIdRef.current = null;
         setSelectedChannelId(null);
-        setRunsheetData(null);
-        setLoading(false);
         setEditorMode('view');
       }
       setShowCreateForm(nextShow);
       if (nextShow) updateUrl('/create');
     } else if (action.type === 'selectEmptyChannel') {
+      localRouteTargetRef.current = null;
       activeChannelIdRef.current = null;
       setShowCreateForm(false);
       setSelectedChannelId(null);
-      setRunsheetData(null);
-      setLoading(false);
       setEditorMode('view');
       updateUrl('/');
     } else if (action.type === 'browserBack') {
@@ -279,17 +272,23 @@ export function RunsheetManager({
   };
 
   const handleRunsheetCreated = (newChannelId: number, title: string, createdData?: RunsheetDetails) => {
-    setAvailableChannels((prev) => [{ id: newChannelId, name: title, time: extractChannelTime(title) }, ...prev]);
+    const newChannel = { id: newChannelId, name: title, time: extractChannelTime(title) };
+    queryClient.setQueryData(runsheetQueryKeys.channels(showArchived, accessScope), (current: any) => ({
+      success: true,
+      channels: [newChannel, ...(current?.channels || []).filter((channel: RunsheetChannelOption) => channel.id !== newChannelId)],
+    }));
+    queryClient.invalidateQueries(runsheetQueryKeys.channelsRoot);
     setShowCreateForm(false);
     setIsEditorDirty(false);
     setEditorMode('view');
+    localRouteTargetRef.current = newChannelId;
     activeChannelIdRef.current = newChannelId;
     setSelectedChannelId(newChannelId);
     updateUrl(`/${newChannelId}`);
 
     if (createdData && createdData.items) {
-      setRunsheetData(createdData);
-      setLoading(false);
+      queryClient.setQueryData(runsheetQueryKeys.details(newChannelId, accessScope), { success: true, data: createdData });
+      queryClient.invalidateQueries(runsheetQueryKeys.details(newChannelId, accessScope));
     } else {
       loadChannelDetails(newChannelId);
     }
@@ -299,25 +298,29 @@ export function RunsheetManager({
   // another runsheet, so the address bar and the displayed content agree
   // instead of racing each other.
   const handleRunsheetDeleted = async (deletedId: number) => {
+    localRouteTargetRef.current = null;
     deletedChannelIdsRef.current.add(deletedId);
     activeChannelIdRef.current = null;
     setIsEditorDirty(false);
-    setRunsheetData(null);
     setSelectedChannelId(null);
-    setLoading(false);
     updateUrl('/');
 
-    setAvailableChannels((previous) => previous.filter((c) => c.id !== deletedId));
-
-    try {
-      const res = await rockGetAvailableRunsheetChannels(showArchived);
-      if (res.success && res.channels) {
-        setAvailableChannels(res.channels.filter((c) => !deletedChannelIdsRef.current.has(c.id)));
-      }
-    } catch (err) {
-      console.warn('Error loading channels after delete:', err);
-    }
+    queryClient.setQueryData(runsheetQueryKeys.channels(showArchived, accessScope), (current: any) => ({
+      success: true,
+      channels: (current?.channels || []).filter((channel: RunsheetChannelOption) => channel.id !== deletedId),
+    }));
+    queryClient.invalidateQueries(runsheetQueryKeys.channelsRoot);
+    queryClient.invalidateQueries(runsheetQueryKeys.details(deletedId, accessScope));
   };
+
+  const handleOptimisticSave = React.useCallback((updatedData: RunsheetDetails) => {
+    queryClient.setQueryData(runsheetQueryKeys.details(updatedData.channelId, accessScope), { success: true, data: updatedData });
+    queryClient.invalidateQueries(runsheetQueryKeys.details(updatedData.channelId, accessScope));
+  }, [accessScope, queryClient]);
+
+  const handleSaveSettled = React.useCallback((channelId: number) => {
+    queryClient.invalidateQueries(runsheetQueryKeys.details(channelId, accessScope));
+  }, [accessScope, queryClient]);
 
   const handleSaveAndLeave = async () => {
     if (saveRunsheetRef.current) {
@@ -553,9 +556,21 @@ export function RunsheetManager({
         </div>
       )}
 
+      {((detailsQuery.isFetching && selectedChannelId !== null) || (channelsQuery.isFetching && !channelsLoading)) && (
+        <span
+          role="status"
+          aria-label="Fetching runsheet"
+          aria-live="polite"
+          className="inline-flex items-center gap-2 text-xs font-medium text-slate-600"
+        >
+          <span aria-hidden="true" className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
+          Updating runsheet data…
+        </span>
+      )}
+
       {/* Runsheet HTML Table Editor */}
       {loading ? (
-        <div className="py-12 text-center text-sm font-medium text-slate-600">Loading Runsheet from Rock...</div>
+        <RunsheetTableSkeleton />
       ) : !runsheetData && !showCreateForm && canEdit ? (
         <div className="mx-auto max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-bold text-slate-900">Getting Started</h2>
@@ -587,6 +602,8 @@ export function RunsheetManager({
           onDeleted={() => handleRunsheetDeleted(runsheetData.channelId)}
           onDirtyChange={(dirty) => setIsEditorDirty(dirty)}
           onSaveRef={(saveFn) => (saveRunsheetRef.current = saveFn)}
+          onOptimisticSave={handleOptimisticSave}
+          onSaveSettled={handleSaveSettled}
         />
       ) : null}
 
@@ -594,6 +611,7 @@ export function RunsheetManager({
         <RunsheetCompareView
           channelIds={Array.from(compareSelection)}
           readOnly={!isEditMode}
+          onSaveSettled={handleSaveSettled}
           onClose={() => setCompareViewOpen(false)}
         />
       )}

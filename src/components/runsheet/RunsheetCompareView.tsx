@@ -14,6 +14,8 @@ interface RunsheetCompareViewProps {
   channelIds: number[];
   onClose: () => void;
   readOnly?: boolean;
+  /** Invalidate each manager detail query after an attempted compare write. */
+  onSaveSettled?: (channelId: number) => void;
 }
 
 interface LoadedSheet {
@@ -74,7 +76,7 @@ function RenderPeopleCell({ value, textClass = 'text-slate-800' }: { value: stri
   );
 }
 
-export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: RunsheetCompareViewProps) {
+export function RunsheetCompareView({ channelIds, onClose, readOnly = false, onSaveSettled }: RunsheetCompareViewProps) {
   const [sheets, setSheets] = useState<LoadedSheet[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPeopleColumns, setShowPeopleColumns] = useState(false);
@@ -252,6 +254,7 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
     if (readOnly || !hasDirtyEdits || savingMatrix) return true;
     setSavingMatrix(true);
     setMatrixSaveStatus(null);
+    const attemptedChannelIds: number[] = [];
 
     try {
       const savePromises: Promise<any>[] = [];
@@ -282,6 +285,7 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
         }
 
         if (itemsToSave.length > 0) {
+          attemptedChannelIds.push(channelId);
           savePromises.push(rockBulkSaveRunsheetItems(channelId, itemsToSave, [], sheet.columns));
         }
       }
@@ -303,6 +307,12 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
       setMatrixSaveStatus(`Error saving edits: ${err?.message || 'Unknown error'}`);
       return false;
     } finally {
+      // Compare writes use a separate batch read/state path from the manager.
+      // Notify it for every attempted channel, including partial/error results,
+      // so its detail query cannot remain fresh with pre-save data.
+      // The IDs are captured in the save loop and are intentionally local to
+      // this invocation; read-only compare never enters this path.
+      attemptedChannelIds.forEach((channelId) => onSaveSettled?.(channelId));
       setSavingMatrix(false);
     }
   };

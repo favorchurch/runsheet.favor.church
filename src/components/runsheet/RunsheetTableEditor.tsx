@@ -105,6 +105,9 @@ interface RunsheetTableEditorProps {
   onDeleted?: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
   onSaveRef?: (saveFn: () => Promise<boolean>) => void;
+  onOptimisticSave?: (updatedData: RunsheetDetails) => void;
+  /** Invalidate the authoritative detail query after any attempted write. */
+  onSaveSettled?: (channelId: number) => void;
 }
 
 /** A row plus the clock values derived from the durations above it. */
@@ -169,6 +172,8 @@ export function RunsheetTableEditor({
   onDeleted,
   onDirtyChange,
   onSaveRef,
+  onOptimisticSave,
+  onSaveSettled,
 }: RunsheetTableEditorProps) {
   /**
    * A brand-new (or emptied-out) runsheet has nothing to lose, so it starts
@@ -1130,14 +1135,21 @@ export function RunsheetTableEditor({
       return true;
     }
 
-    const result = await rockBulkSaveRunsheetItems(
-      channelId,
-      itemsToSave,
-      deletedIds,
-      columns,
-      subtitle,
-      startTimeChanged ? startTime : undefined
-    );
+    let result: Awaited<ReturnType<typeof rockBulkSaveRunsheetItems>>;
+    try {
+      result = await rockBulkSaveRunsheetItems(
+        channelId,
+        itemsToSave,
+        deletedIds,
+        columns,
+        subtitle,
+        startTimeChanged ? startTime : undefined
+      );
+    } catch (err: any) {
+      onSaveSettled?.(channelId);
+      setStatus({ type: 'error', message: err?.message || 'Failed to save changes.' });
+      return false;
+    }
 
     if (result.success) {
       // Snapshot propagation candidates against the PRE-save baseline before
@@ -1196,6 +1208,23 @@ export function RunsheetTableEditor({
       setIsDirty(false);
       setDeletedIds([]);
 
+      const optimisticItems = allPreparedItems
+        .map((item) => {
+          const savedResult = (result.results || []).find((res) => res.ok && res.clientId === item.id);
+          return savedResult?.rockId ? { ...item, id: savedResult.rockId, isNew: false } : { ...item, isNew: false };
+        })
+        .filter((item) => !deletedIds.includes(item.id));
+      onOptimisticSave?.({
+        channelId,
+        name: channelName,
+        subtitle,
+        startTime,
+        contentChannelTypeId: 13,
+        columns,
+        items: optimisticItems,
+      });
+      onSaveSettled?.(channelId);
+
       if (candidates.length > 0) {
         const channelsRes = await rockGetAvailableRunsheetChannels(false);
         if (channelsRes.success) {
@@ -1241,9 +1270,10 @@ export function RunsheetTableEditor({
           : result.error || 'Failed to save changes.';
 
       setStatus({ type: 'error', message });
+      onSaveSettled?.(channelId);
       return false;
     }
-  }, [readOnly, computeDiffPayload, deletedIds, subtitle, normalizedInitialSubtitle, startTime, initialStartTime, channelId, channelName, columns, createRowFingerprint]);
+  }, [readOnly, computeDiffPayload, deletedIds, subtitle, normalizedInitialSubtitle, startTime, initialStartTime, channelId, channelName, columns, createRowFingerprint, onOptimisticSave, onSaveSettled]);
 
   useEffect(() => {
     onSaveRef?.(handleSave);
