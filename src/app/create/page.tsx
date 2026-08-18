@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { requireServerSession } from '@/auth0-hooks/server/getServerSession';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { canUserAccessRunsheet, canUserEditRunsheet } from '@/lib/permissions';
 import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
@@ -6,6 +7,7 @@ import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
 export const dynamic = 'force-dynamic';
 
 export default async function CreateRunsheetPage() {
+  await requireServerSession();
   const session = await getRockSession();
   const canAccess = canUserAccessRunsheet(session);
 
