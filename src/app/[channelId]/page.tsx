@@ -1,3 +1,4 @@
+import { requireServerSession } from '@/auth0-hooks/server/getServerSession';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { canUserAccessRunsheet } from '@/lib/permissions';
 import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
@@ -12,6 +13,7 @@ export default async function DirectRunsheetPage({ params }: PageProps) {
   const { channelId } = await params;
   const parsedChannelId = parseInt(channelId, 10);
 
+  await requireServerSession();
   const session = await getRockSession();
   const canAccess = canUserAccessRunsheet(session);
 
