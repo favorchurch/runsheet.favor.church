@@ -31,10 +31,17 @@ function estimateODataNodeCount(filter: string): number {
 
 function fixtureReader() {
   return {
-    async get(path: string) {
+    async get(path: string, params?: Record<string, string | number | boolean>) {
       if (path === '/Groups') return RUNSHEET_ACCESS_AUDIT_FIXTURE.groups;
       if (path === '/GroupMembers') return RUNSHEET_ACCESS_AUDIT_FIXTURE.memberships;
-      if (path === '/People') return RUNSHEET_ACCESS_AUDIT_FIXTURE.people;
+      if (path === '/People') {
+        const filter = String(params?.$filter || '');
+        if (filter) {
+          const personIds = filterIds(filter, 'Id');
+          return RUNSHEET_ACCESS_AUDIT_FIXTURE.people.filter((person) => personIds.includes(person.Id));
+        }
+        return RUNSHEET_ACCESS_AUDIT_FIXTURE.people;
+      }
       if (path === '/GroupTypeRoles') return RUNSHEET_ACCESS_AUDIT_FIXTURE.leaderRoles;
       return [];
     },
@@ -258,5 +265,107 @@ describe('runsheet access audit', () => {
       negativeSeen.push(item);
     });
     expect(negativeSeen.sort()).toEqual(items);
+  });
+
+  it('aborts audit when /Groups response exceeds 2000 rows', async () => {
+    let capturedTop: string | number | boolean | undefined;
+    const reader = {
+      async get(path: string, params?: Record<string, string | number | boolean>) {
+        if (path === '/Groups') {
+          capturedTop = params?.$top;
+          return Array.from({ length: 2001 }, (_, i) => ({
+            Id: i + 1,
+            GroupTypeId: 1,
+            Name: `Group ${i + 1}`,
+            ParentGroupId: null,
+          }));
+        }
+        if (path === '/GroupMembers') return RUNSHEET_ACCESS_AUDIT_FIXTURE.memberships;
+        if (path === '/People') return RUNSHEET_ACCESS_AUDIT_FIXTURE.people;
+        if (path === '/GroupTypeRoles') return RUNSHEET_ACCESS_AUDIT_FIXTURE.leaderRoles;
+        return [];
+      },
+    };
+
+    await expect(collectRunsheetAccessAudit(reader)).rejects.toThrow(
+      /Rock query for \/Groups exceeded 2000 rows; aborting audit to prevent silent truncation/,
+    );
+    expect(capturedTop).toBe(2001);
+  });
+
+  it('aborts audit when /GroupTypeRoles response exceeds 100 rows', async () => {
+    let capturedTop: string | number | boolean | undefined;
+    const reader = {
+      async get(path: string, params?: Record<string, string | number | boolean>) {
+        if (path === '/GroupTypeRoles') {
+          capturedTop = params?.$top;
+          return Array.from({ length: 101 }, (_, i) => ({
+            Id: i + 1,
+            Name: `Role ${i + 1}`,
+            IsLeader: true,
+          }));
+        }
+        if (path === '/Groups') return RUNSHEET_ACCESS_AUDIT_FIXTURE.groups;
+        if (path === '/GroupMembers') return RUNSHEET_ACCESS_AUDIT_FIXTURE.memberships;
+        if (path === '/People') return RUNSHEET_ACCESS_AUDIT_FIXTURE.people;
+        return [];
+      },
+    };
+
+    await expect(collectRunsheetAccessAudit(reader)).rejects.toThrow(
+      /Rock query for \/GroupTypeRoles exceeded 100 rows; aborting audit to prevent silent truncation/,
+    );
+    expect(capturedTop).toBe(101);
+  });
+
+  it('aborts audit when /GroupMembers response exceeds 5000 rows', async () => {
+    let capturedTop: string | number | boolean | undefined;
+    const reader = {
+      async get(path: string, params?: Record<string, string | number | boolean>) {
+        if (path === '/GroupMembers') {
+          capturedTop = params?.$top;
+          return Array.from({ length: 5001 }, (_, i) => ({
+            Id: i + 1,
+            PersonId: 100,
+            GroupId: 2,
+            GroupMemberStatus: 1,
+          }));
+        }
+        if (path === '/Groups') return RUNSHEET_ACCESS_AUDIT_FIXTURE.groups;
+        if (path === '/GroupTypeRoles') return RUNSHEET_ACCESS_AUDIT_FIXTURE.leaderRoles;
+        if (path === '/People') return RUNSHEET_ACCESS_AUDIT_FIXTURE.people;
+        return [];
+      },
+    };
+
+    await expect(collectRunsheetAccessAudit(reader)).rejects.toThrow(
+      /Rock query for \/GroupMembers exceeded 5000 rows; aborting audit to prevent silent truncation/,
+    );
+    expect(capturedTop).toBe(5001);
+  });
+
+  it('aborts audit when /People response exceeds 10 rows', async () => {
+    let capturedTop: string | number | boolean | undefined;
+    const reader = {
+      async get(path: string, params?: Record<string, string | number | boolean>) {
+        if (path === '/People') {
+          capturedTop = params?.$top;
+          return Array.from({ length: 11 }, (_, i) => ({
+            Id: 100 + i,
+            FirstName: `Person ${i}`,
+            LastName: 'Test',
+          }));
+        }
+        if (path === '/Groups') return RUNSHEET_ACCESS_AUDIT_FIXTURE.groups;
+        if (path === '/GroupTypeRoles') return RUNSHEET_ACCESS_AUDIT_FIXTURE.leaderRoles;
+        if (path === '/GroupMembers') return RUNSHEET_ACCESS_AUDIT_FIXTURE.memberships;
+        return [];
+      },
+    };
+
+    await expect(collectRunsheetAccessAudit(reader)).rejects.toThrow(
+      /Rock query for \/People exceeded 10 rows; aborting audit to prevent silent truncation/,
+    );
+    expect(capturedTop).toBe(11);
   });
 });

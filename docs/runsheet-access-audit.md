@@ -70,13 +70,12 @@ and every figure reproduced **exactly** — see the summary table and the
 per-group, per-role breakdowns below. These numbers are confirmed, not merely
 expected to agree.
 
-The residual limitations are real and stay open: `/GroupMembers` uses
-`$top: 5000` with no truncation detection, so a future org with more than 5,000
-memberships in a single batch would silently under-report rather than error.
-The three `/Groups` lookups (GroupType 1, 28, 23) carry the same gap at
-`$top: 2000` — with 171 groups live today there is ample headroom, but a future
-org with more than 2,000 groups of one of those types would silently drop the
-excess rather than error.
+Truncation detection is active via `$top: N + 1` bounded queries across all
+four Rock read paths: `/Groups` at `$top: 2000` (for GroupTypes 1, 28, and 23),
+`/GroupMembers` at `$top: 5000` per group batch, `/GroupTypeRoles` at `$top: 100`,
+and `/People` at `$top: 10` (`ROCK_FILTER_BATCH_SIZE`) per id batch. If any
+query returns more than its configured limit, the audit aborts immediately with
+an error rather than silently truncating or under-reporting access.
 
 ### Summary
 
