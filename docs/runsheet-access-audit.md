@@ -209,6 +209,24 @@ Proposal only; this text is not applied to `~/Git/rock-security` by this run:
 - The `|| profile.name` fallback was removed from `getRockSession`; Rock email
   fallback is attempted only for an Auth0 claim with `email_verified === true`
   (or the string `'true'`, for IdPs that stringify it).
+- **ACCEPTED RISK: household role union (Rico's decision, 2026-08-18).** Access
+  resolution now unions Rock group memberships across every id in the
+  `rock_person_ids` claim, not just the tie-broken `rock_person_id`. That claim
+  is **all Rock People sharing the login email address**
+  (`rock-auth0/src/post-login.js:73` — `Email eq '<login email>'` plus
+  status/deceased filters), which the Auth0 Action's own comments call a
+  "duplicate-email household" — not one human's merged duplicates. **Consequence:
+  household members sharing an email address inherit each other's runsheet
+  access**; a teenager on a staff parent's email address gets staff edit. Two
+  narrower designs were offered and declined: no union for access, and union only
+  across Rock-merged `PersonAlias` rows. This is a deliberate product decision,
+  **not** a defect — do not "fix" it back without asking Rico. Contained by: the
+  union is gated on `personFound !== false && personId > 0` (so it cannot revive
+  the G14 email path below), identity still resolves from the primary id alone,
+  every secondary id is re-validated via `fetchPersonById`, and the session cache
+  key carries a digest of the union set. If the goal ever becomes genuine
+  duplicate consolidation, the right fix is Rock-side person merges
+  (`~/Git/rock-automerge`), not a wider claim.
 - **G14 regression — reopened and re-closed 2026-08-18.** Commit `8b57b66`
   ("tolerate social/enterprise claims") widened the gate to
   `emailVerifiedClaim !== false && rawEmail.length > 0`, so an *omitted*

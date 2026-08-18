@@ -206,10 +206,52 @@ export interface ResolveResult {
   contact: AuthContact;
   rolesMap: AuthRolesMap;
   access: AuthAccess;
+  /**
+   * Set when a secondary (non-primary) id in the union failed its
+   * `fetchPersonById` validity fetch (network/API error, not a plain
+   * not-found). A partial result must never be written to the session
+   * cache — see `getRockSession`.
+   */
+  partial?: boolean;
 }
 
-export async function rockResolveAccess(personId: number, fallbackEmail?: string): Promise<ResolveResult> {
-  let person = personId > 0 ? await fetchPersonById(personId) : null;
+/**
+ * Matches the Auth0 Post-Login Action's `PERSON_FETCH_LIMIT`
+ * (`~/Git/rock-auth0/src/common/person-match.js`). Truncation always keeps
+ * `personIds[0]` (the primary/identity id) and drops from the tail.
+ */
+export const MAX_UNION_PERSON_IDS = 11;
+
+/**
+ * Resolve runsheet authorization by unioning Rock group memberships across
+ * every id in `personIds`. **Identity is primary-only:** `contact` (name,
+ * email, campusId, primaryAliasId) always resolves from `personIds[0]` alone
+ * — the union changes authorization, never who the signed-in person is.
+ * Callers (see `getRockSession`) are responsible for ordering `personIds`
+ * with the primary id first.
+ */
+export async function rockResolveAccess(personIds: number[], fallbackEmail?: string): Promise<ResolveResult> {
+  const truncate = personIds.length > MAX_UNION_PERSON_IDS;
+  const capped = truncate ? personIds.slice(0, MAX_UNION_PERSON_IDS) : personIds;
+  if (truncate) {
+    console.warn(
+      `[runsheet-access] truncating union person ids from ${personIds.length} to ${MAX_UNION_PERSON_IDS}, retaining primary id ${capped[0]}`,
+    );
+  }
+
+  const primaryId = capped[0] ?? 0;
+
+  // Primary-id failures propagate (unreached here — fetchPersonById below is
+  // not wrapped in try/catch), preserving today's behavior including
+  // CloudflareBlockError surfacing to the caller.
+  let person = primaryId > 0 ? await fetchPersonById(primaryId) : null;
+
+  // Whether `person` is still the primary id we were asked to resolve. When the
+  // primary fails its validity filter and the email fallback resolves someone
+  // else (another household member on the same address), identity is no longer
+  // `personIds[0]`, so the union must NOT be applied on top of that stranger's
+  // profile — otherwise "identity is primary-only" quietly stops holding.
+  const primaryResolved = person?.Id != null && Number(person.Id) === primaryId;
 
   if (!person && fallbackEmail) {
     person = await fetchPersonByEmail(fallbackEmail);
@@ -232,13 +274,74 @@ export async function rockResolveAccess(personId: number, fallbackEmail?: string
     campusId: person?.PrimaryCampusId != null ? Number(person.PrimaryCampusId) : null,
   };
 
-  const campusIds = person?.PrimaryCampusId != null ? [Number(person.PrimaryCampusId)] : [];
+  const campusIds: number[] = person?.PrimaryCampusId != null ? [Number(person.PrimaryCampusId)] : [];
+
+  // Defensive per-id filter for <=0/non-integer stays as defence-in-depth:
+  // it is unreachable via `parseRockPersonIds`' all-or-nothing gate upstream,
+  // but a future caller of this exported function should not be able to
+  // smuggle a malformed id into a Rock query.
+  const secondaryIds = (primaryResolved ? [...new Set(capped.slice(1))] : []).filter(
+    (id): id is number => typeof id === 'number' && Number.isInteger(id) && id > 0 && id !== primaryId,
+  );
+
+  let partial = false;
+  const membershipPersonIds: number[] = [];
+  // The person whose identity this session carries — the primary id normally,
+  // or the email-fallback person when the primary failed validity. Their fetches
+  // are the signed-in user's own, so their failures propagate; `primaryId` alone
+  // is the wrong comparand here because it is 0 on the pure email-fallback path.
+  const identityPersonId = person?.Id != null && Number(person.Id) > 0 ? Number(person.Id) : 0;
+  if (identityPersonId > 0) {
+    membershipPersonIds.push(identityPersonId);
+  }
+
+  for (const secondaryId of secondaryIds) {
+    try {
+      const secondaryPerson = await fetchPersonById(secondaryId);
+      if (secondaryPerson?.Id > 0) {
+        membershipPersonIds.push(Number(secondaryPerson.Id));
+        if (secondaryPerson.PrimaryCampusId != null) {
+          campusIds.push(Number(secondaryPerson.PrimaryCampusId));
+        }
+      }
+      // else: dropped by the validity filter (inactive/deceased/merged away)
+      // — not a failure, so `partial` is not set.
+    } catch (error) {
+      partial = true;
+      console.warn(
+        `[runsheet-access] secondary person id ${secondaryId} failed its validity fetch; dropping from the union`,
+        error,
+      );
+    }
+  }
 
   const rolesMap: AuthRolesMap = {};
   const runsheetCampuses = new Set<string>();
 
-  if (person?.Id > 0) {
-    const memberships = await fetchTeamMemberships(person.Id);
+  if (membershipPersonIds.length > 0) {
+    // The primary's membership fetch propagates (its failure is the signed-in
+    // user's own failure). A SECONDARY's must not: a transient Rock error on a
+    // household member's /GroupMembers query would otherwise deny the primary
+    // user their entire session. Drop that id and mark the resolve partial, per
+    // T1's error policy.
+    const membershipLists = await Promise.all(
+      membershipPersonIds.map(async (id) => {
+        if (id === identityPersonId) {
+          return fetchTeamMemberships(id);
+        }
+        try {
+          return await fetchTeamMemberships(id);
+        } catch (error) {
+          partial = true;
+          console.warn(
+            `[runsheet-access] secondary person id ${id} failed its membership fetch; dropping from the union`,
+            error,
+          );
+          return [];
+        }
+      }),
+    );
+    const memberships = membershipLists.flat();
     const hasGlobalMembership = memberships.some(
       (m: any) =>
         Number(m.GroupTypeId) === 1 ||
@@ -297,12 +400,13 @@ export async function rockResolveAccess(personId: number, fallbackEmail?: string
     contact,
     rolesMap,
     access: {
-      campusIds,
+      campusIds: [...new Set(campusIds)],
       connectLeaderGroupIds: [],
       regionalLeaderSections: [],
       clusterHeadSections: [],
       departmentHeadSections: [],
       runsheetCampuses: Array.from(runsheetCampuses),
     },
+    ...(partial ? { partial: true } : {}),
   };
 }
