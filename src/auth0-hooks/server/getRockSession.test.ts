@@ -341,6 +341,36 @@ describe('getRockSession rock_person_ids claim', () => {
     expect(mockSetSessionCache).not.toHaveBeenCalled();
   });
 
+  // #25: cache hit and cache miss must agree on personId. They diverged only when
+  // the primary id failed validity and the email fallback resolved someone else —
+  // the case the person-id union work made a supported path.
+  it('returns the same personId on a cache hit as on a cache miss when the resolved id differs from the claim', async () => {
+    const profile = {
+      'https://auth.favor.church/rock_person_found': true,
+      'https://auth.favor.church/rock_person_id': 911,
+      'https://auth.favor.church/rock_person_ids': [911, 912],
+      email: 'shared@favor.church',
+      email_verified: true,
+    };
+
+    // Miss: Rock resolves 913 (the email fallback landed on another person).
+    mockGetServerSession.mockResolvedValue(sessionFor(profile));
+    mockRockResolveAccess.mockResolvedValue(resolvedResult(913));
+    const onMiss = await getRockSession();
+
+    // Hit: the same payload comes back from cache.
+    jest.clearAllMocks();
+    mockSetSessionCache.mockResolvedValue(undefined);
+    mockGetServerSession.mockResolvedValue(sessionFor(profile));
+    mockGetSessionCache.mockResolvedValue(resolvedResult(913));
+    const onHit = await getRockSession();
+
+    expect(onMiss.personId).toBe(913);
+    expect(onHit.personId).toBe(913);
+    expect(onHit.personId).toBe(onMiss.personId);
+    expect(mockRockResolveAccess).not.toHaveBeenCalled();
+  });
+
   it('invalidateRockSession clears the exact key the session actually wrote (done-criteria 8)', async () => {
     const profile = {
       'https://auth.favor.church/rock_person_found': true,
