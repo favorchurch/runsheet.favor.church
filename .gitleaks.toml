@@ -1,0 +1,17 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "rock-api-key-assignment"
+description = "Rock RMS API key or token assigned to a literal"
+regex = '''(?i)(ROCK_[A-Z_]*(?:API_)?(?:KEY|TOKEN))\s*[:=]\s*['"]?[A-Za-z0-9]{20,}['"]?'''
+tags = ["rock", "credential"]
+
+[allowlist]
+description = "placeholder and fixture values"
+paths = [
+  '''\.env\.example$''',
+  '''(^|/)tests?/''',
+  '''(^|/)__tests__/''',
+  '''\.test\.(ts|js|py)$''',
+]
