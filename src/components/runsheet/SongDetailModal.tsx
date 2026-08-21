@@ -47,7 +47,7 @@ export function SongDetailModal({
 
   const [songDetails, setSongDetails] = useState<SongDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
-  const [activeTab, setActiveTab] = useState<'details' | 'lyrics'>('details');
+  const [activeTab, setActiveTab] = useState<'lyrics' | 'details'>('lyrics');
   const [showSidebar, setShowSidebar] = useState<boolean>(!initialSongItemId && !initialQueryValue);
 
   const modalRef = useRef<HTMLDivElement>(null);
@@ -384,17 +384,6 @@ export function SongDetailModal({
                 <div className="flex items-center gap-2 border-b border-slate-200 text-xs font-bold">
                   <button
                     type="button"
-                    onClick={() => setActiveTab('details')}
-                    className={`pb-2 border-b-2 transition-colors cursor-pointer ${
-                      activeTab === 'details'
-                        ? 'border-slate-900 text-slate-900'
-                        : 'border-transparent text-slate-400 hover:text-slate-600'
-                    }`}
-                  >
-                    Resources & Charts ({songDetails.sheetMusicLinks.length})
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setActiveTab('lyrics')}
                     className={`pb-2 border-b-2 transition-colors cursor-pointer ${
                       activeTab === 'lyrics'
@@ -404,40 +393,20 @@ export function SongDetailModal({
                   >
                     Lyrics & Sections ({songDetails.sections.length})
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('details')}
+                    className={`pb-2 border-b-2 transition-colors cursor-pointer ${
+                      activeTab === 'details'
+                        ? 'border-slate-900 text-slate-900'
+                        : 'border-transparent text-slate-400 hover:text-slate-600'
+                    }`}
+                  >
+                    Resources & Charts ({songDetails.sheetMusicLinks.length})
+                  </button>
                 </div>
 
-                {/* Tab 1: Sheet Music & Chord Charts */}
-                {activeTab === 'details' && (
-                  <div className="space-y-3">
-                    {songDetails.sheetMusicLinks.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {songDetails.sheetMusicLinks.map((link, idx) => (
-                          <a
-                            key={idx}
-                            href={link.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 text-xs font-bold text-indigo-950 hover:bg-indigo-100/70 hover:border-indigo-300 transition-all shadow-2xs group"
-                          >
-                            <span className="flex items-center gap-2 truncate pr-2">
-                              <HiDocumentArrowDown className="h-4 w-4 text-indigo-600 shrink-0" />
-                              <span className="truncate">{link.label}</span>
-                            </span>
-                            <HiArrowTopRightOnSquare className="h-3.5 w-3.5 text-indigo-400 group-hover:text-indigo-700 shrink-0" />
-                          </a>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center">
-                        <p className="text-xs text-slate-500">
-                          No chord charts or attachments found in Rock RMS.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Tab 2: Lyrics & Sections */}
+                {/* Tab 1: Lyrics & Sections */}
                 {activeTab === 'lyrics' && (
                   <div className="space-y-3">
                     {songDetails.sections.length > 0 ? (
@@ -465,6 +434,37 @@ export function SongDetailModal({
                     ) : (
                       <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center">
                         <p className="text-xs text-slate-500">No lyrics text available for this song.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Tab 2: Sheet Music & Chord Charts */}
+                {activeTab === 'details' && (
+                  <div className="space-y-3">
+                    {songDetails.sheetMusicLinks.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {songDetails.sheetMusicLinks.map((link, idx) => (
+                          <a
+                            key={idx}
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 text-xs font-bold text-indigo-950 hover:bg-indigo-100/70 hover:border-indigo-300 transition-all shadow-2xs group"
+                          >
+                            <span className="flex items-center gap-2 truncate pr-2">
+                              <HiDocumentArrowDown className="h-4 w-4 text-indigo-600 shrink-0" />
+                              <span className="truncate">{link.label}</span>
+                            </span>
+                            <HiArrowTopRightOnSquare className="h-3.5 w-3.5 text-indigo-400 group-hover:text-indigo-700 shrink-0" />
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center">
+                        <p className="text-xs text-slate-500">
+                          No chord charts or attachments found in Rock RMS.
+                        </p>
                       </div>
                     )}
                   </div>

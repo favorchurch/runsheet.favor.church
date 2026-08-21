@@ -66,8 +66,13 @@ describe('SongDetailModal', () => {
     await waitFor(() => {
       expect(screen.getByText('Goodness of God')).toBeInTheDocument();
       expect(screen.getByText('🎤 Bethel Music')).toBeInTheDocument();
-      expect(screen.getByText('Chord Chart (PDF)')).toBeInTheDocument();
+      expect(screen.getByText('Verse 1')).toBeInTheDocument();
+      expect(screen.getByText(/I love you Lord/i)).toBeInTheDocument();
     });
+
+    // Switch to Resources & Charts tab
+    fireEvent.click(screen.getByRole('button', { name: /Resources & Charts/i }));
+    expect(screen.getByText('Chord Chart (PDF)')).toBeInTheDocument();
 
     // Click "See Songs" to reveal search sidebar
     fireEvent.click(screen.getByText('See Songs'));
