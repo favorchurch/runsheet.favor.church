@@ -7,6 +7,8 @@ export interface SongSection {
   title: string;
   content: string;
   isChorus?: boolean;
+  youtubeVideoId?: string;
+  youtubeUrl?: string;
 }
 
 export interface SongDetails {
@@ -22,5 +24,7 @@ export interface SongDetails {
   rockUrl: string;
   sheetMusicLinks: SheetMusicLink[];
   sections: SongSection[];
+  youtubeVideoId?: string;
+  youtubeUrl?: string;
   rawContent?: string;
 }
