@@ -159,4 +159,27 @@ describe('RunsheetLandingView', () => {
     expect(screen.queryByRole('button', { name: /create new runsheet/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/show archived/i)).not.toBeInTheDocument();
   });
+
+  it('sorts channels chronologically by date and sortable time signatures', () => {
+    const unsortedChannels = [
+      { id: 201, name: 'MNL Crowne // August 16, 2026 // 5PM', time: '5PM' },
+      { id: 202, name: 'MNL Crowne // August 16, 2026 // 9AM', time: '9AM' },
+      { id: 203, name: 'MNL Crowne // August 16, 2026 // 11:30AM', time: '11:30AM' },
+      { id: 204, name: 'MNL Crowne // August 16, 2026 // 10AM', time: '10AM' },
+      { id: 205, name: 'MNL Crowne // August 9, 2026 // 10AM', time: '10AM' },
+    ];
+
+    renderLandingView({ channels: unsortedChannels });
+
+    const cards = screen.getAllByRole('button', { name: /select runsheet/i });
+    const renderedIds = cards.map((c) => Number(c.getAttribute('data-channel-id')));
+
+    // Expected chronological order:
+    // 1. Aug 9, 10AM (205)
+    // 2. Aug 16, 9AM (202)
+    // 3. Aug 16, 10AM (204)
+    // 4. Aug 16, 11:30AM (203)
+    // 5. Aug 16, 5PM (201)
+    expect(renderedIds).toEqual([205, 202, 204, 203, 201]);
+  });
 });

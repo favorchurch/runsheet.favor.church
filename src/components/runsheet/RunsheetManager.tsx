@@ -8,7 +8,7 @@ import { useQueryClient } from 'react-query';
 import { HiArrowsRightLeft, HiEye, HiPencilSquare } from 'react-icons/hi2';
 import { canUserEditRunsheet } from '@/lib/permissions';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
-import { extractChannelTime } from '@/lib/runsheetDate';
+import { extractChannelTime, sortRunsheetChannels } from '@/lib/runsheetDate';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import type { AuthUser } from '@/types/AuthUser';
 import type { RunsheetDetails } from '@/types/Runsheet';
@@ -88,8 +88,10 @@ export function RunsheetManager({
   const channelsQuery = useAvailableRunsheetChannels(showArchived, accessScope);
   const detailsQuery = useRunsheetDetails(selectedChannelId, accessScope);
 
-  const availableChannels: RunsheetChannelOption[] = (channelsQuery.data?.channels || []).filter(
-    (channel) => !deletedChannelIdsRef.current.has(channel.id),
+  const availableChannels: RunsheetChannelOption[] = sortRunsheetChannels(
+    (channelsQuery.data?.channels || []).filter(
+      (channel) => !deletedChannelIdsRef.current.has(channel.id),
+    ),
   );
   const runsheetData: RunsheetDetails | null = detailsQuery.data?.data || null;
   const channelsLoading = channelsQuery.isLoading && !channelsQuery.data;

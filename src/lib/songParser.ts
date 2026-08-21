@@ -4,7 +4,7 @@ import { cleanSongTitle } from './songUtils';
 export function extractYouTubeVideoId(urlOrText: string): string | null {
   if (!urlOrText) return null;
   const match = urlOrText.match(
-    /(?:https?:\/\/)?(?:www\.|music\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i
+    /(?:https?:\/\/)?(?:www\.|music\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?|shorts|live)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]+)/i
   );
   return match ? match[1] : null;
 }
@@ -12,9 +12,12 @@ export function extractYouTubeVideoId(urlOrText: string): string | null {
 export function extractYouTubeUrl(urlOrText: string): string | null {
   if (!urlOrText) return null;
   const match = urlOrText.match(
-    /(https?:\/\/(?:www\.|music\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)[a-zA-Z0-9_\-\=\&\?\%]+)/i
+    /(https?:\/\/(?:www\.|music\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?|shorts|live)\/|\S*?[?&]v=|\S+)|youtu\.be\/[a-zA-Z0-9_\-=&?%]+)[^\s<>'\"\]\)]*)/i
   );
-  return match ? match[1] : null;
+  if (match) {
+    return match[1].replace(/[),;.]+$/, '');
+  }
+  return null;
 }
 
 export function parseRockSongContent(item: {
@@ -137,6 +140,13 @@ export function parseRockSongContent(item: {
     }
   }
 
+  const firstSectionWithVideo = sections.find((s) => s.youtubeVideoId || s.youtubeUrl);
+  const finalYoutubeVideoId = globalYoutubeVideoId || firstSectionWithVideo?.youtubeVideoId;
+  const finalYoutubeUrl =
+    globalYoutubeUrl ||
+    firstSectionWithVideo?.youtubeUrl ||
+    (finalYoutubeVideoId ? `https://www.youtube.com/watch?v=${finalYoutubeVideoId}` : undefined);
+
   return {
     id: item.Id,
     title: rawTitle,
@@ -150,8 +160,8 @@ export function parseRockSongContent(item: {
     rockUrl,
     sheetMusicLinks,
     sections,
-    youtubeVideoId: globalYoutubeVideoId || undefined,
-    youtubeUrl: globalYoutubeUrl || undefined,
+    youtubeVideoId: finalYoutubeVideoId || undefined,
+    youtubeUrl: finalYoutubeUrl || undefined,
     rawContent,
   };
 }

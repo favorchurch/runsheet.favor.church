@@ -12,7 +12,7 @@ export interface RunsheetChannelOption {
   time: string;
 }
 
-import { extractChannelDate, extractChannelTime } from '@/lib/runsheetDate';
+import { extractChannelDate, extractChannelTime, sortRunsheetChannels } from '@/lib/runsheetDate';
 
 function getTimezoneForChannelName(name: string): string {
   switch (extractRunsheetCampus(name)) {
@@ -99,7 +99,7 @@ export async function rockGetAvailableRunsheetChannels(includeArchived = false):
 
     return {
       success: true,
-      channels: formattedChannels,
+      channels: sortRunsheetChannels(formattedChannels),
     };
   } catch (err: any) {
     console.error('Error fetching runsheet channels from Rock:', err);

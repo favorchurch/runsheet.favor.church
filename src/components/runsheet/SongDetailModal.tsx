@@ -13,6 +13,8 @@ import {
   HiArrowTopRightOnSquare,
   HiDocumentArrowDown,
   HiInformationCircle,
+  HiClipboardDocument,
+  HiClipboardDocumentCheck,
 } from 'react-icons/hi2';
 
 const MUSICAL_KEYS = ['C', 'C#', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -49,6 +51,14 @@ export function SongDetailModal({
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [activeTab, setActiveTab] = useState<'lyrics' | 'details'>('lyrics');
   const [showSidebar, setShowSidebar] = useState<boolean>(!initialSongItemId && !initialQueryValue);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+
+  const handleCopyUrl = useCallback((url: string) => {
+    if (!url) return;
+    navigator.clipboard.writeText(url);
+    setCopiedUrl(true);
+    setTimeout(() => setCopiedUrl(false), 2000);
+  }, []);
 
   const modalRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -381,58 +391,107 @@ export function SongDetailModal({
                 </div>
 
                 {/* Tabs */}
-                <div className="flex items-center gap-2 border-b border-slate-200 text-xs font-bold">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('lyrics')}
-                    className={`pb-2 border-b-2 transition-colors cursor-pointer ${
-                      activeTab === 'lyrics'
-                        ? 'border-slate-900 text-slate-900'
-                        : 'border-transparent text-slate-400 hover:text-slate-600'
-                    }`}
-                  >
-                    Lyrics & Sections ({songDetails.sections.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('details')}
-                    className={`pb-2 border-b-2 transition-colors cursor-pointer ${
-                      activeTab === 'details'
-                        ? 'border-slate-900 text-slate-900'
-                        : 'border-transparent text-slate-400 hover:text-slate-600'
-                    }`}
-                  >
-                    Resources & Charts ({songDetails.sheetMusicLinks.length})
-                  </button>
-                </div>
+                {(() => {
+                  const youtubeUrl = songDetails.youtubeUrl;
+                  const youtubeVideoId = songDetails.youtubeVideoId;
+                  const hasYoutube = !!(youtubeUrl || youtubeVideoId);
 
-                {/* Tab 1: Lyrics & Sections */}
-                {activeTab === 'lyrics' && (
-                  <div className="space-y-3">
-                    {songDetails.sections.length > 0 ? (
-                      songDetails.sections.map((section, idx) => {
-                        const isVideoSection = !!section.youtubeVideoId;
-                        const cleanText = section.content
-                          .replace(/https?:\/\/(?:www\.|music\.)?(?:youtube\.com\/\S+|youtu\.be\/\S+)/gi, '')
-                          .trim();
+                  const lyricsSections = (songDetails.sections || []).filter((section) => {
+                    const clean = section.content
+                      .replace(/https?:\/\/(?:www\.|music\.)?(?:youtube\.com\/\S+|youtu\.be\/\S+)/gi, '')
+                      .trim();
+                    const isVideoTitle = /^(youtube|video|reference video|watch|link)$/i.test(section.title.trim());
+                    if (isVideoTitle && !clean) return false;
+                    if (section.youtubeVideoId && !clean) return false;
+                    return true;
+                  });
 
-                        if (isVideoSection) {
-                          return (
-                            <div
-                              key={idx}
-                              className="rounded-2xl border border-slate-200 bg-slate-900 text-white overflow-hidden shadow-xs"
-                            >
-                              <div className="flex items-center justify-between px-4 py-2.5 bg-slate-950 border-b border-slate-800">
-                                <span className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                                  <span className="flex h-2 w-2 rounded-full bg-red-500" />
-                                  <span>{section.title || 'YouTube Video'}</span>
-                                </span>
-                                {section.youtubeUrl && (
+                  const resourceCount = (songDetails.sheetMusicLinks.length || 0) + (hasYoutube ? 1 : 0);
+
+                  return (
+                    <>
+                      <div className="flex items-center gap-2 border-b border-slate-200 text-xs font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('lyrics')}
+                          className={`pb-2 border-b-2 transition-colors cursor-pointer ${
+                            activeTab === 'lyrics'
+                              ? 'border-slate-900 text-slate-900'
+                              : 'border-transparent text-slate-400 hover:text-slate-600'
+                          }`}
+                        >
+                          Lyrics & Sections ({lyricsSections.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('details')}
+                          className={`pb-2 border-b-2 transition-colors cursor-pointer ${
+                            activeTab === 'details'
+                              ? 'border-slate-900 text-slate-900'
+                              : 'border-transparent text-slate-400 hover:text-slate-600'
+                          }`}
+                        >
+                          Resources & Charts ({resourceCount})
+                        </button>
+                      </div>
+
+                      {/* Tab 1: Lyrics & Sections */}
+                      {activeTab === 'lyrics' && (
+                        <div className="space-y-3">
+                          {lyricsSections.length > 0 ? (
+                            lyricsSections.map((section, idx) => {
+                              const cleanText = section.content
+                                .replace(/https?:\/\/(?:www\.|music\.)?(?:youtube\.com\/\S+|youtu\.be\/\S+)/gi, '')
+                                .trim();
+
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`rounded-xl p-3.5 text-xs ${
+                                    section.isChorus
+                                      ? 'bg-indigo-50/70 border-l-4 border-indigo-600 text-slate-900'
+                                      : 'bg-slate-50/80 border border-slate-200 text-slate-800'
+                                  }`}
+                                >
+                                  <h4
+                                    className={`text-[11px] font-extrabold uppercase tracking-wider mb-1.5 ${
+                                      section.isChorus ? 'text-indigo-900' : 'text-slate-500'
+                                    }`}
+                                  >
+                                    {section.title}
+                                  </h4>
+                                  <div className="whitespace-pre-line leading-relaxed font-medium">
+                                    {cleanText || section.content}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center">
+                              <p className="text-xs text-slate-500">No lyrics text available for this song.</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Tab 2: Sheet Music, Chord Charts & YouTube Video */}
+                      {activeTab === 'details' && (
+                        <div className="space-y-4">
+                          {hasYoutube && (
+                            <div className="rounded-2xl border border-slate-200 bg-slate-900 text-white overflow-hidden shadow-xs">
+                              <div className="flex items-center justify-between px-4 py-2.5 bg-slate-950 border-b border-slate-800 gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="flex h-2 w-2 rounded-full bg-red-500 shrink-0" />
+                                  <span className="text-xs font-bold text-slate-200 truncate">
+                                    Reference Video
+                                  </span>
+                                </div>
+                                {youtubeUrl && (
                                   <a
-                                    href={section.youtubeUrl}
+                                    href={youtubeUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-[11px] font-semibold text-slate-400 hover:text-white transition-colors flex items-center gap-1"
+                                    className="text-[11px] font-semibold text-slate-400 hover:text-white transition-colors flex items-center gap-1 bg-slate-800/80 hover:bg-slate-800 px-2 py-1 rounded-lg shrink-0"
                                   >
                                     <span>Watch on YouTube</span>
                                     <HiArrowTopRightOnSquare className="h-3 w-3" />
@@ -440,85 +499,96 @@ export function SongDetailModal({
                                 )}
                               </div>
 
-                              <div className="relative aspect-video w-full bg-black">
-                                <iframe
-                                  src={`https://www.youtube-nocookie.com/embed/${section.youtubeVideoId}`}
-                                  title={section.title || 'YouTube video'}
-                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                  allowFullScreen
-                                  className="absolute inset-0 w-full h-full"
-                                />
-                              </div>
+                              {/* Copyable URL Bar */}
+                              {youtubeUrl && (
+                                <div className="flex items-center justify-between gap-2 px-4 py-2 bg-slate-900/90 border-b border-slate-800/80 text-xs">
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">URL:</span>
+                                    <span className="font-mono text-[11px] text-slate-300 truncate select-all">
+                                      {youtubeUrl}
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyUrl(youtubeUrl)}
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
+                                      copiedUrl
+                                        ? 'bg-emerald-600 text-white'
+                                        : 'bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white border border-slate-700'
+                                    }`}
+                                  >
+                                    {copiedUrl ? (
+                                      <>
+                                        <HiClipboardDocumentCheck className="h-3.5 w-3.5 text-white" />
+                                        <span>Copied!</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <HiClipboardDocument className="h-3.5 w-3.5 text-slate-400" />
+                                        <span>Copy URL</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              )}
 
-                              {cleanText && (
-                                <div className="p-3 text-xs text-slate-300 bg-slate-900 border-t border-slate-800 whitespace-pre-line leading-relaxed font-medium">
-                                  {cleanText}
+                              {/* Fail-open Embed */}
+                              {youtubeVideoId ? (
+                                <div className="relative aspect-video w-full bg-black">
+                                  <iframe
+                                    src={`https://www.youtube-nocookie.com/embed/${youtubeVideoId}`}
+                                    title={songDetails.cleanTitle || 'YouTube reference video'}
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                    allowFullScreen
+                                    className="absolute inset-0 w-full h-full"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="p-3 text-xs text-slate-400 bg-slate-900/40">
+                                  Direct video playback unavailable for this URL. Use the button above to view on YouTube.
                                 </div>
                               )}
                             </div>
-                          );
-                        }
+                          )}
 
-                        return (
-                          <div
-                            key={idx}
-                            className={`rounded-xl p-3.5 text-xs ${
-                              section.isChorus
-                                ? 'bg-indigo-50/70 border-l-4 border-indigo-600 text-slate-900'
-                                : 'bg-slate-50/80 border border-slate-200 text-slate-800'
-                            }`}
-                          >
-                            <h4
-                              className={`text-[11px] font-extrabold uppercase tracking-wider mb-1.5 ${
-                                section.isChorus ? 'text-indigo-900' : 'text-slate-500'
-                              }`}
-                            >
-                              {section.title}
-                            </h4>
-                            <div className="whitespace-pre-line leading-relaxed font-medium">
-                              {section.content}
+                          {/* Chord charts / Sheet music */}
+                          {songDetails.sheetMusicLinks.length > 0 ? (
+                            <div className="space-y-2">
+                              {hasYoutube && (
+                                <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                                  Chord Charts & Attachments
+                                </h4>
+                              )}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {songDetails.sheetMusicLinks.map((link, idx) => (
+                                  <a
+                                    key={idx}
+                                    href={link.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 text-xs font-bold text-indigo-950 hover:bg-indigo-100/70 hover:border-indigo-300 transition-all shadow-2xs group"
+                                  >
+                                    <span className="flex items-center gap-2 truncate pr-2">
+                                      <HiDocumentArrowDown className="h-4 w-4 text-indigo-600 shrink-0" />
+                                      <span className="truncate">{link.label}</span>
+                                    </span>
+                                    <HiArrowTopRightOnSquare className="h-3.5 w-3.5 text-indigo-400 group-hover:text-indigo-700 shrink-0" />
+                                  </a>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center">
-                        <p className="text-xs text-slate-500">No lyrics text available for this song.</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Tab 2: Sheet Music & Chord Charts */}
-                {activeTab === 'details' && (
-                  <div className="space-y-3">
-                    {songDetails.sheetMusicLinks.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {songDetails.sheetMusicLinks.map((link, idx) => (
-                          <a
-                            key={idx}
-                            href={link.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 text-xs font-bold text-indigo-950 hover:bg-indigo-100/70 hover:border-indigo-300 transition-all shadow-2xs group"
-                          >
-                            <span className="flex items-center gap-2 truncate pr-2">
-                              <HiDocumentArrowDown className="h-4 w-4 text-indigo-600 shrink-0" />
-                              <span className="truncate">{link.label}</span>
-                            </span>
-                            <HiArrowTopRightOnSquare className="h-3.5 w-3.5 text-indigo-400 group-hover:text-indigo-700 shrink-0" />
-                          </a>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center">
-                        <p className="text-xs text-slate-500">
-                          No chord charts or attachments found in Rock RMS.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
+                          ) : !hasYoutube ? (
+                            <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center">
+                              <p className="text-xs text-slate-500">
+                                No chord charts or attachments found in Rock RMS.
+                              </p>
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">

@@ -123,7 +123,15 @@ describe('SongDetailModal', () => {
     expect(handleClose).toHaveBeenCalled();
   });
 
-  it('renders embedded YouTube player when YouTube section is present', async () => {
+  it('renders embedded YouTube player and copyable URL in Resources & Charts tab', async () => {
+    // Mock navigator.clipboard
+    const mockWriteText = jest.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: mockWriteText,
+      },
+    });
+
     mockRockGetSongDetails.mockResolvedValueOnce({
       success: true,
       song: {
@@ -141,6 +149,8 @@ describe('SongDetailModal', () => {
             youtubeUrl: 'https://www.youtube.com/watch?v=Ij-OyBWfwpQ',
           },
         ],
+        youtubeVideoId: 'Ij-OyBWfwpQ',
+        youtubeUrl: 'https://www.youtube.com/watch?v=Ij-OyBWfwpQ',
       },
     });
 
@@ -154,12 +164,60 @@ describe('SongDetailModal', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTitle('YouTube')).toBeInTheDocument();
-      expect(screen.getByTitle('YouTube')).toHaveAttribute(
-        'src',
-        'https://www.youtube-nocookie.com/embed/Ij-OyBWfwpQ'
-      );
-      expect(screen.getByText('Watch on YouTube')).toBeInTheDocument();
+      expect(screen.getByText('Testify')).toBeInTheDocument();
     });
+
+    // Switch to Resources & Charts tab
+    fireEvent.click(screen.getByRole('button', { name: /Resources & Charts/i }));
+
+    expect(screen.getByTitle('Testify')).toHaveAttribute(
+      'src',
+      'https://www.youtube-nocookie.com/embed/Ij-OyBWfwpQ'
+    );
+    expect(screen.getByText('Watch on YouTube')).toBeInTheDocument();
+    expect(screen.getByText('https://www.youtube.com/watch?v=Ij-OyBWfwpQ')).toBeInTheDocument();
+
+    // Test Copy URL button
+    const copyBtn = screen.getByRole('button', { name: /Copy URL/i });
+    fireEvent.click(copyBtn);
+    expect(mockWriteText).toHaveBeenCalledWith('https://www.youtube.com/watch?v=Ij-OyBWfwpQ');
+    expect(screen.getByText('Copied!')).toBeInTheDocument();
+  });
+
+  it('fails open cleanly in Resources & Charts tab when video ID is not parseable', async () => {
+    mockRockGetSongDetails.mockResolvedValueOnce({
+      success: true,
+      song: {
+        id: 304,
+        title: 'Custom Link Song',
+        cleanTitle: 'Custom Link Song',
+        rockUrl: 'https://rock.favor.church/ContentChannelItem/304',
+        sheetMusicLinks: [],
+        sections: [],
+        youtubeUrl: 'https://youtube.com/channel/custom',
+      },
+    });
+
+    render(
+      <SongDetailModal
+        isOpen={true}
+        initialValue="Custom Link Song"
+        initialSongItemId={304}
+        onClose={jest.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Custom Link Song')).toBeInTheDocument();
+    });
+
+    // Switch to Resources & Charts tab
+    fireEvent.click(screen.getByRole('button', { name: /Resources & Charts/i }));
+
+    expect(screen.getByText('https://youtube.com/channel/custom')).toBeInTheDocument();
+    expect(screen.getByText('Watch on YouTube')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Direct video playback unavailable for this URL/i)
+    ).toBeInTheDocument();
   });
 });

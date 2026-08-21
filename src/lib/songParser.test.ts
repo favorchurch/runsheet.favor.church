@@ -69,6 +69,23 @@ https://www.youtube.com/watch?v=Ij-OyBWfwpQ&list=RDIj-OyBWfwpQ&start_radio=1
     expect(result.youtubeVideoId).toBe('Ij-OyBWfwpQ');
   });
 
+  it('detects and parses YouTube video URLs in top-level metadata', () => {
+    const mockContent = `**YouTube:** https://youtu.be/shortsVid123
+---
+## Verse 1
+Here is my song
+`;
+
+    const result = parseRockSongContent({
+      Id: 404,
+      Title: 'Short Song',
+      Content: mockContent,
+    });
+
+    expect(result.youtubeVideoId).toBe('shortsVid123');
+    expect(result.youtubeUrl).toBe('https://youtu.be/shortsVid123');
+  });
+
   it('handles empty or missing content gracefully', () => {
     const result = parseRockSongContent({
       Id: 202,
@@ -85,16 +102,22 @@ https://www.youtube.com/watch?v=Ij-OyBWfwpQ&list=RDIj-OyBWfwpQ&start_radio=1
 });
 
 describe('extractYouTubeVideoId and extractYouTubeUrl', () => {
-  it('extracts video ID from standard youtube URLs', () => {
+  it('extracts video ID from standard and non-standard youtube URLs', () => {
     expect(extractYouTubeVideoId('https://www.youtube.com/watch?v=Ij-OyBWfwpQ')).toBe('Ij-OyBWfwpQ');
     expect(extractYouTubeVideoId('https://youtu.be/Ij-OyBWfwpQ')).toBe('Ij-OyBWfwpQ');
+    expect(extractYouTubeVideoId('https://youtu.be/Ij-OyBWfwpQ?t=30')).toBe('Ij-OyBWfwpQ');
     expect(extractYouTubeVideoId('https://www.youtube.com/embed/Ij-OyBWfwpQ')).toBe('Ij-OyBWfwpQ');
     expect(extractYouTubeVideoId('https://music.youtube.com/watch?v=Ij-OyBWfwpQ&list=123')).toBe('Ij-OyBWfwpQ');
+    expect(extractYouTubeVideoId('https://www.youtube.com/shorts/Ij-OyBWfwpQ')).toBe('Ij-OyBWfwpQ');
+    expect(extractYouTubeVideoId('https://www.youtube.com/live/Ij-OyBWfwpQ')).toBe('Ij-OyBWfwpQ');
   });
 
-  it('extracts full YouTube URL from text', () => {
+  it('extracts full YouTube URL from text and markdown links', () => {
     expect(extractYouTubeUrl('Check this out: https://www.youtube.com/watch?v=Ij-OyBWfwpQ&start_radio=1')).toContain(
       'youtube.com/watch?v=Ij-OyBWfwpQ'
+    );
+    expect(extractYouTubeUrl('[Video Link](https://www.youtube.com/watch?v=Ij-OyBWfwpQ)')).toBe(
+      'https://www.youtube.com/watch?v=Ij-OyBWfwpQ'
     );
   });
 
@@ -102,5 +125,10 @@ describe('extractYouTubeVideoId and extractYouTubeUrl', () => {
     expect(extractYouTubeVideoId('https://google.com')).toBeNull();
     expect(extractYouTubeVideoId('')).toBeNull();
     expect(extractYouTubeUrl('https://google.com')).toBeNull();
+  });
+
+  it('fails open on unparseable YouTube URLs without crashing', () => {
+    expect(extractYouTubeVideoId('https://www.youtube.com/user/channelname')).toBeNull();
+    expect(extractYouTubeUrl('https://www.youtube.com/user/channelname')).toBe('https://www.youtube.com/user/channelname');
   });
 });

@@ -19,6 +19,7 @@ import {
   extractChannelTime,
   formatChannelDateDisplay,
   extractChannelTitleDisplay,
+  sortRunsheetChannels,
 } from '@/lib/runsheetDate';
 import {
   prefetchRunsheetDetails,
@@ -186,7 +187,8 @@ export function RunsheetLandingView({
   // Preload top 5 active runsheets on mount in the background
   useEffect(() => {
     if (channels && channels.length > 0) {
-      const topChannels = channels.slice(0, 5);
+      const sortedChannels = sortRunsheetChannels(channels);
+      const topChannels = sortedChannels.slice(0, 5);
       topChannels.forEach((ch) => {
         if (onPrefetchChannel) {
           onPrefetchChannel(ch.id);
@@ -215,10 +217,10 @@ export function RunsheetLandingView({
     return Array.from(set);
   }, [channels]);
 
-  // Filter channels by search and campus
+  // Filter channels by search and campus, sorted chronologically with time signatures
   const filteredChannels = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return channels.filter((c) => {
+    const matches = channels.filter((c) => {
       const campus = extractRunsheetCampus(c.name);
       if (selectedCampusFilter !== 'ALL' && campus !== selectedCampusFilter) {
         return false;
@@ -229,6 +231,7 @@ export function RunsheetLandingView({
       const dateStr = (formatChannelDateDisplay(c.name) || '').toLowerCase();
       return rawName.includes(q) || time.includes(q) || dateStr.includes(q);
     });
+    return sortRunsheetChannels(matches);
   }, [channels, searchQuery, selectedCampusFilter]);
 
   return (
