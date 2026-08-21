@@ -1,6 +1,22 @@
 import { SongDetails, SongSection, SheetMusicLink } from '@/types/Song';
 import { cleanSongTitle } from './songUtils';
 
+export function extractYouTubeVideoId(urlOrText: string): string | null {
+  if (!urlOrText) return null;
+  const match = urlOrText.match(
+    /(?:https?:\/\/)?(?:www\.|music\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i
+  );
+  return match ? match[1] : null;
+}
+
+export function extractYouTubeUrl(urlOrText: string): string | null {
+  if (!urlOrText) return null;
+  const match = urlOrText.match(
+    /(https?:\/\/(?:www\.|music\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)[a-zA-Z0-9_\-\=\&\?\%]+)/i
+  );
+  return match ? match[1] : null;
+}
+
 export function parseRockSongContent(item: {
   Id: number;
   Title: string;
@@ -57,6 +73,11 @@ export function parseRockSongContent(item: {
     }
   }
 
+  // Check top-level metadata for YouTube link
+  const metaYoutubeUrl = meta['youtube'] || meta['video'] || meta['youtube url'] || meta['reference video'] || meta['reference'];
+  const globalYoutubeVideoId = extractYouTubeVideoId(metaYoutubeUrl || rawContent);
+  const globalYoutubeUrl = extractYouTubeUrl(metaYoutubeUrl || rawContent);
+
   for (const block of sectionBlocks) {
     const trimmedBlock = block.trim();
     if (!trimmedBlock) continue;
@@ -78,25 +99,40 @@ export function parseRockSongContent(item: {
             }
           }
         } else {
+          const sectionVideoId = extractYouTubeVideoId(sectionText || sectionTitle);
+          const sectionYoutubeUrl = extractYouTubeUrl(sectionText || sectionTitle);
+
           sections.push({
             title: sectionTitle,
             content: sectionText,
             isChorus: sectionTitle.toLowerCase().includes('chorus'),
+            youtubeVideoId: sectionVideoId || undefined,
+            youtubeUrl: sectionYoutubeUrl || undefined,
           });
         }
       } else {
         const titleOnly = trimmedBlock.replace(/^##\s*/, '').trim();
+        const sectionVideoId = extractYouTubeVideoId(titleOnly);
+        const sectionYoutubeUrl = extractYouTubeUrl(titleOnly);
+
         sections.push({
           title: titleOnly,
           content: '',
           isChorus: titleOnly.toLowerCase().includes('chorus'),
+          youtubeVideoId: sectionVideoId || undefined,
+          youtubeUrl: sectionYoutubeUrl || undefined,
         });
       }
     } else {
+      const sectionVideoId = extractYouTubeVideoId(trimmedBlock);
+      const sectionYoutubeUrl = extractYouTubeUrl(trimmedBlock);
+
       sections.push({
         title: 'Lyrics',
         content: trimmedBlock,
         isChorus: false,
+        youtubeVideoId: sectionVideoId || undefined,
+        youtubeUrl: sectionYoutubeUrl || undefined,
       });
     }
   }
@@ -114,6 +150,8 @@ export function parseRockSongContent(item: {
     rockUrl,
     sheetMusicLinks,
     sections,
+    youtubeVideoId: globalYoutubeVideoId || undefined,
+    youtubeUrl: globalYoutubeUrl || undefined,
     rawContent,
   };
 }

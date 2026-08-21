@@ -1,4 +1,4 @@
-import { parseRockSongContent } from './songParser';
+import { parseRockSongContent, extractYouTubeVideoId, extractYouTubeUrl } from './songParser';
 
 describe('parseRockSongContent', () => {
   it('parses structured metadata and sections correctly', () => {
@@ -48,6 +48,27 @@ All my life You have been so, so good
     expect(result.sections[1].isChorus).toBe(true);
   });
 
+  it('detects and parses YouTube video URLs in sections', () => {
+    const mockContent = `## Verse 1
+Here is my song
+
+## YouTube
+https://www.youtube.com/watch?v=Ij-OyBWfwpQ&list=RDIj-OyBWfwpQ&start_radio=1
+`;
+
+    const result = parseRockSongContent({
+      Id: 303,
+      Title: 'Testify',
+      Content: mockContent,
+    });
+
+    expect(result.sections).toHaveLength(2);
+    expect(result.sections[1].title).toBe('YouTube');
+    expect(result.sections[1].youtubeVideoId).toBe('Ij-OyBWfwpQ');
+    expect(result.sections[1].youtubeUrl).toContain('youtube.com/watch?v=Ij-OyBWfwpQ');
+    expect(result.youtubeVideoId).toBe('Ij-OyBWfwpQ');
+  });
+
   it('handles empty or missing content gracefully', () => {
     const result = parseRockSongContent({
       Id: 202,
@@ -60,5 +81,26 @@ All my life You have been so, so good
     expect(result.artist).toBeUndefined();
     expect(result.sheetMusicLinks).toEqual([]);
     expect(result.sections).toEqual([]);
+  });
+});
+
+describe('extractYouTubeVideoId and extractYouTubeUrl', () => {
+  it('extracts video ID from standard youtube URLs', () => {
+    expect(extractYouTubeVideoId('https://www.youtube.com/watch?v=Ij-OyBWfwpQ')).toBe('Ij-OyBWfwpQ');
+    expect(extractYouTubeVideoId('https://youtu.be/Ij-OyBWfwpQ')).toBe('Ij-OyBWfwpQ');
+    expect(extractYouTubeVideoId('https://www.youtube.com/embed/Ij-OyBWfwpQ')).toBe('Ij-OyBWfwpQ');
+    expect(extractYouTubeVideoId('https://music.youtube.com/watch?v=Ij-OyBWfwpQ&list=123')).toBe('Ij-OyBWfwpQ');
+  });
+
+  it('extracts full YouTube URL from text', () => {
+    expect(extractYouTubeUrl('Check this out: https://www.youtube.com/watch?v=Ij-OyBWfwpQ&start_radio=1')).toContain(
+      'youtube.com/watch?v=Ij-OyBWfwpQ'
+    );
+  });
+
+  it('returns null for non-youtube URLs', () => {
+    expect(extractYouTubeVideoId('https://google.com')).toBeNull();
+    expect(extractYouTubeVideoId('')).toBeNull();
+    expect(extractYouTubeUrl('https://google.com')).toBeNull();
   });
 });

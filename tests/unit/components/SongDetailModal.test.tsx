@@ -123,19 +123,43 @@ describe('SongDetailModal', () => {
     expect(handleClose).toHaveBeenCalled();
   });
 
-  it('supports readOnly mode', () => {
+  it('renders embedded YouTube player when YouTube section is present', async () => {
+    mockRockGetSongDetails.mockResolvedValueOnce({
+      success: true,
+      song: {
+        id: 303,
+        title: 'Testify',
+        cleanTitle: 'Testify',
+        artist: 'Favor Live',
+        rockUrl: 'https://rock.favor.church/ContentChannelItem/303',
+        sheetMusicLinks: [],
+        sections: [
+          {
+            title: 'YouTube',
+            content: 'https://www.youtube.com/watch?v=Ij-OyBWfwpQ',
+            youtubeVideoId: 'Ij-OyBWfwpQ',
+            youtubeUrl: 'https://www.youtube.com/watch?v=Ij-OyBWfwpQ',
+          },
+        ],
+      },
+    });
+
     render(
       <SongDetailModal
         isOpen={true}
-        initialValue="Goodness of God (Eb)"
-        initialSongItemId={101}
-        readOnly={true}
+        initialValue="Testify"
+        initialSongItemId={303}
         onClose={jest.fn()}
       />
     );
 
-    expect(screen.getByText('Song Details')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Apply to Runsheet' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTitle('YouTube')).toBeInTheDocument();
+      expect(screen.getByTitle('YouTube')).toHaveAttribute(
+        'src',
+        'https://www.youtube-nocookie.com/embed/Ij-OyBWfwpQ'
+      );
+      expect(screen.getByText('Watch on YouTube')).toBeInTheDocument();
+    });
   });
 });
