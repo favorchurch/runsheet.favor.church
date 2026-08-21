@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from 'react-query';
 import {
   HiCalendarDays,
-  HiClock,
+  HiMapPin,
   HiArrowRight,
   HiPlus,
   HiMagnifyingGlass,
@@ -103,18 +103,18 @@ function RunsheetCard({ channel, accessScope, onSelect, onPrefetch }: RunsheetCa
           >
             {campusStyle.label}
           </span>
-          {timeDisplay && (
-            <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
-              <HiClock className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-              <span>{timeDisplay}</span>
+          {titleDisplay && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-0.5 text-xs font-semibold text-slate-700 max-w-[170px] truncate">
+              <HiMapPin className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+              <span className="truncate">{titleDisplay}</span>
             </span>
           )}
         </div>
 
-        {/* Schedule Title */}
+        {/* Schedule Time (Primary) & Details */}
         <div className="mt-3.5">
-          <h3 className="text-base font-bold tracking-tight text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-2">
-            {titleDisplay || channel.name}
+          <h3 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-1">
+            {timeDisplay || titleDisplay || channel.name}
           </h3>
           {dateDisplay && (
             <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-500">
