@@ -112,4 +112,50 @@ describe('RunsheetManager progressive loading', () => {
     await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-channel-id', '2'));
     expect(mockGetRunsheetDetails).toHaveBeenCalledWith(2);
   });
+
+  it('keeps stale runsheet content rendered and displays updating overlay when refetching in background', async () => {
+    let resolveSecondFetch: ((value: any) => void) | null = null;
+    let fetchCount = 0;
+
+    mockGetRunsheetDetails.mockImplementation((channelId) => {
+      fetchCount += 1;
+      if (fetchCount === 1) {
+        return Promise.resolve(details(channelId));
+      }
+      return new Promise((resolve) => {
+        resolveSecondFetch = resolve;
+      });
+    });
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RunsheetManager user={{ access: { runsheetCampuses: ['MNL'] } } as any} initialChannelId={1} />
+      </QueryClientProvider>,
+    );
+
+    // First load completes and displays the editor
+    await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toBeInTheDocument());
+
+    // Trigger a background refetch
+    queryClient.invalidateQueries(['runsheet', 'details']);
+
+    // Stale editor stays visible, and updating overlay is displayed
+    await waitFor(() => {
+      expect(screen.getByTestId('runsheet-editor')).toBeInTheDocument();
+      expect(screen.getByRole('status', { name: /updating runsheet/i })).toBeInTheDocument();
+      expect(screen.queryByTestId('runsheet-table-skeleton')).not.toBeInTheDocument();
+    });
+
+    // When background fetch resolves, overlay disappears and editor remains
+    if (resolveSecondFetch) {
+      (resolveSecondFetch as any)(details(1));
+    }
+
+    await waitFor(() => {
+      expect(screen.queryByRole('status', { name: /updating runsheet/i })).not.toBeInTheDocument();
+      expect(screen.getByTestId('runsheet-editor')).toBeInTheDocument();
+    });
+  });
 });
+

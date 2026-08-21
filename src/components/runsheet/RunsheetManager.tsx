@@ -537,32 +537,52 @@ export function RunsheetManager({
           )}
 
           {/* Runsheet HTML Table Editor */}
-          {loading ? (
+          {loading && !runsheetData ? (
             <RunsheetTableSkeleton />
           ) : runsheetData && !showCreateForm ? (
-            <RunsheetTableEditor
-              key={runsheetData.channelId}
-              channelId={runsheetData.channelId}
-              channelName={runsheetData.name}
-              columns={runsheetData.columns}
-              initialItems={runsheetData.items}
-              initialStartTime={
-                runsheetData.startTime ||
-                (runsheetData.subtitle && /^\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)$/i.test(runsheetData.subtitle.trim())
-                  ? runsheetData.subtitle.trim()
-                  : parseStartTimeFromRunsheetName(runsheetData.name))
-              }
-              initialSubtitle={runsheetData.subtitle}
-              stickyTopOffset={appHeaderHeight}
-              readOnly={!isEditMode}
-              runsheetCampuses={user?.access?.runsheetCampuses}
-              onCreated={handleRunsheetCreated}
-              onDeleted={() => handleRunsheetDeleted(runsheetData.channelId)}
-              onDirtyChange={(dirty) => setIsEditorDirty(dirty)}
-              onSaveRef={(saveFn) => (saveRunsheetRef.current = saveFn)}
-              onOptimisticSave={handleOptimisticSave}
-              onSaveSettled={handleSaveSettled}
-            />
+            <div className="relative">
+              <RunsheetTableEditor
+                key={runsheetData.channelId}
+                channelId={runsheetData.channelId}
+                channelName={runsheetData.name}
+                columns={runsheetData.columns}
+                initialItems={runsheetData.items}
+                initialStartTime={
+                  runsheetData.startTime ||
+                  (runsheetData.subtitle && /^\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)$/i.test(runsheetData.subtitle.trim())
+                    ? runsheetData.subtitle.trim()
+                    : parseStartTimeFromRunsheetName(runsheetData.name))
+                }
+                initialSubtitle={runsheetData.subtitle}
+                stickyTopOffset={appHeaderHeight}
+                readOnly={!isEditMode}
+                runsheetCampuses={user?.access?.runsheetCampuses}
+                onCreated={handleRunsheetCreated}
+                onDeleted={() => handleRunsheetDeleted(runsheetData.channelId)}
+                onDirtyChange={(dirty) => setIsEditorDirty(dirty)}
+                onSaveRef={(saveFn) => (saveRunsheetRef.current = saveFn)}
+                onOptimisticSave={handleOptimisticSave}
+                onSaveSettled={handleSaveSettled}
+              />
+              {detailsQuery.isFetching && (
+                <div
+                  role="status"
+                  aria-label="Updating runsheet"
+                  aria-live="polite"
+                  className="absolute inset-0 z-30 flex items-center justify-center bg-white/60 backdrop-blur-[1px] rounded-xl transition-all duration-200"
+                >
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-900/90 text-white shadow-lg backdrop-blur text-xs font-semibold">
+                    <span
+                      aria-hidden="true"
+                      className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
+                    />
+                    <span>Updating runsheet data…</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : loading ? (
+            <RunsheetTableSkeleton />
           ) : null}
         </>
       )}
