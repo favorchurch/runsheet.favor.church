@@ -213,7 +213,7 @@ export function RunsheetTableEditor({
 
   const [isDirty, setIsDirty] = useState(() => !!initialTemplate);
   const [mobileViewMode, setMobileViewMode] = useState<'cards' | 'grid'>(() => {
-    if (typeof window === 'undefined') return 'grid';
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'grid';
     // Touch devices (phones, iPads, tablets) get Cards; laptops/desktops with mouse get Table
     return window.matchMedia('(pointer: coarse)').matches ? 'cards' : 'grid';
   });

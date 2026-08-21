@@ -18,6 +18,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
 import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
+import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
 
 jest.mock('next/navigation', () => ({ useRouter: () => ({ push: jest.fn(), replace: jest.fn() }) }));
 jest.mock('@auth0/nextjs-auth0', () => ({ getSession: jest.fn().mockResolvedValue(null) }));
@@ -26,7 +27,11 @@ jest.mock('@/auth0-hooks/server/assertAuthenticated');
 jest.mock('@/auth0-hooks/server/getServerSession');
 jest.mock('@/auth0-hooks/server/getRockSession', () => ({ getRockSession: jest.fn().mockResolvedValue({}) }));
 jest.mock('@/server-actions/rockGetAvailableRunsheetChannels');
-jest.mock('@/lib/permissions', () => ({ canUserEditRunsheet: jest.fn().mockReturnValue(true) }));
+jest.mock('@/server-actions/rockGetRunsheetDetails');
+jest.mock('@/lib/permissions', () => ({
+  canUserEditRunsheet: jest.fn().mockReturnValue(true),
+  canUserAccessRunsheet: jest.fn().mockReturnValue(true),
+}));
 jest.mock('@/components/runsheet/RunsheetCompareView', () => ({
   RunsheetCompareView: ({ channelIds, availableChannels, onSelectionChange, onClose }: {
     channelIds: number[];
@@ -56,6 +61,18 @@ describe('RunsheetManager compare entry point', () => {
         { id: 1, name: 'MNL Crowne // August 16, 2026 // 9AM', time: '9AM' },
         { id: 2, name: 'MNL Crowne // August 16, 2026 // 11:30AM', time: '11:30AM' },
       ],
+    });
+    (rockGetRunsheetDetails as jest.Mock).mockResolvedValue({
+      success: true,
+      data: {
+        channelId: 1,
+        name: 'MNL Crowne // August 16, 2026 // 9AM',
+        subtitle: '',
+        startTime: '9AM',
+        contentChannelTypeId: 13,
+        columns: [],
+        items: [],
+      },
     });
   });
 
