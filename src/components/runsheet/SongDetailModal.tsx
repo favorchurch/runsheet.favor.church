@@ -48,18 +48,23 @@ export function SongDetailModal({
   const [songDetails, setSongDetails] = useState<SongDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'lyrics'>('details');
+  const [showSidebar, setShowSidebar] = useState<boolean>(!initialSongItemId && !initialQueryValue);
 
   const modalRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Focus search input when modal opens
+  // Reset sidebar state and focus search input if sidebar is open
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => {
-        searchInputRef.current?.focus();
-      }, 50);
+      const shouldOpenSidebar = !initialSongItemId && !initialQueryValue;
+      setShowSidebar(shouldOpenSidebar);
+      if (shouldOpenSidebar) {
+        setTimeout(() => {
+          searchInputRef.current?.focus();
+        }, 50);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, initialSongItemId, initialQueryValue]);
 
   // Load details for initial song on open
   const loadSongDetails = useCallback(async (id?: number | null, title?: string) => {
@@ -185,6 +190,24 @@ export function SongDetailModal({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowSidebar((prev) => !prev);
+                if (!showSidebar) {
+                  setTimeout(() => searchInputRef.current?.focus(), 50);
+                }
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer shadow-2xs ${
+                showSidebar
+                  ? 'bg-slate-900 text-white hover:bg-black'
+                  : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+              }`}
+            >
+              <HiMagnifyingGlass className="h-3.5 w-3.5" />
+              <span>{showSidebar ? 'Hide Song List' : 'See Songs'}</span>
+            </button>
+
             {songDetails?.rockUrl && (
               <a
                 href={songDetails.rockUrl}
@@ -207,83 +230,85 @@ export function SongDetailModal({
           </div>
         </div>
 
-        {/* Modal Body: Two-Pane Layout */}
-        <div className="grid grid-cols-1 md:grid-cols-12 min-h-0 flex-1 overflow-hidden divide-y md:divide-y-0 md:divide-x divide-slate-200">
-          {/* Left Pane: Search & Song Picker */}
-          <div className="md:col-span-5 flex flex-col p-4 bg-slate-50/40 min-h-0 overflow-hidden">
-            {/* Search Input */}
-            <div className="relative mb-3">
-              <HiMagnifyingGlass className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setSelectedSongTitle(e.target.value);
-                  setSelectedSongId(null);
-                }}
-                placeholder="Search Rock songs..."
-                className="w-full rounded-xl border border-slate-300 bg-white pl-9 pr-8 py-2 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-800 shadow-2xs"
-              />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery('');
-                    setSelectedSongTitle('');
+        {/* Modal Body: Two-Pane / Collapsible Layout */}
+        <div className={`grid grid-cols-1 ${showSidebar ? 'md:grid-cols-12' : 'grid-cols-1'} min-h-0 flex-1 overflow-hidden divide-y md:divide-y-0 ${showSidebar ? 'md:divide-x' : ''} divide-slate-200`}>
+          {/* Left Pane: Search & Song Picker (Collapsible) */}
+          {showSidebar && (
+            <div className="md:col-span-5 flex flex-col p-4 bg-slate-50/40 min-h-0 overflow-hidden animate-in fade-in duration-100">
+              {/* Search Input */}
+              <div className="relative mb-3">
+                <HiMagnifyingGlass className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setSelectedSongTitle(e.target.value);
                     setSelectedSongId(null);
-                    setSongDetails(null);
                   }}
-                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-                >
-                  <HiXMark className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
+                  placeholder="Search Rock songs..."
+                  className="w-full rounded-xl border border-slate-300 bg-white pl-9 pr-8 py-2 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-800 shadow-2xs"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery('');
+                      setSelectedSongTitle('');
+                      setSelectedSongId(null);
+                      setSongDetails(null);
+                    }}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <HiXMark className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
 
-            {/* Song Results List */}
-            <div className="flex-1 overflow-y-auto space-y-1 pr-1 min-h-[140px] md:min-h-0">
-              {loadingSearch ? (
-                <div className="flex items-center justify-center py-8 text-xs font-medium text-slate-400">
-                  <span className="inline-block animate-spin mr-2">⏳</span> Searching Rock songs...
-                </div>
-              ) : songs.length > 0 ? (
-                songs.map((song) => {
-                  const isSelected =
-                    selectedSongId === song.id ||
-                    selectedSongTitle.toLowerCase() === song.cleanTitle.toLowerCase();
+              {/* Song Results List */}
+              <div className="flex-1 overflow-y-auto space-y-1 pr-1 min-h-[140px] md:min-h-0">
+                {loadingSearch ? (
+                  <div className="flex items-center justify-center py-8 text-xs font-medium text-slate-400">
+                    <span className="inline-block animate-spin mr-2">⏳</span> Searching Rock songs...
+                  </div>
+                ) : songs.length > 0 ? (
+                  songs.map((song) => {
+                    const isSelected =
+                      selectedSongId === song.id ||
+                      selectedSongTitle.toLowerCase() === song.cleanTitle.toLowerCase();
 
-                  return (
-                    <button
-                      key={song.id}
-                      type="button"
-                      onClick={() => handlePickSong(song)}
-                      className={`w-full rounded-xl px-3 py-2 text-left text-xs font-medium transition-all cursor-pointer flex items-center justify-between ${
-                        isSelected
-                          ? 'bg-slate-900 text-white font-semibold shadow-xs'
-                          : 'bg-white text-slate-800 border border-slate-200/60 hover:bg-slate-100/80 hover:border-slate-300'
-                      }`}
-                    >
-                      <span className="truncate pr-2">{song.cleanTitle}</span>
-                      {isSelected && <HiCheck className="h-4 w-4 shrink-0 text-white" />}
-                    </button>
-                  );
-                })
-              ) : (
-                <div className="py-8 text-center px-4">
-                  <p className="text-xs font-medium text-slate-500">
-                    {query.trim()
-                      ? `No songs found matching "${query}"`
-                      : 'Type above to search Rock RMS songs'}
-                  </p>
-                </div>
-              )}
+                    return (
+                      <button
+                        key={song.id}
+                        type="button"
+                        onClick={() => handlePickSong(song)}
+                        className={`w-full rounded-xl px-3 py-2 text-left text-xs font-medium transition-all cursor-pointer flex items-center justify-between ${
+                          isSelected
+                            ? 'bg-slate-900 text-white font-semibold shadow-xs'
+                            : 'bg-white text-slate-800 border border-slate-200/60 hover:bg-slate-100/80 hover:border-slate-300'
+                        }`}
+                      >
+                        <span className="truncate pr-2">{song.cleanTitle}</span>
+                        {isSelected && <HiCheck className="h-4 w-4 shrink-0 text-white" />}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="py-8 text-center px-4">
+                    <p className="text-xs font-medium text-slate-500">
+                      {query.trim()
+                        ? `No songs found matching "${query}"`
+                        : 'Type above to search Rock RMS songs'}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Right Pane: Rich Song Details View */}
-          <div className="md:col-span-7 flex flex-col min-h-0 overflow-hidden bg-white p-4 sm:p-6">
+          <div className={`${showSidebar ? 'md:col-span-7' : 'col-span-12'} flex flex-col min-h-0 overflow-hidden bg-white p-4 sm:p-6`}>
             {loadingDetails ? (
               <div className="flex flex-col items-center justify-center py-16 text-xs font-medium text-slate-400 space-y-2">
                 <span className="inline-block animate-spin text-2xl">⏳</span>
@@ -291,7 +316,7 @@ export function SongDetailModal({
               </div>
             ) : songDetails ? (
               <div className="flex-1 overflow-y-auto space-y-5 pr-1">
-                {/* Song Header & Rock Link */}
+                {/* Song Header & Actions */}
                 <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
                   <div>
                     <h3 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">
@@ -303,15 +328,30 @@ export function SongDetailModal({
                       </p>
                     )}
                   </div>
-                  <a
-                    href={songDetails.rockUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg transition-colors shrink-0"
-                  >
-                    <span>Rock RMS</span>
-                    <HiArrowTopRightOnSquare className="h-3 w-3" />
-                  </a>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!showSidebar && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSidebar(true);
+                          setTimeout(() => searchInputRef.current?.focus(), 50);
+                        }}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <HiMagnifyingGlass className="h-3 w-3 text-slate-500" />
+                        <span>Change Song</span>
+                      </button>
+                    )}
+                    <a
+                      href={songDetails.rockUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg transition-colors shrink-0"
+                    >
+                      <span>Rock RMS</span>
+                      <HiArrowTopRightOnSquare className="h-3 w-3" />
+                    </a>
+                  </div>
                 </div>
 
                 {/* Metadata Badges */}
@@ -431,16 +471,29 @@ export function SongDetailModal({
                 )}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
-                <div className="h-10 w-10 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
-                  <HiMusicalNote className="h-5 w-5" />
+              <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
+                <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
+                  <HiMusicalNote className="h-6 w-6" />
                 </div>
                 <div className="max-w-xs">
-                  <h4 className="text-xs font-bold text-slate-800">No Song Selected</h4>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Select a song from the search results on the left to inspect its key, BPM, chord charts, and lyrics.
+                  <h4 className="text-sm font-bold text-slate-800">No Song Selected</h4>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Select a song from the library to inspect its key, BPM, chord charts, and lyrics.
                   </p>
                 </div>
+                {!showSidebar && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSidebar(true);
+                      setTimeout(() => searchInputRef.current?.focus(), 50);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-black transition-all cursor-pointer"
+                  >
+                    <HiMagnifyingGlass className="h-4 w-4" />
+                    <span>See Songs & Search</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
