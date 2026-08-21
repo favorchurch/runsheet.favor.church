@@ -34,7 +34,6 @@ import { getRockContentChannelOptions, ContentChannelCategoryOption } from '@/se
 import { rockGetScheduleOptions, ScheduleOption } from '@/server-actions/rockGetScheduleOptions';
 import { rockDuplicateServiceRunsheet } from '@/server-actions/rockDuplicateServiceRunsheet';
 import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetDetails } from '@/types/Runsheet';
-import { cleanSongTitle } from '@/lib/songUtils';
 import { resolveSiblings, type SiblingChannel } from '@/lib/runsheetSiblings';
 import { matchRows, type MatchResult } from '@/lib/runsheetMatch';
 import { buildPropagationPlan, type PropagationPlan, type CandidateCellChange } from '@/lib/runsheetPropagate';
@@ -53,6 +52,7 @@ import { CELL_ATTRIBUTE, RichTextCell } from './RichTextCell';
 import { RichTextContent } from './RichTextContent';
 import { RichTextToolbar } from './RichTextToolbar';
 import { SongSearchDropdown } from './SongSearchDropdown';
+import { SongDetailModal } from './SongDetailModal';
 import { EventTeamRosterCard, ensureRosterItems } from './EventTeamRosterCard';
 
 function extractCategoryCampus(catName: string): RunsheetCampusCode | null {
@@ -483,6 +483,14 @@ export function RunsheetTableEditor({
     });
     return map;
   });
+
+  const [songModalState, setSongModalState] = useState<{
+    isOpen: boolean;
+    rowId?: number | string | null;
+    initialValue?: string;
+    initialSongItemId?: number | null;
+    readOnly?: boolean;
+  }>({ isOpen: false });
 
   const saveSnapshot = React.useCallback(() => {
     setHistory((prev) => [
@@ -1395,9 +1403,20 @@ export function RunsheetTableEditor({
             <SongSearchDropdown
               initialValue={value ?? ''}
               initialSongItemId={songItemId}
-              onSelectSong={(formattedSong, selectedSongId) =>
-                handleSelectSong(rowId, formattedSong, selectedSongId)
-              }
+              onSelectSong={(formattedSong, selectedSongId) => {
+                handleSelectSong(rowId, formattedSong, selectedSongId);
+                if (!forceEdit) closeCell(rowId, key);
+              }}
+              onOpenFullModal={() => {
+                if (!forceEdit) closeCell(rowId, key);
+                setSongModalState({
+                  isOpen: true,
+                  rowId,
+                  initialValue: value ?? '',
+                  initialSongItemId: songItemId,
+                  readOnly,
+                });
+              }}
               onClose={() => !forceEdit && closeCell(rowId, key)}
             />
           </div>
@@ -1479,24 +1498,25 @@ export function RunsheetTableEditor({
         >
           {isMusicCell && value ? (
             <div className="flex items-center gap-1 font-semibold text-slate-950">
-              <a
-                href={
-                  songItemId
-                    ? // `0` is the "flagged, no song linked" sentinel — falsy, so it
-                    // correctly falls through to the title-based lookup below.
-                    `/api/song?id=${songItemId}`
-                    : `/api/song?title=${encodeURIComponent(cleanSongTitle(value))}`
-                }
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
                 onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSongModalState({
+                    isOpen: true,
+                    rowId,
+                    initialValue: value ?? '',
+                    initialSongItemId: songItemId,
+                    readOnly,
+                  });
+                }}
                 className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-slate-200/90 text-slate-800 hover:bg-slate-300 hover:text-slate-950 transition-colors cursor-pointer"
-                title="Click to view song JSON details in new tab"
+                title="Click to view song details and charts"
                 aria-label="View song details"
               >
                 <HiMusicalNote className="h-2.5 w-2.5" />
-              </a>
+              </button>
               <RichTextContent value={value ?? ''} />
             </div>
           ) : isPersonField && value ? (
@@ -2244,21 +2264,24 @@ export function RunsheetTableEditor({
 
                   <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                     {isMusic && (
-                      <a
-                        href={
-                          item.songItemId
-                            ? `/api/song?id=${item.songItemId}`
-                            : `/api/song?title=${encodeURIComponent(cleanSongTitle(currentTitleVal))}`
-                        }
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSongModalState({
+                            isOpen: true,
+                            rowId: item.id,
+                            initialValue: currentTitleVal,
+                            initialSongItemId: item.songItemId ?? null,
+                            readOnly,
+                          });
+                        }}
                         className="inline-flex h-5 w-5 items-center justify-center rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 transition-colors cursor-pointer"
                         title="Linked Song (Click to view details)"
                         aria-label="Linked Song"
                       >
                         <HiMusicalNote className="h-3 w-3 text-slate-700" />
-                      </a>
+                      </button>
                     )}
 
                     {!readOnly && (
@@ -2428,14 +2451,29 @@ export function RunsheetTableEditor({
                 </div>
                 <div className="mt-0.5">
                   {musicCellMap[String(processedRows[editingCardIndex].id)] ? (
-                    <SongSearchDropdown
-                      initialValue={processedRows[editingCardIndex].attributeValues?.ACTIVITYTITLE || processedRows[editingCardIndex].title || ''}
-                      initialSongItemId={processedRows[editingCardIndex].songItemId ?? null}
-                      onSelectSong={(formattedSong, selectedSongId) =>
-                        handleSelectSong(processedRows[editingCardIndex].id, formattedSong, selectedSongId)
-                      }
-                      onClose={() => {}}
-                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSongModalState({
+                          isOpen: true,
+                          rowId: processedRows[editingCardIndex].id,
+                          initialValue: cardTitleDraft || processedRows[editingCardIndex].attributeValues?.ACTIVITYTITLE || processedRows[editingCardIndex].title || '',
+                          initialSongItemId: processedRows[editingCardIndex].songItemId ?? null,
+                          readOnly,
+                        });
+                      }}
+                      className="w-full flex items-center justify-between rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-100 hover:border-slate-400 transition-all shadow-2xs cursor-pointer touch-manipulation text-left"
+                    >
+                      <div className="flex items-center gap-2 truncate pr-2">
+                        <HiMusicalNote className="h-4 w-4 text-slate-700 shrink-0" />
+                        <span className="truncate">
+                          {htmlToPlainText(cardTitleDraft || processedRows[editingCardIndex].attributeValues?.ACTIVITYTITLE || processedRows[editingCardIndex].title || '') || 'Click to Select Song & Key...'}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded-lg shadow-2xs shrink-0">
+                        Select Song ↗
+                      </span>
+                    </button>
                   ) : (
                     <input
                       type="text"
@@ -2519,6 +2557,21 @@ export function RunsheetTableEditor({
         </div>,
         document.body
       )}
+      <SongDetailModal
+        isOpen={songModalState.isOpen}
+        initialValue={songModalState.initialValue}
+        initialSongItemId={songModalState.initialSongItemId}
+        readOnly={songModalState.readOnly}
+        onSelectSong={(formattedSong, songItemId) => {
+          if (songModalState.rowId != null) {
+            handleSelectSong(songModalState.rowId, formattedSong, songItemId);
+            if (editingCardIndex !== null && processedRows[editingCardIndex]?.id === songModalState.rowId) {
+              setCardTitleDraft(formattedSong);
+            }
+          }
+        }}
+        onClose={() => setSongModalState({ isOpen: false })}
+      />
     </div>
   );
 }
