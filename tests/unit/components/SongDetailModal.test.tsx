@@ -47,7 +47,7 @@ describe('SongDetailModal', () => {
     });
   });
 
-  it('renders modal with search input and details when opened', async () => {
+  it('renders modal with search hidden by default when opening an existing song, and toggles on click', async () => {
     render(
       <SongDetailModal
         isOpen={true}
@@ -59,13 +59,33 @@ describe('SongDetailModal', () => {
     );
 
     expect(screen.getByText('Select Song & Key')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Search Rock songs...')).toBeInTheDocument();
+    // Search is initially hidden when existing song is provided
+    expect(screen.queryByPlaceholderText('Search Rock songs...')).not.toBeInTheDocument();
+    expect(screen.getByText('See Songs')).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText('Goodness of God')).toBeInTheDocument();
       expect(screen.getByText('🎤 Bethel Music')).toBeInTheDocument();
       expect(screen.getByText('Chord Chart (PDF)')).toBeInTheDocument();
     });
+
+    // Click "See Songs" to reveal search sidebar
+    fireEvent.click(screen.getByText('See Songs'));
+    expect(screen.getByPlaceholderText('Search Rock songs...')).toBeInTheDocument();
+    expect(screen.getByText('Hide Song List')).toBeInTheDocument();
+  });
+
+  it('opens search sidebar by default when no song is selected', async () => {
+    render(
+      <SongDetailModal
+        isOpen={true}
+        initialValue=""
+        onSelectSong={jest.fn()}
+        onClose={jest.fn()}
+      />
+    );
+
+    expect(screen.getByPlaceholderText('Search Rock songs...')).toBeInTheDocument();
   });
 
   it('calls onSelectSong with chosen song and key on confirm', async () => {
