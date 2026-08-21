@@ -153,18 +153,18 @@ export function EventTeamRosterCard({
   const assignedCount = VITAL_ROLES.filter((r) => !!getRosterValue(r)).length;
 
   return (
-    <div className="w-full max-w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50/80 p-2.5 sm:p-3 shadow-xs mb-3 overflow-hidden">
+    <div className="w-full max-w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50/80 p-2 sm:p-2.5 shadow-xs mb-2 overflow-hidden">
       {/* Card Header & Toggle */}
-      <div className={`flex items-center justify-between gap-2 ${isCollapsed ? '' : 'border-b border-slate-200 pb-2 mb-2'}`}>
+      <div className={`flex items-center justify-between gap-2 ${isCollapsed ? '' : 'border-b border-slate-200 pb-1.5 mb-1.5'}`}>
         <div
           onClick={() => setIsCollapsed((prev) => !prev)}
           className="flex items-center gap-2 cursor-pointer select-none flex-1"
         >
-          <div className="flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-lg bg-slate-900 text-white shadow-xs shrink-0">
-            <HiUserGroup className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          <div className="flex h-6 w-6 sm:h-6.5 sm:w-6.5 items-center justify-center rounded-lg bg-slate-900 text-white shadow-xs shrink-0">
+            <HiUserGroup className="h-3.5 w-3.5" />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <h3 className="text-xs sm:text-sm font-bold text-slate-900 leading-tight">Event Team Roster</h3>
               <span className="rounded bg-slate-200 px-1.5 py-0.2 text-[10px] font-bold text-slate-800">
                 {assignedCount}/{VITAL_ROLES.length} Assigned
@@ -179,7 +179,7 @@ export function EventTeamRosterCard({
         <button
           type="button"
           onClick={() => setIsCollapsed((prev) => !prev)}
-          className="flex items-center gap-1 rounded-md bg-white border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer shrink-0 touch-manipulation"
+          className="flex items-center gap-1 rounded-md bg-white border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer shrink-0 touch-manipulation"
         >
           <span>{isCollapsed ? 'Show Roster' : 'Hide Roster'}</span>
           {isCollapsed ? <HiChevronDown className="h-3.5 w-3.5" /> : <HiChevronUp className="h-3.5 w-3.5" />}
@@ -188,10 +188,10 @@ export function EventTeamRosterCard({
 
       {/* Roster Body (collapsible) */}
       {!isCollapsed && (
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           {/* Vital Event Roles Grid */}
           <div>
-            <span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-700 mb-1.5">
+            <span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-700 mb-1">
               Service Roles
             </span>
             <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-5 gap-1.5 text-xs">
@@ -214,7 +214,7 @@ export function EventTeamRosterCard({
                         });
                       }
                     }}
-                    className={`relative flex flex-col justify-between rounded-lg border p-2 sm:p-2 min-h-[48px] transition-all cursor-pointer touch-manipulation select-none ${
+                    className={`relative flex flex-col justify-between rounded-lg border p-1.5 sm:p-2 min-h-[44px] transition-all cursor-pointer touch-manipulation select-none ${
                       isEditing
                         ? 'border-slate-900 bg-slate-100 ring-2 ring-slate-800 shadow-sm z-30'
                         : 'border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-100/70 hover:shadow-2xs active:bg-slate-100'

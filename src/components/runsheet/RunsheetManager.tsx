@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from 'react-query';
+import { HiArrowsRightLeft, HiEye, HiPencilSquare } from 'react-icons/hi2';
 import { canUserEditRunsheet } from '@/lib/permissions';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
 import { extractChannelTime } from '@/lib/runsheetDate';
@@ -352,28 +353,28 @@ export function RunsheetManager({
       {/* Sticky App Header — always visible, even while editing */}
       <header
         ref={appHeaderRef}
-        className="sticky top-0 z-40 -mx-3 sm:-mx-6 mb-2 bg-white/95 backdrop-blur border-b border-slate-200/80 px-4 sm:px-6 py-3 flex items-center justify-between shadow-xs"
+        className="sticky top-0 z-40 -mx-3 sm:-mx-6 mb-2 bg-white/95 backdrop-blur border-b border-slate-200/80 px-3 sm:px-6 py-2 sm:py-2.5 flex items-center justify-between shadow-xs"
       >
         <button
           type="button"
           onClick={handleGoHome}
-          className="flex items-center gap-2.5 cursor-pointer rounded-lg hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="flex items-center gap-2 cursor-pointer rounded-lg hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           title="Back to home"
         >
           <Image
             src="/img/favorlogo-black-on-transparent.png"
             alt="Favor Church logo"
-            width={32}
-            height={32}
-            className="h-8 w-8 shrink-0"
+            width={30}
+            height={30}
+            className="h-7 w-7 sm:h-8 sm:w-8 shrink-0"
             priority
           />
-          <span className="text-sm sm:text-base font-extrabold tracking-tight text-slate-900 leading-tight">
+          <span className="text-xs sm:text-base font-extrabold tracking-tight text-slate-900 leading-tight">
             Favor Runsheet Platform
           </span>
         </button>
 
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex items-center gap-1.5 sm:gap-2 text-xs">
           {user && (
             <span className="hidden sm:inline-flex items-center gap-1.5 rounded-md bg-slate-100 border border-slate-200 px-2.5 py-1 font-semibold text-slate-800">
               <span className="text-slate-500">👤</span>
@@ -382,7 +383,7 @@ export function RunsheetManager({
           )}
           <a
             href="/api/auth/logout"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 font-semibold text-white hover:bg-slate-700 transition-colors"
+            className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 sm:px-3 py-1 sm:py-1.5 font-semibold text-white hover:bg-slate-700 transition-colors"
           >
             Log out
           </a>
@@ -390,14 +391,14 @@ export function RunsheetManager({
       </header>
 
       {/* Top Controls Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center gap-2.5 sm:gap-4 w-full md:w-auto min-w-0">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 p-2.5 sm:p-3 rounded-xl border border-slate-200 bg-white shadow-xs">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full md:w-auto min-w-0">
           <label className="text-xs sm:text-sm font-semibold text-slate-800 whitespace-nowrap">
             Select Runsheet:
           </label>
-          <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
             <select
-              className="w-full sm:w-auto min-w-0 max-w-full md:max-w-md text-ellipsis rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100"
+              className="w-full sm:w-auto min-w-0 max-w-full md:max-w-md text-ellipsis rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs sm:text-sm font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100"
               value={selectedChannelId || ''}
               disabled={channelsLoading}
               onChange={(e) => {
@@ -416,30 +417,6 @@ export function RunsheetManager({
                 </option>
               ))}
             </select>
-            {canEdit && availableChannels.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-600">
-                <span className="font-semibold text-slate-700">Compare selection:</span>
-                {availableChannels.map((c) => (
-                  <label key={c.id} className="flex items-center gap-1 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      aria-label="Select for compare"
-                      checked={compareSelection.has(c.id)}
-                      onChange={() => {
-                        setCompareSelection((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(c.id)) next.delete(c.id);
-                          else if (next.size < 4) next.add(c.id);
-                          return next;
-                        });
-                      }}
-                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                    />
-                    <span>{c.name.split('//').pop()?.trim() || c.name}</span>
-                  </label>
-                ))}
-              </div>
-            )}
           </div>
 
           {canEdit && (
@@ -448,46 +425,63 @@ export function RunsheetManager({
                 type="checkbox"
                 checked={showArchived}
                 onChange={(e) => setShowArchived(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
               />
               <span>Show Archived</span>
             </label>
           )}
 
-          {canEdit && (
+          {canEdit && availableChannels.length > 1 && (
             <button
               type="button"
-              disabled={compareSelection.size < 2}
-              onClick={() => setCompareViewOpen(true)}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+              onClick={() => {
+                if (compareSelection.size === 0 && selectedChannelId) {
+                  const other = availableChannels.find((c) => c.id !== selectedChannelId);
+                  if (other) {
+                    setCompareSelection(new Set([selectedChannelId, other.id]));
+                  } else {
+                    setCompareSelection(new Set(availableChannels.slice(0, 2).map((c) => c.id)));
+                  }
+                } else if (compareSelection.size === 0 && availableChannels.length >= 2) {
+                  setCompareSelection(new Set(availableChannels.slice(0, 2).map((c) => c.id)));
+                }
+                setCompareViewOpen(true);
+              }}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer shadow-xs"
+              title="Compare runsheets side-by-side"
             >
-              Compare ({compareSelection.size})
+              <HiArrowsRightLeft className="h-3.5 w-3.5 text-slate-600" />
+              <span>Compare</span>
             </button>
           )}
 
           {canEdit && (
-            <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-50 p-0.5">
+            <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
               <button
                 type="button"
+                aria-label="View mode"
+                title="View mode"
                 aria-pressed={editorMode === 'view'}
                 onClick={() => handleModeChange('view')}
-                className={`rounded-md px-2.5 py-1.5 text-xs font-semibold cursor-pointer ${editorMode === 'view'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${editorMode === 'view'
+                  ? 'bg-white text-slate-900 shadow-xs font-bold'
+                  : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                View
+                <HiEye className="h-4 w-4" />
               </button>
               <button
                 type="button"
+                aria-label="Edit mode"
+                title="Edit mode"
                 aria-pressed={editorMode === 'edit'}
                 onClick={() => handleModeChange('edit')}
-                className={`rounded-md px-2.5 py-1.5 text-xs font-semibold cursor-pointer ${editorMode === 'edit'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${editorMode === 'edit'
+                  ? 'bg-white text-slate-900 shadow-xs font-bold'
+                  : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                Edit
+                <HiPencilSquare className="h-4 w-4" />
               </button>
             </div>
           )}
@@ -496,7 +490,7 @@ export function RunsheetManager({
         {canEdit && (
           <button
             onClick={handleToggleCreateForm}
-            className="w-full md:w-auto shrink-0 whitespace-nowrap rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer min-h-[38px]"
+            className="w-full md:w-auto shrink-0 whitespace-nowrap rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer min-h-[34px]"
           >
             {showCreateForm ? 'Close Form' : '+ Create New Runsheet'}
           </button>
@@ -610,6 +604,8 @@ export function RunsheetManager({
       {compareViewOpen && (
         <RunsheetCompareView
           channelIds={Array.from(compareSelection)}
+          availableChannels={availableChannels}
+          onSelectionChange={(next) => setCompareSelection(new Set(next))}
           readOnly={!isEditMode}
           onSaveSettled={handleSaveSettled}
           onClose={() => setCompareViewOpen(false)}

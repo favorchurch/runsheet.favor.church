@@ -28,8 +28,17 @@ jest.mock('@/auth0-hooks/server/getRockSession', () => ({ getRockSession: jest.f
 jest.mock('@/server-actions/rockGetAvailableRunsheetChannels');
 jest.mock('@/lib/permissions', () => ({ canUserEditRunsheet: jest.fn().mockReturnValue(true) }));
 jest.mock('@/components/runsheet/RunsheetCompareView', () => ({
-  RunsheetCompareView: ({ channelIds, onClose }: { channelIds: number[]; onClose: () => void }) => (
-    <div data-testid="compare-view">{channelIds.join(',')}<button onClick={onClose}>close</button></div>
+  RunsheetCompareView: ({ channelIds, availableChannels, onSelectionChange, onClose }: {
+    channelIds: number[];
+    availableChannels?: any[];
+    onSelectionChange?: (ids: number[]) => void;
+    onClose: () => void;
+  }) => (
+    <div data-testid="compare-view" data-channels={availableChannels?.map((c) => c.id).join(',')}>
+      {channelIds.join(',')}
+      <button onClick={() => onSelectionChange?.([1, 2])}>select-all</button>
+      <button onClick={onClose}>close</button>
+    </div>
   ),
 }));
 
@@ -50,20 +59,20 @@ describe('RunsheetManager compare entry point', () => {
     });
   });
 
-  it('enables Compare only once 2 or more channels are checked, and opens the compare view with those ids', async () => {
-    renderManager(<RunsheetManager />);
-    await waitFor(() => expect(screen.getAllByText(/9AM/)[0]).toBeInTheDocument());
+  it('opens the compare view with available runsheets when Compare is clicked and binds selection', async () => {
+    renderManager(<RunsheetManager user={{ email: 'editor@favor.church', roles: ['Runsheet.Editor'] } as any} initialChannelId={1} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /compare/i })).toBeInTheDocument());
 
     const compareButton = screen.getByRole('button', { name: /compare/i });
-    expect(compareButton).toBeDisabled();
-
-    fireEvent.click(screen.getAllByRole('checkbox', { name: /select for compare/i })[0]);
-    expect(compareButton).toBeDisabled();
-
-    fireEvent.click(screen.getAllByRole('checkbox', { name: /select for compare/i })[1]);
     expect(compareButton).toBeEnabled();
 
     fireEvent.click(compareButton);
+    const compareView = screen.getByTestId('compare-view');
+    expect(compareView).toBeInTheDocument();
+    expect(compareView).toHaveAttribute('data-channels', '1,2');
+
+    // Test selection change callback
+    fireEvent.click(screen.getByRole('button', { name: 'select-all' }));
     expect(screen.getByTestId('compare-view')).toHaveTextContent('1,2');
   });
 });

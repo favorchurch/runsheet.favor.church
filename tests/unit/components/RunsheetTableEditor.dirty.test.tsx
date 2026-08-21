@@ -265,7 +265,7 @@ describe('RunsheetTableEditor dirty state', () => {
     );
 
     fireEvent.click(screen.getByText('Add Row'));
-    fireEvent.click(screen.getByText('Cards'));
+    fireEvent.click(screen.getByRole('button', { name: /card view/i }));
 
     const moveUpButtons = screen.getAllByTitle('Move up');
     expect(moveUpButtons).toHaveLength(3);
@@ -297,7 +297,7 @@ describe('RunsheetTableEditor dirty state', () => {
       />
     );
 
-    fireEvent.click(screen.getByText('Cards'));
+    fireEvent.click(screen.getByRole('button', { name: /card view/i }));
 
     // Move "Welcome & Announcements" (index 0) down past "Praise & Worship".
     const moveDownButtons = screen.getAllByTitle('Move down');
@@ -333,7 +333,7 @@ describe('RunsheetTableEditor dirty state', () => {
       />
     );
 
-    fireEvent.click(screen.getByText('Cards'));
+    fireEvent.click(screen.getByRole('button', { name: /card view/i }));
     fireEvent.click(screen.getAllByText('Edit Card')[0]);
 
     const durationInput = screen.getByPlaceholderText('00:05:00');
@@ -424,7 +424,7 @@ describe('RunsheetTableEditor dirty state', () => {
       />
     );
 
-    fireEvent.click(screen.getByText('Cards'));
+    fireEvent.click(screen.getByRole('button', { name: /card view/i }));
     fireEvent.click(screen.getAllByText('Edit Card')[0]);
 
     const titleInput = screen.getByPlaceholderText('Enter activity title...') as HTMLInputElement;
@@ -455,7 +455,7 @@ describe('RunsheetTableEditor dirty state', () => {
       />
     );
 
-    fireEvent.click(screen.getByText('Cards'));
+    fireEvent.click(screen.getByRole('button', { name: /card view/i }));
     fireEvent.click(screen.getAllByText('Edit Card')[0]);
 
     const descriptionInput = screen.getByPlaceholderText('Enter description...') as HTMLTextAreaElement;
