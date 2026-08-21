@@ -183,13 +183,14 @@ describe('RunsheetLandingView', () => {
     expect(renderedIds).toEqual([205, 202, 204, 203, 201]);
   });
 
-  it('renders the time prominently as the primary heading and location in the badge', () => {
+  it('renders the time prominently with inline campus pill and location in the top badge', () => {
     renderLandingView({
       channels: [{ id: 301, name: 'MNL Crowne // August 9, 2026 // 10AM', time: '10AM' }],
     });
 
     const heading = screen.getByRole('heading', { level: 3, name: '10AM' });
     expect(heading).toBeInTheDocument();
+    expect(screen.getByText('MNL')).toBeInTheDocument();
     expect(screen.getByText('MNL Crowne')).toBeInTheDocument();
   });
 });
