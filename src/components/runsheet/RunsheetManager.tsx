@@ -22,6 +22,7 @@ import { CreateRunsheetForm } from './CreateRunsheetForm';
 import { RunsheetTableEditor } from './RunsheetTableEditor';
 import { RunsheetCompareView } from './RunsheetCompareView';
 import { RunsheetTableSkeleton } from './RunsheetTableSkeleton';
+import { RunsheetLandingView } from './RunsheetLandingView';
 
 interface RunsheetManagerProps {
   user?: AuthUser;
@@ -390,121 +391,178 @@ export function RunsheetManager({
         </div>
       </header>
 
-      {/* Top Controls Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 p-2.5 sm:p-3 rounded-xl border border-slate-200 bg-white shadow-xs">
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full md:w-auto min-w-0">
-          <label className="text-xs sm:text-sm font-semibold text-slate-800 whitespace-nowrap">
-            Select Runsheet:
-          </label>
-          <div className="flex items-center gap-2">
-            <select
-              className="w-full sm:w-auto min-w-0 max-w-full md:max-w-md text-ellipsis rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs sm:text-sm font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100"
-              value={selectedChannelId || ''}
-              disabled={channelsLoading}
-              onChange={(e) => {
-                const val = Number(e.target.value);
-                if (val) handleSelectChannel(val);
-              }}
-            >
-              {(!selectedChannelId || channelsLoading) && (
-                <option value="" disabled hidden>
-                  {channelsLoading ? 'Loading runsheets...' : 'Select a Runsheet...'}
-                </option>
+      {/* Landing Page View when no runsheet is selected and not in create form */}
+      {!selectedChannelId && !showCreateForm ? (
+        <RunsheetLandingView
+          channels={availableChannels}
+          isLoading={channelsLoading}
+          canEdit={canEdit}
+          showArchived={showArchived}
+          onToggleShowArchived={(show) => setShowArchived(show)}
+          onSelectChannel={handleSelectChannel}
+          onCreateNew={canEdit ? handleToggleCreateForm : undefined}
+          accessScope={accessScope}
+        />
+      ) : (
+        <>
+          {/* Top Controls Bar */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 p-2.5 sm:p-3 rounded-xl border border-slate-200 bg-white shadow-xs">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full md:w-auto min-w-0">
+              <label className="text-xs sm:text-sm font-semibold text-slate-800 whitespace-nowrap">
+                Select Runsheet:
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  className="w-full sm:w-auto min-w-0 max-w-full md:max-w-md text-ellipsis rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs sm:text-sm font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100"
+                  value={selectedChannelId || ''}
+                  disabled={channelsLoading}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (val) handleSelectChannel(val);
+                  }}
+                >
+                  {(!selectedChannelId || channelsLoading) && (
+                    <option value="" disabled hidden>
+                      {channelsLoading ? 'Loading runsheets...' : 'Select a Runsheet...'}
+                    </option>
+                  )}
+                  {availableChannels.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {canEdit && (
+                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={showArchived}
+                    onChange={(e) => setShowArchived(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <span>Show Archived</span>
+                </label>
               )}
-              {availableChannels.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+
+              {canEdit && availableChannels.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (compareSelection.size === 0 && selectedChannelId) {
+                      const other = availableChannels.find((c) => c.id !== selectedChannelId);
+                      if (other) {
+                        setCompareSelection(new Set([selectedChannelId, other.id]));
+                      } else {
+                        setCompareSelection(new Set(availableChannels.slice(0, 2).map((c) => c.id)));
+                      }
+                    } else if (compareSelection.size === 0 && availableChannels.length >= 2) {
+                      setCompareSelection(new Set(availableChannels.slice(0, 2).map((c) => c.id)));
+                    }
+                    setCompareViewOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer shadow-xs"
+                  title="Compare runsheets side-by-side"
+                >
+                  <HiArrowsRightLeft className="h-3.5 w-3.5 text-slate-600" />
+                  <span>Compare</span>
+                </button>
+              )}
+
+              {canEdit && (
+                <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
+                  <button
+                    type="button"
+                    aria-label="View mode"
+                    title="View mode"
+                    aria-pressed={editorMode === 'view'}
+                    onClick={() => handleModeChange('view')}
+                    className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${editorMode === 'view'
+                      ? 'bg-white text-slate-900 shadow-xs font-bold'
+                      : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <HiEye className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Edit mode"
+                    title="Edit mode"
+                    aria-pressed={editorMode === 'edit'}
+                    onClick={() => handleModeChange('edit')}
+                    className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${editorMode === 'edit'
+                      ? 'bg-white text-slate-900 shadow-xs font-bold'
+                      : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <HiPencilSquare className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {canEdit && (
+              <button
+                onClick={handleToggleCreateForm}
+                className="w-full md:w-auto shrink-0 whitespace-nowrap rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer min-h-[34px]"
+              >
+                {showCreateForm ? 'Close Form' : '+ Create New Runsheet'}
+              </button>
+            )}
           </div>
 
-          {canEdit && (
-            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none whitespace-nowrap">
-              <input
-                type="checkbox"
-                checked={showArchived}
-                onChange={(e) => setShowArchived(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+          {canEdit && showCreateForm && (
+            <div className="mx-auto max-w-lg">
+              <CreateRunsheetForm
+                runsheetCampuses={user?.access?.runsheetCampuses}
+                onCreated={handleRunsheetCreated}
+                onCancel={handleToggleCreateForm}
               />
-              <span>Show Archived</span>
-            </label>
-          )}
-
-          {canEdit && availableChannels.length > 1 && (
-            <button
-              type="button"
-              onClick={() => {
-                if (compareSelection.size === 0 && selectedChannelId) {
-                  const other = availableChannels.find((c) => c.id !== selectedChannelId);
-                  if (other) {
-                    setCompareSelection(new Set([selectedChannelId, other.id]));
-                  } else {
-                    setCompareSelection(new Set(availableChannels.slice(0, 2).map((c) => c.id)));
-                  }
-                } else if (compareSelection.size === 0 && availableChannels.length >= 2) {
-                  setCompareSelection(new Set(availableChannels.slice(0, 2).map((c) => c.id)));
-                }
-                setCompareViewOpen(true);
-              }}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer shadow-xs"
-              title="Compare runsheets side-by-side"
-            >
-              <HiArrowsRightLeft className="h-3.5 w-3.5 text-slate-600" />
-              <span>Compare</span>
-            </button>
-          )}
-
-          {canEdit && (
-            <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
-              <button
-                type="button"
-                aria-label="View mode"
-                title="View mode"
-                aria-pressed={editorMode === 'view'}
-                onClick={() => handleModeChange('view')}
-                className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${editorMode === 'view'
-                  ? 'bg-white text-slate-900 shadow-xs font-bold'
-                  : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <HiEye className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                aria-label="Edit mode"
-                title="Edit mode"
-                aria-pressed={editorMode === 'edit'}
-                onClick={() => handleModeChange('edit')}
-                className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${editorMode === 'edit'
-                  ? 'bg-white text-slate-900 shadow-xs font-bold'
-                  : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <HiPencilSquare className="h-4 w-4" />
-              </button>
             </div>
           )}
-        </div>
 
-        {canEdit && (
-          <button
-            onClick={handleToggleCreateForm}
-            className="w-full md:w-auto shrink-0 whitespace-nowrap rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer min-h-[34px]"
-          >
-            {showCreateForm ? 'Close Form' : '+ Create New Runsheet'}
-          </button>
-        )}
-      </div>
+          {((detailsQuery.isFetching && selectedChannelId !== null) || (channelsQuery.isFetching && !channelsLoading)) && (
+            <span
+              role="status"
+              aria-label="Fetching runsheet"
+              aria-live="polite"
+              className="inline-flex items-center gap-2 text-xs font-medium text-slate-600"
+            >
+              <span aria-hidden="true" className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
+              Updating runsheet data…
+            </span>
+          )}
 
-      {canEdit && showCreateForm && (
-        <div className="mx-auto max-w-lg">
-          <CreateRunsheetForm
-            runsheetCampuses={user?.access?.runsheetCampuses}
-            onCreated={handleRunsheetCreated}
-            onCancel={handleToggleCreateForm}
-          />
-        </div>
+          {/* Runsheet HTML Table Editor */}
+          {loading ? (
+            <RunsheetTableSkeleton />
+          ) : runsheetData && !showCreateForm ? (
+            <RunsheetTableEditor
+              key={runsheetData.channelId}
+              channelId={runsheetData.channelId}
+              channelName={runsheetData.name}
+              columns={runsheetData.columns}
+              initialItems={runsheetData.items}
+              initialStartTime={
+                runsheetData.startTime ||
+                (runsheetData.subtitle && /^\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)$/i.test(runsheetData.subtitle.trim())
+                  ? runsheetData.subtitle.trim()
+                  : parseStartTimeFromRunsheetName(runsheetData.name))
+              }
+              initialSubtitle={runsheetData.subtitle}
+              stickyTopOffset={appHeaderHeight}
+              readOnly={!isEditMode}
+              runsheetCampuses={user?.access?.runsheetCampuses}
+              onCreated={handleRunsheetCreated}
+              onDeleted={() => handleRunsheetDeleted(runsheetData.channelId)}
+              onDirtyChange={(dirty) => setIsEditorDirty(dirty)}
+              onSaveRef={(saveFn) => (saveRunsheetRef.current = saveFn)}
+              onOptimisticSave={handleOptimisticSave}
+              onSaveSettled={handleSaveSettled}
+            />
+          ) : null}
+        </>
       )}
 
       {/* Unsaved Changes Confirmation Modal with 3 Options */}
@@ -549,57 +607,6 @@ export function RunsheetManager({
           </div>
         </div>
       )}
-
-      {((detailsQuery.isFetching && selectedChannelId !== null) || (channelsQuery.isFetching && !channelsLoading)) && (
-        <span
-          role="status"
-          aria-label="Fetching runsheet"
-          aria-live="polite"
-          className="inline-flex items-center gap-2 text-xs font-medium text-slate-600"
-        >
-          <span aria-hidden="true" className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
-          Updating runsheet data…
-        </span>
-      )}
-
-      {/* Runsheet HTML Table Editor */}
-      {loading ? (
-        <RunsheetTableSkeleton />
-      ) : !runsheetData && !showCreateForm && canEdit ? (
-        <div className="mx-auto max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-slate-900">Getting Started</h2>
-          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-700">
-            <li>Pick an existing runsheet from the <span className="font-semibold">Select Runsheet</span> dropdown above, or click <span className="font-semibold">+ Create New Runsheet</span>.</li>
-            <li>Click any cell to edit it — use the toolbar above the grid for formatting.</li>
-            <li>Click the music icon on a segment to mark it as a song and link it to Rock.</li>
-            <li>Click <span className="font-semibold">Save Runsheet</span> when you&apos;re done — nothing is saved until you do.</li>
-          </ol>
-        </div>
-      ) : runsheetData && !showCreateForm ? (
-        <RunsheetTableEditor
-          key={runsheetData.channelId}
-          channelId={runsheetData.channelId}
-          channelName={runsheetData.name}
-          columns={runsheetData.columns}
-          initialItems={runsheetData.items}
-          initialStartTime={
-            runsheetData.startTime ||
-            (runsheetData.subtitle && /^\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)$/i.test(runsheetData.subtitle.trim())
-              ? runsheetData.subtitle.trim()
-              : parseStartTimeFromRunsheetName(runsheetData.name))
-          }
-          initialSubtitle={runsheetData.subtitle}
-          stickyTopOffset={appHeaderHeight}
-          readOnly={!isEditMode}
-          runsheetCampuses={user?.access?.runsheetCampuses}
-          onCreated={handleRunsheetCreated}
-          onDeleted={() => handleRunsheetDeleted(runsheetData.channelId)}
-          onDirtyChange={(dirty) => setIsEditorDirty(dirty)}
-          onSaveRef={(saveFn) => (saveRunsheetRef.current = saveFn)}
-          onOptimisticSave={handleOptimisticSave}
-          onSaveSettled={handleSaveSettled}
-        />
-      ) : null}
 
       {compareViewOpen && (
         <RunsheetCompareView
