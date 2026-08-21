@@ -88,10 +88,12 @@ describe('RunsheetManager progressive loading', () => {
     mockGetRunsheetDetails.mockImplementation(async (channelId) => details(channelId));
 
     renderManager();
+    await waitFor(() => expect(screen.getByTestId('runsheet-card-1')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('runsheet-card-1'));
+    await waitFor(() => expect(mockGetRunsheetDetails).toHaveBeenCalledWith(1));
     await waitFor(() => expect(screen.getByRole('combobox')).not.toBeDisabled());
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '1' } });
-    await waitFor(() => expect(mockGetRunsheetDetails).toHaveBeenCalledWith(1));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: '2' } });
     await waitFor(() => expect(mockGetRunsheetDetails).toHaveBeenCalledWith(2));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: '1' } });

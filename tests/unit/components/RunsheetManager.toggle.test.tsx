@@ -99,8 +99,9 @@ describe('RunsheetManager View/Edit toggle', () => {
     mockRockDelete.mockResolvedValue(null);
   });
 
-  it('defaults editors to View mode', () => {
-    renderManager(<RunsheetManager user={editorUser} />);
+  it('defaults editors to View mode', async () => {
+    renderManager(<RunsheetManager user={editorUser} initialChannelId={1} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /view mode/i })).toBeInTheDocument());
 
     expect(screen.getByRole('button', { name: /view mode/i })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: /edit mode/i })).toHaveAttribute('aria-pressed', 'false');

@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from 'react-query';
+import { useQuery, type QueryClient } from 'react-query';
 import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
 import {
@@ -95,5 +95,18 @@ export function useRunsheetDetails(channelId: number | null, accessScope: string
       ...queryBehavior,
       enabled: channelId !== null,
     },
+  );
+}
+
+export async function prefetchRunsheetDetails(
+  queryClient: QueryClient,
+  channelId: number,
+  accessScope: string = 'anonymous',
+) {
+  if (!channelId) return;
+  return queryClient.prefetchQuery(
+    runsheetQueryKeys.details(channelId, accessScope),
+    async () => throwOnFailedRead(await rockGetRunsheetDetails(channelId)),
+    queryBehavior,
   );
 }

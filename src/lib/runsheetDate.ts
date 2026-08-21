@@ -50,3 +50,30 @@ export function extractChannelTime(name: string): string {
   const lastSegment = name.split('//').pop()?.trim() ?? '';
   return lastSegment;
 }
+
+/** Formats a runsheet channel's date into a clean display string, e.g. `"Sun, Aug 9, 2026"`. */
+export function formatChannelDateDisplay(name: string): string {
+  const dt = extractChannelDate(name);
+  if (dt) {
+    return dt.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+  const parts = name.split('//').map((p) => p.trim());
+  if (parts.length >= 3) {
+    return parts[1];
+  }
+  return '';
+}
+
+/** Extracts the title / location prefix from a runsheet name, e.g. `"MNL Crowne // Aug 9 // 10AM"` → `"MNL Crowne"`. */
+export function extractChannelTitleDisplay(name: string): string {
+  const parts = name.split('//').map((p) => p.trim());
+  if (parts.length >= 2) {
+    return parts[0];
+  }
+  return name;
+}
