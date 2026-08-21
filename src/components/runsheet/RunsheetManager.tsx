@@ -568,10 +568,9 @@ export function RunsheetManager({
                 <div
                   role="status"
                   aria-label="Updating runsheet"
-                  aria-live="polite"
-                  className="absolute inset-0 z-30 flex items-center justify-center bg-white/60 backdrop-blur-[1px] rounded-xl transition-all duration-200"
+                  className="absolute inset-0 z-45 flex items-start justify-center pt-24 bg-white/60 backdrop-blur-[1px] rounded-xl transition-all duration-200"
                 >
-                  <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-900/90 text-white shadow-lg backdrop-blur text-xs font-semibold">
+                  <div className="sticky top-28 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-900/90 text-white shadow-lg backdrop-blur text-xs font-semibold">
                     <span
                       aria-hidden="true"
                       className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
