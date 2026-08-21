@@ -45,10 +45,61 @@ export function extractChannelDate(name: string): Date | null {
   return null;
 }
 
+/** Converts a time string (e.g. "10AM", "11:30AM", "5PM", "9:00 AM", "17:30") into a 24-hour sortable signature "HH:MM:SS". */
+export function parseTimeToSortSignature(timeStr: string): string {
+  if (!timeStr) return '';
+  const trimmed = timeStr.trim();
+
+  // 1. Matches 12-hour: 9AM, 9:30AM, 09:30 AM, 11:30 PM, 5pm, 10:00:00 AM, 10:00AM
+  const m12 = trimmed.match(/^(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (m12) {
+    let hours = parseInt(m12[1], 10);
+    const minutes = parseInt(m12[2] || '0', 10);
+    const seconds = parseInt(m12[3] || '0', 10);
+    const period = m12[4].toUpperCase();
+
+    if (period === 'PM' && hours < 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  // 2. Matches 24-hour formats: 14:30, 09:00, 17:30:00
+  const m24 = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (m24) {
+    const hours = parseInt(m24[1], 10);
+    const minutes = parseInt(m24[2], 10);
+    const seconds = parseInt(m24[3] || '0', 10);
+    if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60 && seconds >= 0 && seconds < 60) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+  }
+
+  // 3. Fallback for bare AM / PM
+  if (/^AM$/i.test(trimmed)) return '09:00:00';
+  if (/^PM$/i.test(trimmed)) return '17:00:00';
+
+  return '';
+}
+
 /** Reads the trailing `{time}` segment off a channel name, e.g. `"...// 11:30AM"` → `"11:30AM"`. */
 export function extractChannelTime(name: string): string {
-  const lastSegment = name.split('//').pop()?.trim() ?? '';
-  return lastSegment;
+  if (!name) return '';
+  const parts = name.split('//').map((p) => p.trim());
+  if (parts.length >= 3) {
+    return parts[parts.length - 1];
+  }
+  if (parts.length === 2) {
+    const secondPart = parts[1];
+    if (parseTimeToSortSignature(secondPart) && !extractChannelDate(secondPart)) {
+      return secondPart;
+    }
+    return '';
+  }
+  if (parts.length === 1 && parseTimeToSortSignature(parts[0])) {
+    return parts[0];
+  }
+  return '';
 }
 
 /** Formats a runsheet channel's date into a clean display string, e.g. `"Sun, Aug 9, 2026"`. */
@@ -69,6 +120,17 @@ export function formatChannelDateDisplay(name: string): string {
   return '';
 }
 
+/** Formats a runsheet channel's date into a sortable ISO string `YYYY-MM-DD`. */
+export function formatChannelDateSortKey(nameOrDate: string | Date | null): string {
+  if (!nameOrDate) return '9999-99-99';
+  const dt = typeof nameOrDate === 'string' ? extractChannelDate(nameOrDate) : nameOrDate;
+  if (!dt || isNaN(dt.getTime())) return '9999-99-99';
+  const y = String(dt.getFullYear()).padStart(4, '0');
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const d = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 /** Extracts the title / location prefix from a runsheet name, e.g. `"MNL Crowne // Aug 9 // 10AM"` → `"MNL Crowne"`. */
 export function extractChannelTitleDisplay(name: string): string {
   const parts = name.split('//').map((p) => p.trim());
@@ -76,4 +138,32 @@ export function extractChannelTitleDisplay(name: string): string {
     return parts[0];
   }
   return name;
+}
+
+/** Builds a sortable signature string combining date, time signature, and channel title. */
+export function getRunsheetSortSignature(channel: { name: string; time?: string }): string {
+  const dateKey = formatChannelDateSortKey(channel.name);
+  const timeRaw = channel.time || extractChannelTime(channel.name);
+  const timeSig = parseTimeToSortSignature(timeRaw) || '99:99:99';
+  const title = extractChannelTitleDisplay(channel.name).toLowerCase();
+  return `${dateKey}_${timeSig}_${title}`;
+}
+
+/** Compares two runsheet channels by date, sortable time signature, title, and ID. */
+export function compareRunsheetChannels(
+  a: { id?: number; name: string; time?: string },
+  b: { id?: number; name: string; time?: string }
+): number {
+  const sigA = getRunsheetSortSignature(a);
+  const sigB = getRunsheetSortSignature(b);
+  const cmp = sigA.localeCompare(sigB);
+  if (cmp !== 0) return cmp;
+  return (a.id ?? 0) - (b.id ?? 0);
+}
+
+/** Returns a new sorted array of runsheet channels ordered chronologically by date and time signature. */
+export function sortRunsheetChannels<T extends { id?: number; name: string; time?: string }>(
+  channels: T[]
+): T[] {
+  return [...channels].sort(compareRunsheetChannels);
 }

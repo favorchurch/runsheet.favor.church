@@ -8,15 +8,15 @@
 
 const DEFAULT_START_MINUTES = 8 * 60;
 
-/** Parses a `9:00:00 AM`-style clock string into minutes past midnight. */
+/** Parses a `9:00:00 AM` or `10AM`-style clock string into minutes past midnight. */
 export function parseTimeToMinutes(timeStr: string): number {
   if (!timeStr) return DEFAULT_START_MINUTES;
 
-  const match = timeStr.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
+  const match = timeStr.match(/(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*(AM|PM)?/i);
   if (!match) return DEFAULT_START_MINUTES;
 
   let hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
+  const minutes = parseInt(match[2] || '0', 10);
   const period = match[4]?.toUpperCase();
 
   if (period === 'PM' && hours < 12) hours += 12;
