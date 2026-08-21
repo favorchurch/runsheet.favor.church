@@ -3,7 +3,7 @@
 import type { Editor } from '@tiptap/react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiChevronDown, HiChevronUp, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiTableCells, HiTrash } from 'react-icons/hi2';
+import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiChevronDown, HiChevronUp, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiRectangleStack, HiTableCells, HiTrash } from 'react-icons/hi2';
 
 import { htmlToPlainText } from '@/lib/richText';
 
@@ -674,6 +674,15 @@ export function RunsheetTableEditor({
 
     return { processedRows: processed, timeSpanMap: spans, parentBlockMap: parents };
   }, [items, startTime]);
+
+  const totalDurationFormatted = useMemo(() => {
+    let totalMinutes = 0;
+    for (const item of items) {
+      if (item.title && item.title.startsWith('Roster:')) continue;
+      totalMinutes += Number(item.duration) || 0;
+    }
+    return formatDurationToHMS(totalMinutes);
+  }, [items]);
 
   useEffect(() => {
     if (editingCardIndex === null) return;
@@ -1452,7 +1461,7 @@ export function RunsheetTableEditor({
         )}
 
         <div
-          className={`relative min-h-[28px] w-full h-full flex flex-col justify-center px-2.5 py-1 text-[11px] leading-normal text-slate-900 transition-all ${isMusicCell
+          className={`relative min-h-[24px] w-full h-full flex flex-col justify-center px-2 py-0.5 text-[11px] leading-normal text-slate-900 transition-all ${isMusicCell
               ? 'bg-slate-100/90 border-2 border-slate-400/80 text-slate-950 font-bold ring-1 ring-slate-300 shadow-xs pr-7'
               : readOnly
                 ? 'cursor-default'
@@ -1469,7 +1478,7 @@ export function RunsheetTableEditor({
           }
         >
           {isMusicCell && value ? (
-            <div className="flex items-center gap-1.5 font-semibold text-slate-950">
+            <div className="flex items-center gap-1 font-semibold text-slate-950">
               <a
                 href={
                   songItemId
@@ -1482,10 +1491,11 @@ export function RunsheetTableEditor({
                 rel="noopener noreferrer"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center rounded bg-slate-200/90 px-1.5 py-0.5 text-[10px] font-bold text-slate-900 uppercase tracking-wider hover:bg-slate-300 hover:text-slate-950 transition-colors cursor-pointer"
+                className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-slate-200/90 text-slate-800 hover:bg-slate-300 hover:text-slate-950 transition-colors cursor-pointer"
                 title="Click to view song JSON details in new tab"
+                aria-label="View song details"
               >
-                Song
+                <HiMusicalNote className="h-2.5 w-2.5" />
               </a>
               <RichTextContent value={value ?? ''} />
             </div>
@@ -1516,16 +1526,16 @@ export function RunsheetTableEditor({
   }
 
   return (
-    <div className="flex w-full max-w-full min-w-0 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
+    <div className="flex w-full max-w-full min-w-0 flex-col gap-2.5 rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:p-3">
       {/* Sticky Locked Header & Toolbar Container — sits just below the app's own sticky nav header (stickyTopOffset), not also at top:0, or the two would overlap. */}
       <div
         style={{ top: stickyTopOffset }}
-        className="sticky z-40 bg-white/95 backdrop-blur border-b border-slate-300 p-2 sm:p-2.5 shadow-sm space-y-1.5 rounded-t-xl -mx-2.5 -mt-2.5 sm:-mx-4 sm:-mt-4"
+        className="sticky z-40 bg-white/95 backdrop-blur border-b border-slate-300 p-1.5 sm:p-2 shadow-xs space-y-1 rounded-t-xl -mx-2 -mt-2 sm:-mx-3 sm:-mt-3"
       >
-        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+        <div className="flex flex-col justify-between gap-1.5 sm:flex-row sm:items-center">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold leading-tight text-slate-900">{channelName}</h2>
+              <h2 className="text-sm sm:text-base font-bold leading-tight text-slate-900">{channelName}</h2>
               {readOnly && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.2 text-[10px] font-bold text-amber-900 border border-amber-300">
                   <HiLockClosed className="h-3 w-3 text-amber-700" />
@@ -1533,8 +1543,8 @@ export function RunsheetTableEditor({
                 </span>
               )}
             </div>
-            <div className="mt-1 flex flex-col items-start gap-0.5">
-              <div className="inline-grid grid-cols-1 items-center rounded-md border border-slate-800 bg-slate-900 px-2.5 py-1 text-xs sm:text-sm font-medium text-white shadow-xs transition-all focus-within:border-slate-600 focus-within:ring-2 focus-within:ring-slate-700">
+            <div className="mt-0.5 flex flex-col items-start gap-0.5">
+              <div className="inline-grid grid-cols-1 items-center rounded-md border border-slate-800 bg-slate-900 px-2 py-0.5 text-xs sm:text-sm font-medium text-white shadow-xs transition-all focus-within:border-slate-600 focus-within:ring-2 focus-within:ring-slate-700">
                 <span className="col-start-1 row-start-1 text-xs sm:text-sm font-medium text-transparent select-none whitespace-pre pointer-events-none px-0.5">
                   {subtitle || 'Sunday Service'}
                 </span>
@@ -1559,7 +1569,7 @@ export function RunsheetTableEditor({
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
+            <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
               <label className="whitespace-nowrap text-[11px] font-semibold text-slate-700" htmlFor="runsheet-start-time">
                 Start:
               </label>
@@ -1577,26 +1587,32 @@ export function RunsheetTableEditor({
               />
             </div>
 
-            <div className="flex items-center rounded-md border border-slate-300 bg-slate-100 p-0.5">
+            <div role="group" aria-label="Layout view mode" className="flex items-center rounded-md border border-slate-300 bg-slate-100 p-0.5">
               <button
                 type="button"
+                aria-label="Card view"
+                title="Card view"
+                aria-pressed={mobileViewMode === 'cards'}
                 onClick={() => setMobileViewMode('cards')}
-                className={`px-2 py-0.5 text-[11px] font-semibold rounded transition-all cursor-pointer ${mobileViewMode === 'cards'
+                className={`flex items-center justify-center rounded p-1 transition-all cursor-pointer ${mobileViewMode === 'cards'
                     ? 'bg-white text-slate-900 shadow-xs font-bold'
                     : 'text-slate-600 hover:text-slate-900'
                   }`}
               >
-                Cards
+                <HiRectangleStack className="h-3.5 w-3.5" />
               </button>
               <button
                 type="button"
+                aria-label="Table view"
+                title="Table view"
+                aria-pressed={mobileViewMode === 'grid'}
                 onClick={() => setMobileViewMode('grid')}
-                className={`px-2 py-0.5 text-[11px] font-semibold rounded transition-all cursor-pointer ${mobileViewMode === 'grid'
+                className={`flex items-center justify-center rounded p-1 transition-all cursor-pointer ${mobileViewMode === 'grid'
                     ? 'bg-white text-slate-900 shadow-xs font-bold'
                     : 'text-slate-600 hover:text-slate-900'
                   }`}
               >
-                Table
+                <HiTableCells className="h-3.5 w-3.5" />
               </button>
             </div>
 
@@ -1999,23 +2015,20 @@ export function RunsheetTableEditor({
             <thead className="sticky top-0 z-30 bg-slate-900 text-white shadow-xs">
               <tr className="border-b-2 border-slate-950 text-left font-semibold text-white text-xs tracking-normal">
                 {!readOnly && <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center" style={{ width: '28px', minWidth: '28px' }} />}
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
                   Start
                 </th>
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
-                  End
-                </th>
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
                   Duration
                 </th>
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '140px', minWidth: '110px' }}>
+                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '140px', minWidth: '110px' }}>
                   Activity Title
                 </th>
 
                 {dynamicAttrCols.map((col) => (
                   <th
                     key={col.id}
-                    className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold select-none overflow-hidden text-ellipsis text-slate-100"
+                    className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold select-none overflow-hidden text-ellipsis text-slate-100"
                     style={getColumnStyle(col.key, col.name)}
                     title={col.name}
                   >
@@ -2056,18 +2069,9 @@ export function RunsheetTableEditor({
                     {spanInfo ? (
                       <td
                         rowSpan={spanInfo.count}
-                        className="select-none border-b border-r border-slate-300 bg-slate-50/90 p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px]"
+                        className="select-none border-b border-r border-slate-300 bg-slate-50/90 p-0.5 sm:p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px]"
                       >
                         {spanInfo.startStr}
-                      </td>
-                    ) : null}
-
-                    {spanInfo ? (
-                      <td
-                        rowSpan={spanInfo.count}
-                        className="select-none border-b border-r border-slate-300 bg-slate-50/90 p-1 text-center align-middle font-mono font-semibold text-slate-700 text-[11px]"
-                      >
-                        {spanInfo.endStr}
                       </td>
                     ) : null}
 
@@ -2088,7 +2092,7 @@ export function RunsheetTableEditor({
                             setDurationDrafts(drafts);
                             setEditingDurationBlockIndex(parentBlockIndex);
                           }}
-                          className={`select-none border-b border-r border-slate-300 bg-slate-50/90 p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px] ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-slate-200/60'
+                          className={`select-none border-b border-r border-slate-300 bg-slate-50/90 p-0.5 sm:p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px] ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-slate-200/60'
                             }`}
                           title={readOnly ? 'Duration' : 'Click to edit duration'}
                         >
@@ -2191,13 +2195,29 @@ export function RunsheetTableEditor({
                 );
               })}
             </tbody>
+            {processedRows.length > 0 && (
+              <tfoot className="border-t-2 border-slate-300 bg-slate-100/95 text-slate-800 text-[11px] font-semibold">
+                <tr>
+                  {!readOnly && <td className="p-0.5 border-r border-slate-200 bg-slate-100" />}
+                  <td className="border-r border-slate-300 p-1 text-center font-mono font-bold text-slate-900 bg-slate-200/80">
+                    {processedRows[processedRows.length - 1]?.calculatedEnd}
+                  </td>
+                  <td className="border-r border-slate-300 p-1 text-center font-mono font-bold text-slate-700 bg-slate-200/50">
+                    {totalDurationFormatted}
+                  </td>
+                  <td colSpan={1 + dynamicAttrCols.length + (readOnly ? 0 : 1)} className="p-1 px-3 text-left font-medium text-slate-700 bg-slate-100">
+                    <span className="font-bold text-slate-900">Service End:</span> {processedRows[processedRows.length - 1]?.calculatedEnd} &bull; <span className="text-slate-600">Total Duration: {totalDurationFormatted}</span>
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
 
       {/* Card Timeline View for phones and iPads/tablets (when mobileViewMode === 'cards') */}
       {mobileViewMode === 'cards' && (
-        <div className="flex flex-col gap-2.5">
+        <div className="flex flex-col gap-1.5">
           {processedRows.map((item, index) => {
             const currentTitleVal = item.attributeValues?.ACTIVITYTITLE || item.title || '';
             const isMusic = !!musicCellMap[String(item.id)];
@@ -2208,23 +2228,37 @@ export function RunsheetTableEditor({
                 id={`card_item_${item.id}`}
                 key={item.id}
                 onClick={() => !readOnly && setEditingCardIndex(index)}
-                className="rounded-xl border border-slate-200 bg-white p-3 shadow-xs flex flex-col gap-2 transition-all active:bg-slate-50 cursor-pointer scroll-mt-4"
+                className="rounded-xl border border-slate-200 bg-white p-2 sm:p-2.5 shadow-xs flex flex-col gap-1.5 transition-all active:bg-slate-50 cursor-pointer scroll-mt-4"
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                      {item.calculatedStart} - {item.calculatedEnd}
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-xs font-bold text-blue-900 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                      {item.calculatedStart}
                     </span>
-                    <span className="font-mono text-[11px] font-semibold text-slate-500">
-                      ({item.formattedDuration})
-                    </span>
+                    {item.formattedDuration ? (
+                      <span className="font-mono text-[11px] font-semibold text-slate-500">
+                        ({item.formattedDuration})
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                     {isMusic && (
-                      <span className="inline-flex items-center rounded bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-900 border border-slate-300">
-                        Song
-                      </span>
+                      <a
+                        href={
+                          item.songItemId
+                            ? `/api/song?id=${item.songItemId}`
+                            : `/api/song?title=${encodeURIComponent(cleanSongTitle(currentTitleVal))}`
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex h-5 w-5 items-center justify-center rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 transition-colors cursor-pointer"
+                        title="Linked Song (Click to view details)"
+                        aria-label="Linked Song"
+                      >
+                        <HiMusicalNote className="h-3 w-3 text-slate-700" />
+                      </a>
                     )}
 
                     {!readOnly && (
@@ -2254,7 +2288,7 @@ export function RunsheetTableEditor({
                       <button
                         type="button"
                         onClick={() => setEditingCardIndex(index)}
-                        className="rounded bg-pink-700 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-pink-800 cursor-pointer shadow-xs"
+                        className="rounded bg-pink-700 px-2 py-0.5 text-[11px] font-bold text-white hover:bg-pink-800 cursor-pointer shadow-xs"
                       >
                         Edit Card
                       </button>
@@ -2262,16 +2296,16 @@ export function RunsheetTableEditor({
                   </div>
                 </div>
 
-                  <h4 className="font-bold text-slate-900 text-sm break-words whitespace-normal leading-snug">{plainTitle}</h4>
+                <h4 className="font-bold text-slate-900 text-xs sm:text-sm break-words whitespace-normal leading-tight my-0.5">{plainTitle}</h4>
 
                 {/* Populated attributes displayed fully with person cells topmost */}
-                <div className="flex flex-col gap-2 mt-1">
+                <div className="flex flex-col gap-1">
                   {sortedAttrCols.map((col) => {
                     const val = readRunsheetCellValue(item, col.key);
                     if (!val) return null;
                     return (
-                      <div key={col.id} className="rounded-lg bg-slate-50 border border-slate-200 p-2 text-xs">
-                        <span className="font-extrabold text-[10px] uppercase tracking-wider text-slate-500 block mb-0.5">
+                      <div key={col.id} className="rounded-md bg-slate-50 border border-slate-200 p-1.5 text-xs">
+                        <span className="font-extrabold text-[9px] uppercase tracking-wider text-slate-500 block mb-0.5">
                           {col.name}
                         </span>
                         <div className="break-words whitespace-normal text-slate-800 text-xs leading-normal">
@@ -2284,6 +2318,21 @@ export function RunsheetTableEditor({
               </div>
             );
           })}
+
+          {/* Card View Summary Card */}
+          {processedRows.length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-slate-100/90 p-2 sm:p-2.5 flex items-center justify-between text-xs text-slate-700">
+              <span className="font-bold text-slate-900">Estimated Service End</span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                  {processedRows[processedRows.length - 1]?.calculatedEnd}
+                </span>
+                <span className="font-mono text-[11px] text-slate-600 font-semibold">
+                  ({totalDurationFormatted})
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -2296,7 +2345,8 @@ export function RunsheetTableEditor({
               <div>
                 <h3 className="text-base font-bold text-slate-900">Edit Card #{editingCardIndex + 1}</h3>
                 <span className="font-mono text-xs font-semibold text-blue-700">
-                  {processedRows[editingCardIndex].calculatedStart} - {processedRows[editingCardIndex].calculatedEnd} ({processedRows[editingCardIndex].formattedDuration})
+                  {processedRows[editingCardIndex].calculatedStart} - {processedRows[editingCardIndex].calculatedEnd}
+                  {processedRows[editingCardIndex].formattedDuration ? ` (${processedRows[editingCardIndex].formattedDuration})` : ''}
                 </span>
               </div>
 
