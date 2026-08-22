@@ -13,6 +13,8 @@ interface RunsheetSnapshot {
   startTime: string;
   musicCellMap: Record<string, boolean>;
   deletedIds: (number | string)[];
+  columnOrder?: string[];
+  columnWidths?: Record<string, number>;
 }
 import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
 import {
@@ -34,7 +36,7 @@ import { rockDeleteServiceRunsheet } from '@/server-actions/rockDeleteServiceRun
 import { getRockContentChannelOptions, ContentChannelCategoryOption } from '@/server-actions/getRockContentChannelOptions';
 import { rockGetScheduleOptions, ScheduleOption } from '@/server-actions/rockGetScheduleOptions';
 import { rockDuplicateServiceRunsheet } from '@/server-actions/rockDuplicateServiceRunsheet';
-import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetDetails } from '@/types/Runsheet';
+import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetDetails, RunsheetColumnMetadata } from '@/types/Runsheet';
 import { resolveSiblings, type SiblingChannel } from '@/lib/runsheetSiblings';
 import { matchRows, type MatchResult } from '@/lib/runsheetMatch';
 import { buildPropagationPlan, type PropagationPlan, type CandidateCellChange } from '@/lib/runsheetPropagate';
@@ -95,6 +97,7 @@ interface RunsheetTableEditorProps {
   channelId: number;
   channelName: string;
   columns?: DynamicAttributeColumn[];
+  initialColumnMetadata?: RunsheetColumnMetadata;
   initialItems: RunsheetItemRow[];
   initialStartTime?: string;
   initialSubtitle?: string;
@@ -124,6 +127,36 @@ interface TimeSpan {
   startStr: string;
   endStr: string;
   formattedDuration: string;
+}
+
+function computeDefaultDynamicColOrder(cols: DynamicAttributeColumn[]): string[] {
+  const filtered = (cols && cols.length > 0 ? cols : FALLBACK_RUNSHEET_COLUMNS).filter(
+    (col) => !RESERVED_RUNSHEET_COLUMN_KEYS.includes(col.key),
+  );
+
+  const isPlatformCol = (col: DynamicAttributeColumn) => {
+    const k = col.key.toUpperCase();
+    const n = col.name.toLowerCase();
+    return k === 'PLATFORM' || k === 'ANCHORPREACHER' || n.includes('platform') || isPersonColumn(col);
+  };
+
+  const isDescriptionCol = (col: DynamicAttributeColumn) => {
+    const k = col.key.toUpperCase();
+    const n = col.name.toLowerCase();
+    return k === 'DESCRIPTION' || k === 'DETIAL' || n.includes('description') || n.includes('detail');
+  };
+
+  const platformIdx = filtered.findIndex(isPlatformCol);
+  const descIdx = filtered.findIndex(isDescriptionCol);
+
+  if (platformIdx !== -1 && descIdx !== -1 && platformIdx > descIdx) {
+    const result = [...filtered];
+    const [platformCol] = result.splice(platformIdx, 1);
+    result.splice(descIdx, 0, platformCol);
+    return result.map((c) => c.key);
+  }
+
+  return filtered.map((c) => c.key);
 }
 
 /** Builds fresh template rows with unique ids, so every call (reset, auto-load) gets its own set. */
@@ -163,6 +196,7 @@ export function RunsheetTableEditor({
   channelId,
   channelName,
   columns = FALLBACK_RUNSHEET_COLUMNS,
+  initialColumnMetadata,
   initialItems,
   initialStartTime = '08:00:00 AM',
   initialSubtitle = '',
@@ -197,6 +231,124 @@ export function RunsheetTableEditor({
   const [deletedIds, setDeletedIds] = useState<(number | string)[]>([]);
   const [startTime, setStartTime] = useState(initialStartTime);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => {
+    if (initialColumnMetadata?.order && initialColumnMetadata.order.length > 0) {
+      return initialColumnMetadata.order;
+    }
+    return computeDefaultDynamicColOrder(columns);
+  });
+
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    const widths: Record<string, number> = { ...(initialColumnMetadata?.widths || {}) };
+    (columns || []).forEach((col) => {
+      if (col.width && !widths[col.key]) {
+        widths[col.key] = col.width;
+      }
+    });
+    return widths;
+  });
+
+  const [draggedColumnKey, setDraggedColumnKey] = useState<string | null>(null);
+  const [dragOverColumnKey, setDragOverColumnKey] = useState<string | null>(null);
+
+  const resizingColRef = React.useRef<{
+    key: string;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+
+  const handleResizeStart = (key: string, currentWidth: number, e: React.MouseEvent) => {
+    if (readOnly) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    saveSnapshot();
+
+    resizingColRef.current = {
+      key,
+      startX: e.clientX,
+      startWidth: currentWidth,
+    };
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!resizingColRef.current) return;
+      const { key: colKey, startX, startWidth } = resizingColRef.current;
+      const delta = moveEvent.clientX - startX;
+      const newWidth = Math.max(60, Math.min(600, Math.round(startWidth + delta)));
+
+      setColumnWidths((prev) => ({
+        ...prev,
+        [colKey]: newWidth,
+      }));
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      if (resizingColRef.current) {
+        setIsDirty(true);
+        onDirtyChange?.(true);
+      }
+      resizingColRef.current = null;
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleColumnDragStart = (key: string, e: React.DragEvent) => {
+    if (readOnly) return;
+    e.dataTransfer.setData('text/plain', key);
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedColumnKey(key);
+  };
+
+  const handleColumnDragOver = (key: string, e: React.DragEvent) => {
+    if (readOnly || !draggedColumnKey || draggedColumnKey === key) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverColumnKey !== key) {
+      setDragOverColumnKey(key);
+    }
+  };
+
+  const handleColumnDrop = (targetKey: string, e: React.DragEvent) => {
+    if (readOnly || !draggedColumnKey) return;
+    e.preventDefault();
+    const sourceKey = draggedColumnKey;
+    setDraggedColumnKey(null);
+    setDragOverColumnKey(null);
+
+    if (sourceKey === targetKey) return;
+
+    saveSnapshot();
+
+    setColumnOrder((prevOrder) => {
+      const currentKeys = dynamicAttrCols.map((c) => c.key);
+      const baseOrder = prevOrder.length > 0 ? [...prevOrder] : currentKeys;
+      currentKeys.forEach((k) => {
+        if (!baseOrder.includes(k)) baseOrder.push(k);
+      });
+
+      const sourceIdx = baseOrder.indexOf(sourceKey);
+      const targetIdx = baseOrder.indexOf(targetKey);
+      if (sourceIdx === -1 || targetIdx === -1) return prevOrder;
+
+      const newOrder = [...baseOrder];
+      const [moved] = newOrder.splice(sourceIdx, 1);
+      newOrder.splice(targetIdx, 0, moved);
+      return newOrder;
+    });
+
+    setIsDirty(true);
+    onDirtyChange?.(true);
+  };
+
+  const handleColumnDragEnd = () => {
+    setDraggedColumnKey(null);
+    setDragOverColumnKey(null);
+  };
 
   /** The cell currently open for editing, tracked by item ID to avoid index mismatch with roster items. */
   const [editingCell, setEditingCell] = useState<{ itemId: number | string; key: string } | null>(null);
@@ -504,10 +656,12 @@ export function RunsheetTableEditor({
         startTime,
         musicCellMap: { ...musicCellMap },
         deletedIds: [...deletedIds],
+        columnOrder: [...columnOrder],
+        columnWidths: { ...columnWidths },
       },
     ]);
     setFuture([]);
-  }, [items, startTime, musicCellMap, deletedIds]);
+  }, [items, startTime, musicCellMap, deletedIds, columnOrder, columnWidths]);
 
   const handleUndo = React.useCallback(() => {
     if (readOnly || history.length === 0) return;
@@ -520,6 +674,8 @@ export function RunsheetTableEditor({
         startTime,
         musicCellMap: { ...musicCellMap },
         deletedIds: [...deletedIds],
+        columnOrder: [...columnOrder],
+        columnWidths: { ...columnWidths },
       },
       ...prev,
     ]);
@@ -529,9 +685,11 @@ export function RunsheetTableEditor({
     setStartTime(previous.startTime);
     setMusicCellMap(previous.musicCellMap);
     setDeletedIds(previous.deletedIds);
+    if (previous.columnOrder) setColumnOrder(previous.columnOrder);
+    if (previous.columnWidths) setColumnWidths(previous.columnWidths);
     setEditingCell(null);
     setIsDirty(true);
-  }, [readOnly, history, items, startTime, musicCellMap, deletedIds]);
+  }, [readOnly, history, items, startTime, musicCellMap, deletedIds, columnOrder, columnWidths]);
 
   const handleRedo = React.useCallback(() => {
     if (readOnly || future.length === 0) return;
@@ -545,6 +703,8 @@ export function RunsheetTableEditor({
         startTime,
         musicCellMap: { ...musicCellMap },
         deletedIds: [...deletedIds],
+        columnOrder: [...columnOrder],
+        columnWidths: { ...columnWidths },
       },
     ]);
 
@@ -553,9 +713,11 @@ export function RunsheetTableEditor({
     setStartTime(next.startTime);
     setMusicCellMap(next.musicCellMap);
     setDeletedIds(next.deletedIds);
+    if (next.columnOrder) setColumnOrder(next.columnOrder);
+    if (next.columnWidths) setColumnWidths(next.columnWidths);
     setEditingCell(null);
     setIsDirty(true);
-  }, [readOnly, future, items, startTime, musicCellMap, deletedIds]);
+  }, [readOnly, future, items, startTime, musicCellMap, deletedIds, columnOrder, columnWidths]);
 
   useEffect(() => {
     if (readOnly) return;
@@ -612,6 +774,18 @@ export function RunsheetTableEditor({
     const list = columns && columns.length > 0 ? columns : FALLBACK_RUNSHEET_COLUMNS;
     const filtered = list.filter((col) => !RESERVED_RUNSHEET_COLUMN_KEYS.includes(col.key));
 
+    if (columnOrder.length > 0) {
+      const orderMap = new Map<string, number>();
+      columnOrder.forEach((key, idx) => orderMap.set(key, idx));
+
+      return [...filtered].sort((a, b) => {
+        const orderA = orderMap.has(a.key) ? orderMap.get(a.key)! : Number.MAX_SAFE_INTEGER;
+        const orderB = orderMap.has(b.key) ? orderMap.get(b.key)! : Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) return orderA - orderB;
+        return 0;
+      });
+    }
+
     const isPlatformCol = (col: DynamicAttributeColumn) => {
       const k = col.key.toUpperCase();
       const n = col.name.toLowerCase();
@@ -635,7 +809,7 @@ export function RunsheetTableEditor({
     }
 
     return filtered;
-  }, [columns]);
+  }, [columns, columnOrder]);
 
   /**
    * Walks the rows in order, accumulating the clock and grouping each timed row
@@ -1012,7 +1186,10 @@ export function RunsheetTableEditor({
       13,
       duplicateCategoryId ? Number(duplicateCategoryId) : undefined,
       allPreparedItems,
-      columns
+      columns,
+      subtitle,
+      startTime,
+      { order: columnOrder, widths: columnWidths }
     );
 
     setIsDuplicating(false);
@@ -1039,28 +1216,26 @@ export function RunsheetTableEditor({
         // stable synthetic id and get a baseline fingerprint on load even though
         // they're flagged `isNew` — if nothing about them has changed since, they
         // aren't a real pending save and shouldn't mark the runsheet dirty.
-        const rosterBaseline = baselineRef.current.get(item.id);
-        if (rosterBaseline) {
-          const fingerprint = createRowFingerprint(item);
-          if (JSON.stringify(fingerprint) === JSON.stringify(rosterBaseline)) {
-            return;
+        if (typeof item.id === 'string' && item.title?.startsWith('Roster:')) {
+          const baseline = baselineRef.current.get(item.id);
+          if (baseline) {
+            const currentFp = createRowFingerprint(item);
+            if (JSON.stringify(currentFp) === JSON.stringify(baseline)) {
+              return;
+            }
           }
         }
-        // New items are sent in full without changedKeys
-        itemsToSave.push({ ...item });
+        itemsToSave.push(item);
         return;
       }
 
       const baseline = baselineRef.current.get(item.id);
       if (!baseline) {
-        // If not in baseline, treat as requiring save
-        itemsToSave.push({ ...item });
+        itemsToSave.push(item);
         return;
       }
 
       const changedKeys: string[] = [];
-
-      // Check title / ACTIVITYTITLE
       const richTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
       if (richTitle !== baseline.title) {
         changedKeys.push('title');
@@ -1114,18 +1289,43 @@ export function RunsheetTableEditor({
     });
 
     return { allPreparedItems, itemsToSave };
-  }, [processedRows, items]);
+  }, [processedRows, items, createRowFingerprint]);
 
-  // Derived dirty state
   const computedDirtyState = useMemo(() => {
     if (initialTemplate) return true;
-    if (deletedIds.length > 0) return true;
-    if (subtitle !== normalizedInitialSubtitle) return true;
-    if (startTime !== initialStartTime) return true;
     const { itemsToSave } = computeDiffPayload();
-    return itemsToSave.length > 0;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deletedIds.length, subtitle, normalizedInitialSubtitle, startTime, initialStartTime, initialTemplate, computeDiffPayload, baselineVersion]);
+    const startTimeChanged = startTime !== initialStartTime;
+    const subtitleChanged = subtitle !== normalizedInitialSubtitle;
+    const baseOrder =
+      initialColumnMetadata?.order && initialColumnMetadata.order.length > 0
+        ? initialColumnMetadata.order
+        : computeDefaultDynamicColOrder(columns);
+    const baseWidths = initialColumnMetadata?.widths || {};
+    const columnMetadataChanged =
+      JSON.stringify(columnOrder) !== JSON.stringify(baseOrder) ||
+      JSON.stringify(columnWidths) !== JSON.stringify(baseWidths);
+
+    return (
+      itemsToSave.length > 0 ||
+      deletedIds.length > 0 ||
+      startTimeChanged ||
+      subtitleChanged ||
+      columnMetadataChanged
+    );
+  }, [
+    initialTemplate,
+    computeDiffPayload,
+    deletedIds.length,
+    startTime,
+    initialStartTime,
+    subtitle,
+    normalizedInitialSubtitle,
+    columnOrder,
+    columnWidths,
+    initialColumnMetadata,
+    columns,
+    baselineVersion,
+  ]);
 
   useEffect(() => {
     setIsDirty(computedDirtyState);
@@ -1140,13 +1340,16 @@ export function RunsheetTableEditor({
     async (siblings: SiblingChannel[], candidatesToReview: CandidateCellChange[]) => {
       const batch = await rockGetRunsheetDetailsBatch(siblings.map((s) => s.channelId));
       const targetRowsMap = new Map<number, RunsheetItemRow[]>();
-      const matchResultsByChannel = new Map<number, MatchResult>();
+      const matchResultsByChannel = new Map<number, MatchResult[]>();
 
-      // Sibling sheets haven't seen this save's edits yet, so a row renamed in
-      // it must be matched under its OLD title — matching under the new one
-      // would find nothing there and silently drop every change on that row.
+      // Rows renamed in the save that triggered propagation have their new title
+      // in processedRows, but target siblings still have the old one. Match
+      // against the old title so the row pairs up cleanly instead of falling
+      // through to "unmatched" (or worse, colliding on a renamed empty slot).
+      const oldTitles = propagateOldTitlesRef.current;
       const matchingSourceRows = processedRows.map((row) => {
-        const oldTitle = typeof row.id === 'number' ? propagateOldTitlesRef.current.get(row.id) : undefined;
+        if (typeof row.id !== 'number') return row;
+        const oldTitle = oldTitles.get(row.id);
         if (oldTitle === undefined) return row;
         return { ...row, title: oldTitle, attributeValues: { ...row.attributeValues, ACTIVITYTITLE: oldTitle } };
       });
@@ -1173,12 +1376,37 @@ export function RunsheetTableEditor({
     const { allPreparedItems, itemsToSave } = computeDiffPayload();
     const startTimeChanged = startTime !== initialStartTime;
 
+    const baseOrder =
+      initialColumnMetadata?.order && initialColumnMetadata.order.length > 0
+        ? initialColumnMetadata.order
+        : computeDefaultDynamicColOrder(columns);
+    const baseWidths = initialColumnMetadata?.widths || {};
+    const columnMetadataChanged =
+      JSON.stringify(columnOrder) !== JSON.stringify(baseOrder) ||
+      JSON.stringify(columnWidths) !== JSON.stringify(baseWidths);
+
     // If nothing changed, return success early
-    if (itemsToSave.length === 0 && deletedIds.length === 0 && subtitle === normalizedInitialSubtitle && !startTimeChanged) {
+    if (
+      itemsToSave.length === 0 &&
+      deletedIds.length === 0 &&
+      subtitle === normalizedInitialSubtitle &&
+      !startTimeChanged &&
+      !columnMetadataChanged
+    ) {
       setStatus({ type: 'success', message: 'No changes to save.' });
       setIsDirty(false);
       return true;
     }
+
+    const columnMetadata: RunsheetColumnMetadata = {
+      order: columnOrder,
+      widths: columnWidths,
+    };
+
+    const columnMetadataToSave: RunsheetColumnMetadata | undefined =
+      columnMetadataChanged || initialColumnMetadata !== undefined
+        ? columnMetadata
+        : undefined;
 
     let result: Awaited<ReturnType<typeof rockBulkSaveRunsheetItems>>;
     try {
@@ -1188,7 +1416,8 @@ export function RunsheetTableEditor({
         deletedIds,
         columns,
         subtitle,
-        startTimeChanged ? startTime : undefined
+        startTimeChanged ? startTime : undefined,
+        ...(columnMetadataToSave ? [columnMetadataToSave] : [])
       );
     } catch (err: any) {
       onSaveSettled?.(channelId);
@@ -1197,16 +1426,7 @@ export function RunsheetTableEditor({
     }
 
     if (result.success) {
-      // Snapshot propagation candidates against the PRE-save baseline before
-      // it gets advanced below — advancing first would make `previousValue`
-      // equal `newValue` for every cell, since baselineRef would already
-      // hold the just-saved value by the time this reads from it.
       const candidates: CandidateCellChange[] = [];
-      // A row whose title changed in this very save is caught here too — the
-      // target sibling hasn't seen the rename yet, so matching by title text
-      // would fail. Its pre-edit title is stashed for handleOpenPropagateReview
-      // to match against, while candidates themselves carry the row's id so
-      // matching never depends on title text at all.
       const oldTitlesForMatching = new Map<number, string>();
       for (const item of itemsToSave) {
         if (typeof item.id === 'string' || item.isNew) continue;
@@ -1231,7 +1451,6 @@ export function RunsheetTableEditor({
       }
       propagateOldTitlesRef.current = oldTitlesForMatching;
 
-      // Advance baseline for all saved items
       (result.results || []).forEach((res) => {
         if (res.ok && res.rockId) {
           const item = allPreparedItems.find((it) => it.id === res.clientId);
@@ -1239,7 +1458,6 @@ export function RunsheetTableEditor({
             const updatedItem: RunsheetItemRow = { ...item, id: res.rockId, isNew: false };
             baselineRef.current.set(res.rockId, createRowFingerprint(updatedItem));
 
-            // If it was a new item with a string id, update local item id state
             if (typeof res.clientId === 'string') {
               setItems((prev) =>
                 prev.map((it) => (it.id === res.clientId ? { ...it, id: res.rockId!, isNew: false } : it))
@@ -1264,6 +1482,7 @@ export function RunsheetTableEditor({
         name: channelName,
         subtitle,
         startTime,
+        columnMetadata,
         contentChannelTypeId: 13,
         columns,
         items: optimisticItems,
@@ -1569,7 +1788,47 @@ export function RunsheetTableEditor({
     );
   };
 
-  function getColumnStyle(key: string, name: string): React.CSSProperties {
+  function getColumnNumericWidth(key: string, name?: string): number {
+    if (columnWidths[key]) return columnWidths[key];
+    if (key === 'title' || key === 'ACTIVITYTITLE') {
+      return columnWidths['title'] || columnWidths['ACTIVITYTITLE'] || 140;
+    }
+    const upperKey = (key || '').toUpperCase();
+    const lowerName = (name || '').toLowerCase();
+    const isDescription =
+      upperKey === 'DESCRIPTION' ||
+      upperKey === 'DETIAL' ||
+      lowerName.includes('description') ||
+      lowerName.includes('detail');
+    const isMainInstrument =
+      upperKey === 'MAININSTRUMENT' ||
+      upperKey === 'MAIN_INSTRUMENT' ||
+      lowerName.includes('main instrument') ||
+      lowerName.includes('instrument');
+    const isProgramNotes =
+      upperKey === 'PROGRAMNOTES' ||
+      upperKey === 'PROGRAM_NOTES' ||
+      upperKey === 'PROGRAM NOTES' ||
+      upperKey === 'NOTES' ||
+      lowerName.includes('program note') ||
+      lowerName.includes('notes');
+    if (isDescription || isMainInstrument || isProgramNotes) return 150;
+    return 100;
+  }
+
+  function getColumnStyle(key: string, name?: string): React.CSSProperties {
+    if (columnWidths[key]) {
+      return { width: `${columnWidths[key]}px`, minWidth: `${Math.min(60, columnWidths[key])}px` };
+    }
+    if ((key === 'title' || key === 'ACTIVITYTITLE') && (columnWidths['title'] || columnWidths['ACTIVITYTITLE'])) {
+      const w = columnWidths['title'] || columnWidths['ACTIVITYTITLE'];
+      return { width: `${w}px`, minWidth: `${Math.min(60, w)}px` };
+    }
+
+    if (key === 'title' || key === 'ACTIVITYTITLE') {
+      return { width: '140px', minWidth: '110px' };
+    }
+
     const upperKey = (key || '').toUpperCase();
     const lowerName = (name || '').toLowerCase();
 
@@ -2102,20 +2361,57 @@ export function RunsheetTableEditor({
                 <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
                   Duration
                 </th>
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '140px', minWidth: '110px' }}>
-                  Activity Title
+                <th
+                  className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100 relative group"
+                  style={getColumnStyle('title', 'Activity Title')}
+                >
+                  <span>Activity Title</span>
+                  {!readOnly && (
+                    <div
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label="Resize Activity Title column"
+                      draggable={false}
+                      onMouseDown={(e) => handleResizeStart('title', getColumnNumericWidth('title', 'Activity Title'), e)}
+                      className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-pink-500 active:bg-pink-600 transition-colors z-30"
+                    />
+                  )}
                 </th>
 
-                {dynamicAttrCols.map((col) => (
-                  <th
-                    key={col.id}
-                    className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold select-none overflow-hidden text-ellipsis text-slate-100"
-                    style={getColumnStyle(col.key, col.name)}
-                    title={col.name}
-                  >
-                    {col.name}
-                  </th>
-                ))}
+                {dynamicAttrCols.map((col) => {
+                  const isDraggingThis = draggedColumnKey === col.key;
+                  const isDragOverThis = dragOverColumnKey === col.key;
+
+                  return (
+                    <th
+                      key={col.id}
+                      draggable={!readOnly}
+                      onDragStart={(e) => handleColumnDragStart(col.key, e)}
+                      onDragOver={(e) => handleColumnDragOver(col.key, e)}
+                      onDrop={(e) => handleColumnDrop(col.key, e)}
+                      onDragEnd={handleColumnDragEnd}
+                      className={`sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold select-none overflow-hidden text-ellipsis text-slate-100 relative group ${
+                        !readOnly ? 'cursor-grab active:cursor-grabbing' : ''
+                      } ${isDragOverThis ? 'border-l-2 border-l-pink-400 bg-slate-800' : ''} ${
+                        isDraggingThis ? 'opacity-40' : ''
+                      }`}
+                      style={getColumnStyle(col.key, col.name)}
+                      title={col.name}
+                    >
+                      <span>{col.name}</span>
+                      {!readOnly && (
+                        <div
+                          role="separator"
+                          aria-orientation="vertical"
+                          aria-label={`Resize ${col.name} column`}
+                          draggable={false}
+                          onMouseDown={(e) => handleResizeStart(col.key, getColumnNumericWidth(col.key, col.name), e)}
+                          className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-pink-500 active:bg-pink-600 transition-colors z-30"
+                        />
+                      )}
+                    </th>
+                  );
+                })}
 
                 {!readOnly && <th className="sticky top-0 z-30 bg-slate-900 p-1 text-center" style={{ width: '48px', minWidth: '48px' }} />}
               </tr>
@@ -2221,7 +2517,7 @@ export function RunsheetTableEditor({
                           ? 'relative z-50 overflow-visible'
                           : 'overflow-hidden'
                       }`}
-                      style={{ width: '140px', minWidth: '110px' }}
+                      style={getColumnStyle('title', 'Activity Title')}
                     >
                       {renderCellContent(item.id, 'title', currentTitleVal, false, item.songItemId ?? null)}
                     </td>
