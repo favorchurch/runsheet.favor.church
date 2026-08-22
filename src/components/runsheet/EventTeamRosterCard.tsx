@@ -7,6 +7,7 @@ import { isPersonColumn } from '@/constants/runsheetColumns';
 import { parsePeopleString } from './PeopleSearchDropdown';
 import { HiUserGroup, HiPencilSquare, HiChevronDown, HiChevronUp, HiXMark, HiUser } from 'react-icons/hi2';
 import { RichTextContent } from './RichTextContent';
+import { getRosterCollapsedPreference, setRosterCollapsedPreference } from '@/lib/userPreferences';
 
 export const VITAL_ROLES = [
   'Service Director',
@@ -113,7 +114,7 @@ export function EventTeamRosterCard({
   onOpenRolePicker,
   renderPeoplePicker,
 }: EventTeamRosterCardProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [activeModalData, setActiveModalData] = useState<RosterModalData | null>(null);
   const [mounted, setMounted] = useState(false);
   const platform = computePlatformRoles(items, columns);
@@ -121,7 +122,17 @@ export function EventTeamRosterCard({
 
   useEffect(() => {
     setMounted(true);
+    const preferredCollapsed = getRosterCollapsedPreference();
+    setIsCollapsed(preferredCollapsed);
   }, []);
+
+  const toggleCollapsed = () => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      setRosterCollapsedPreference(next);
+      return next;
+    });
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -157,7 +168,7 @@ export function EventTeamRosterCard({
       {/* Card Header & Toggle */}
       <div className={`flex items-center justify-between gap-2 ${isCollapsed ? '' : 'border-b border-slate-200 pb-1.5 mb-1.5'}`}>
         <div
-          onClick={() => setIsCollapsed((prev) => !prev)}
+          onClick={toggleCollapsed}
           className="flex items-center gap-2 cursor-pointer select-none flex-1"
         >
           <div className="flex h-6 w-6 sm:h-6.5 sm:w-6.5 items-center justify-center rounded-lg bg-slate-900 text-white shadow-xs shrink-0">
@@ -178,7 +189,7 @@ export function EventTeamRosterCard({
 
         <button
           type="button"
-          onClick={() => setIsCollapsed((prev) => !prev)}
+          onClick={toggleCollapsed}
           className="flex items-center gap-1 rounded-md bg-white border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer shrink-0 touch-manipulation"
         >
           <span>{isCollapsed ? 'Show Roster' : 'Hide Roster'}</span>
