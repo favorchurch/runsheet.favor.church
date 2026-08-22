@@ -1791,10 +1791,16 @@ export function RunsheetTableEditor({
 
   function getColumnNumericWidth(key: string, name?: string): number {
     if (columnWidths[key]) return columnWidths[key];
+    const upperKey = (key || '').toUpperCase();
+    if (upperKey === 'START') {
+      return columnWidths['start'] || columnWidths['START'] || 88;
+    }
+    if (upperKey === 'DURATION') {
+      return columnWidths['duration'] || columnWidths['DURATION'] || 78;
+    }
     if (key === 'title' || key === 'ACTIVITYTITLE') {
       return columnWidths['title'] || columnWidths['ACTIVITYTITLE'] || 140;
     }
-    const upperKey = (key || '').toUpperCase();
     const lowerName = (name || '').toLowerCase();
     const isDescription =
       upperKey === 'DESCRIPTION' ||
@@ -1821,6 +1827,15 @@ export function RunsheetTableEditor({
     if (columnWidths[key]) {
       return { width: `${columnWidths[key]}px`, minWidth: `${Math.min(60, columnWidths[key])}px` };
     }
+    const upperKey = (key || '').toUpperCase();
+    if (upperKey === 'START') {
+      const w = columnWidths['start'] || columnWidths['START'] || 88;
+      return { width: `${w}px`, minWidth: `${Math.min(60, w)}px` };
+    }
+    if (upperKey === 'DURATION') {
+      const w = columnWidths['duration'] || columnWidths['DURATION'] || 78;
+      return { width: `${w}px`, minWidth: `${Math.min(60, w)}px` };
+    }
     if ((key === 'title' || key === 'ACTIVITYTITLE') && (columnWidths['title'] || columnWidths['ACTIVITYTITLE'])) {
       const w = columnWidths['title'] || columnWidths['ACTIVITYTITLE'];
       return { width: `${w}px`, minWidth: `${Math.min(60, w)}px` };
@@ -1830,7 +1845,6 @@ export function RunsheetTableEditor({
       return { width: '140px', minWidth: '110px' };
     }
 
-    const upperKey = (key || '').toUpperCase();
     const lowerName = (name || '').toLowerCase();
 
     const isDescription =
@@ -2356,11 +2370,37 @@ export function RunsheetTableEditor({
             <thead className="sticky top-0 z-30 bg-slate-900 text-white shadow-xs">
               <tr className="border-b-2 border-slate-950 text-left font-semibold text-white text-xs tracking-normal">
                 {!readOnly && <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center" style={{ width: '28px', minWidth: '28px' }} />}
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
-                  Start
+                <th
+                  className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100 relative group"
+                  style={getColumnStyle('START', 'Start')}
+                >
+                  <span>Start</span>
+                  {!readOnly && (
+                    <div
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label="Resize Start column"
+                      draggable={false}
+                      onMouseDown={(e) => handleResizeStart('start', getColumnNumericWidth('start', 'Start'), e)}
+                      className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-pink-500 active:bg-pink-600 transition-colors z-30"
+                    />
+                  )}
                 </th>
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
-                  Duration
+                <th
+                  className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100 relative group"
+                  style={getColumnStyle('DURATION', 'Duration')}
+                >
+                  <span>Duration</span>
+                  {!readOnly && (
+                    <div
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label="Resize Duration column"
+                      draggable={false}
+                      onMouseDown={(e) => handleResizeStart('duration', getColumnNumericWidth('duration', 'Duration'), e)}
+                      className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-pink-500 active:bg-pink-600 transition-colors z-30"
+                    />
+                  )}
                 </th>
                 <th
                   className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100 relative group"
@@ -2447,6 +2487,7 @@ export function RunsheetTableEditor({
                     {spanInfo ? (
                       <td
                         rowSpan={spanInfo.count}
+                        style={getColumnStyle('START', 'Start')}
                         className="select-none border-b border-r border-slate-300 bg-slate-50/90 p-0.5 sm:p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px]"
                       >
                         {spanInfo.startStr}
@@ -2457,6 +2498,7 @@ export function RunsheetTableEditor({
                       spanInfo ? (
                         <td
                           rowSpan={spanInfo.count}
+                          style={getColumnStyle('DURATION', 'Duration')}
                           onClick={() => {
                             if (readOnly) return;
                             // Seed from `processedRows`, not raw `items` — the two arrays
@@ -2478,7 +2520,10 @@ export function RunsheetTableEditor({
                         </td>
                       ) : null
                     ) : (
-                      <td className="relative z-10 border-b border-r border-slate-200 bg-slate-100 p-0.5 text-center align-middle overflow-visible">
+                      <td
+                        style={getColumnStyle('DURATION', 'Duration')}
+                        className="relative z-10 border-b border-r border-slate-200 bg-slate-100 p-0.5 text-center align-middle overflow-visible"
+                      >
                         <input
                           type="text"
                           autoFocus={index === parentBlockIndex}
@@ -2577,10 +2622,16 @@ export function RunsheetTableEditor({
               <tfoot className="border-t-2 border-slate-300 bg-slate-100/95 text-slate-800 text-[11px] font-semibold">
                 <tr>
                   {!readOnly && <td className="p-0.5 border-r border-slate-200 bg-slate-100" />}
-                  <td className="border-r border-slate-300 p-1 text-center font-mono font-bold text-slate-900 bg-slate-200/80">
+                  <td
+                    style={getColumnStyle('START', 'Start')}
+                    className="border-r border-slate-300 p-1 text-center font-mono font-bold text-slate-900 bg-slate-200/80"
+                  >
                     {processedRows[processedRows.length - 1]?.calculatedEnd}
                   </td>
-                  <td className="border-r border-slate-300 p-1 text-center font-mono font-bold text-slate-700 bg-slate-200/50">
+                  <td
+                    style={getColumnStyle('DURATION', 'Duration')}
+                    className="border-r border-slate-300 p-1 text-center font-mono font-bold text-slate-700 bg-slate-200/50"
+                  >
                     {totalDurationFormatted}
                   </td>
                   <td colSpan={1 + dynamicAttrCols.length + (readOnly ? 0 : 1)} className="p-1 px-3 text-left font-medium text-slate-700 bg-slate-100">
