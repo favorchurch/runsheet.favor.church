@@ -35,12 +35,14 @@ jest.mock('@/lib/richText', () => ({
 
 import '@testing-library/jest-dom';
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { RunsheetTableEditor } from '@/components/runsheet/RunsheetTableEditor';
+import { STORAGE_KEY_VIEW_MODE, STORAGE_KEY_ROSTER_COLLAPSED } from '@/lib/userPreferences';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 
 describe('RunsheetTableEditor layout & column ordering', () => {
   beforeEach(() => {
+    window.localStorage.clear();
     jest.clearAllMocks();
   });
 
@@ -149,5 +151,85 @@ describe('RunsheetTableEditor layout & column ordering', () => {
     expect(descriptionHeader).toHaveStyle({ width: '150px', minWidth: '130px' });
     expect(mainInstrumentHeader).toHaveStyle({ width: '150px', minWidth: '130px' });
     expect(programNotesHeader).toHaveStyle({ width: '150px', minWidth: '130px' });
+  });
+
+  test('hydrates view mode from localStorage on mount and updates on toggle', () => {
+    window.localStorage.setItem(STORAGE_KEY_VIEW_MODE, 'cards');
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columnsWithDescFirst}
+        initialItems={items}
+        initialStartTime="10:00 AM"
+      />
+    );
+
+    const cardViewButton = screen.getByRole('button', { name: /Card view/i });
+    const tableViewButton = screen.getByRole('button', { name: /Table view/i });
+
+    expect(cardViewButton).toHaveAttribute('aria-pressed', 'true');
+    expect(tableViewButton).toHaveAttribute('aria-pressed', 'false');
+
+    // Toggle back to Table view
+    fireEvent.click(tableViewButton);
+    expect(tableViewButton).toHaveAttribute('aria-pressed', 'true');
+    expect(cardViewButton).toHaveAttribute('aria-pressed', 'false');
+    expect(window.localStorage.getItem(STORAGE_KEY_VIEW_MODE)).toBe('grid');
+
+    // Toggle to Card view
+    fireEvent.click(cardViewButton);
+    expect(cardViewButton).toHaveAttribute('aria-pressed', 'true');
+    expect(tableViewButton).toHaveAttribute('aria-pressed', 'false');
+    expect(window.localStorage.getItem(STORAGE_KEY_VIEW_MODE)).toBe('cards');
+  });
+
+  test('defaults roster collapsed state to true (hidden) and allows toggling with localStorage persistence', () => {
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columnsWithDescFirst}
+        initialItems={items}
+        initialStartTime="10:00 AM"
+      />
+    );
+
+    // Initial default: collapsed (Show Roster button present, Service Roles hidden)
+    const showRosterButton = screen.getByRole('button', { name: /Show Roster/i });
+    expect(showRosterButton).toBeInTheDocument();
+    expect(screen.queryByText('Service Roles')).not.toBeInTheDocument();
+
+    // Toggle expand
+    fireEvent.click(showRosterButton);
+    expect(screen.getByRole('button', { name: /Hide Roster/i })).toBeInTheDocument();
+    expect(screen.getByText('Service Roles')).toBeInTheDocument();
+    expect(window.localStorage.getItem(STORAGE_KEY_ROSTER_COLLAPSED)).toBe('false');
+
+    // Toggle collapse
+    const hideRosterButton = screen.getByRole('button', { name: /Hide Roster/i });
+    fireEvent.click(hideRosterButton);
+    expect(screen.getByRole('button', { name: /Show Roster/i })).toBeInTheDocument();
+    expect(screen.queryByText('Service Roles')).not.toBeInTheDocument();
+    expect(window.localStorage.getItem(STORAGE_KEY_ROSTER_COLLAPSED)).toBe('true');
+  });
+
+  test('hydrates roster expanded state when false is saved in localStorage', () => {
+    window.localStorage.setItem(STORAGE_KEY_ROSTER_COLLAPSED, 'false');
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columnsWithDescFirst}
+        initialItems={items}
+        initialStartTime="10:00 AM"
+      />
+    );
+
+    // Hydrated state: expanded (Hide Roster button present, Service Roles visible)
+    expect(screen.getByRole('button', { name: /Hide Roster/i })).toBeInTheDocument();
+    expect(screen.getByText('Service Roles')).toBeInTheDocument();
   });
 });
