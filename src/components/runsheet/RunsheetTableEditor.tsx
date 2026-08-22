@@ -1312,6 +1312,7 @@ export function RunsheetTableEditor({
       subtitleChanged ||
       columnMetadataChanged
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     initialTemplate,
     computeDiffPayload,
@@ -1340,7 +1341,7 @@ export function RunsheetTableEditor({
     async (siblings: SiblingChannel[], candidatesToReview: CandidateCellChange[]) => {
       const batch = await rockGetRunsheetDetailsBatch(siblings.map((s) => s.channelId));
       const targetRowsMap = new Map<number, RunsheetItemRow[]>();
-      const matchResultsByChannel = new Map<number, MatchResult[]>();
+      const matchResultsByChannel = new Map<number, MatchResult>();
 
       // Rows renamed in the save that triggered propagation have their new title
       // in processedRows, but target siblings still have the old one. Match
@@ -1537,7 +1538,7 @@ export function RunsheetTableEditor({
       onSaveSettled?.(channelId);
       return false;
     }
-  }, [readOnly, computeDiffPayload, deletedIds, subtitle, normalizedInitialSubtitle, startTime, initialStartTime, channelId, channelName, columns, createRowFingerprint, onOptimisticSave, onSaveSettled]);
+  }, [readOnly, computeDiffPayload, deletedIds, subtitle, normalizedInitialSubtitle, startTime, initialStartTime, channelId, channelName, columns, columnOrder, columnWidths, initialColumnMetadata, createRowFingerprint, onOptimisticSave, onSaveSettled]);
 
   useEffect(() => {
     onSaveRef?.(handleSave);

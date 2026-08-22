@@ -228,7 +228,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
 
     // DURATION drives the dedicated Start/End/Duration columns, SONGITEMID
     // is an internal reference to the linked Song, and SIBLINGKEY is the shared row key.
-    let columns: DynamicAttributeColumn[] = (rawAttrs || [])
+    const columns: DynamicAttributeColumn[] = (rawAttrs || [])
       .filter((attr) => !HIDDEN_ATTRIBUTE_KEYS.includes(attr.Key))
       .map((attr) => ({
         id: attr.Id,
