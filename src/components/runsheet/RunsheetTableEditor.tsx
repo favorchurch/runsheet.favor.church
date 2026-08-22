@@ -212,11 +212,7 @@ export function RunsheetTableEditor({
   const [durationDrafts, setDurationDrafts] = useState<{ [id: string]: string }>({});
 
   const [isDirty, setIsDirty] = useState(() => !!initialTemplate);
-  const [mobileViewMode, setMobileViewMode] = useState<'cards' | 'grid'>(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'grid';
-    // Touch devices (phones, iPads, tablets) get Cards; laptops/desktops with mouse get Table
-    return window.matchMedia('(pointer: coarse)').matches ? 'cards' : 'grid';
-  });
+  const [mobileViewMode, setMobileViewMode] = useState<'cards' | 'grid'>('grid');
   /** Displayed/persisted subtitle falls back to this when Rock has none set; the baseline for dirty-checking must use the same fallback or an untouched runsheet reads as dirty. */
   const normalizedInitialSubtitle = initialSubtitle || 'Sunday Service';
   const [subtitle, setSubtitle] = useState<string>(normalizedInitialSubtitle);
@@ -606,7 +602,31 @@ export function RunsheetTableEditor({
   // The activity title has its own column, so it is dropped from the dynamic loop.
   const dynamicAttrCols = useMemo(() => {
     const list = columns && columns.length > 0 ? columns : FALLBACK_RUNSHEET_COLUMNS;
-    return list.filter((col) => !RESERVED_RUNSHEET_COLUMN_KEYS.includes(col.key));
+    const filtered = list.filter((col) => !RESERVED_RUNSHEET_COLUMN_KEYS.includes(col.key));
+
+    const isPlatformCol = (col: DynamicAttributeColumn) => {
+      const k = col.key.toUpperCase();
+      const n = col.name.toLowerCase();
+      return k === 'PLATFORM' || k === 'ANCHORPREACHER' || n.includes('platform') || isPersonColumn(col);
+    };
+
+    const isDescriptionCol = (col: DynamicAttributeColumn) => {
+      const k = col.key.toUpperCase();
+      const n = col.name.toLowerCase();
+      return k === 'DESCRIPTION' || k === 'DETIAL' || n.includes('description') || n.includes('detail');
+    };
+
+    const platformIdx = filtered.findIndex(isPlatformCol);
+    const descIdx = filtered.findIndex(isDescriptionCol);
+
+    if (platformIdx !== -1 && descIdx !== -1 && platformIdx > descIdx) {
+      const result = [...filtered];
+      const [platformCol] = result.splice(platformIdx, 1);
+      result.splice(descIdx, 0, platformCol);
+      return result;
+    }
+
+    return filtered;
   }, [columns]);
 
   /**
@@ -1541,7 +1561,34 @@ export function RunsheetTableEditor({
     );
   };
 
-  function getColumnStyle(_key: string, _name: string): React.CSSProperties {
+  function getColumnStyle(key: string, name: string): React.CSSProperties {
+    const upperKey = (key || '').toUpperCase();
+    const lowerName = (name || '').toLowerCase();
+
+    const isDescription =
+      upperKey === 'DESCRIPTION' ||
+      upperKey === 'DETIAL' ||
+      lowerName.includes('description') ||
+      lowerName.includes('detail');
+
+    const isMainInstrument =
+      upperKey === 'MAININSTRUMENT' ||
+      upperKey === 'MAIN_INSTRUMENT' ||
+      lowerName.includes('main instrument') ||
+      lowerName.includes('instrument');
+
+    const isProgramNotes =
+      upperKey === 'PROGRAMNOTES' ||
+      upperKey === 'PROGRAM_NOTES' ||
+      upperKey === 'PROGRAM NOTES' ||
+      upperKey === 'NOTES' ||
+      lowerName.includes('program note') ||
+      lowerName.includes('notes');
+
+    if (isDescription || isMainInstrument || isProgramNotes) {
+      return { width: '150px', minWidth: '130px' };
+    }
+
     return { width: '100px', minWidth: '85px' };
   }
 
