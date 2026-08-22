@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiChevronDown, HiChevronUp, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiRectangleStack, HiTableCells, HiTrash } from 'react-icons/hi2';
 
 import { htmlToPlainText } from '@/lib/richText';
+import { getViewModePreference, setViewModePreference } from '@/lib/userPreferences';
 
 interface RunsheetSnapshot {
   items: RunsheetItemRow[];
@@ -213,6 +214,13 @@ export function RunsheetTableEditor({
 
   const [isDirty, setIsDirty] = useState(() => !!initialTemplate);
   const [mobileViewMode, setMobileViewMode] = useState<'cards' | 'grid'>('grid');
+
+  useEffect(() => {
+    const preferredMode = getViewModePreference();
+    if (preferredMode !== 'grid') {
+      setMobileViewMode(preferredMode);
+    }
+  }, []);
   /** Displayed/persisted subtitle falls back to this when Rock has none set; the baseline for dirty-checking must use the same fallback or an untouched runsheet reads as dirty. */
   const normalizedInitialSubtitle = initialSubtitle || 'Sunday Service';
   const [subtitle, setSubtitle] = useState<string>(normalizedInitialSubtitle);
@@ -1660,7 +1668,10 @@ export function RunsheetTableEditor({
                 aria-label="Card view"
                 title="Card view"
                 aria-pressed={mobileViewMode === 'cards'}
-                onClick={() => setMobileViewMode('cards')}
+                onClick={() => {
+                  setMobileViewMode('cards');
+                  setViewModePreference('cards');
+                }}
                 className={`flex items-center justify-center rounded p-1 transition-all cursor-pointer ${mobileViewMode === 'cards'
                     ? 'bg-white text-slate-900 shadow-xs font-bold'
                     : 'text-slate-600 hover:text-slate-900'
@@ -1673,7 +1684,10 @@ export function RunsheetTableEditor({
                 aria-label="Table view"
                 title="Table view"
                 aria-pressed={mobileViewMode === 'grid'}
-                onClick={() => setMobileViewMode('grid')}
+                onClick={() => {
+                  setMobileViewMode('grid');
+                  setViewModePreference('grid');
+                }}
                 className={`flex items-center justify-center rounded p-1 transition-all cursor-pointer ${mobileViewMode === 'grid'
                     ? 'bg-white text-slate-900 shadow-xs font-bold'
                     : 'text-slate-600 hover:text-slate-900'
