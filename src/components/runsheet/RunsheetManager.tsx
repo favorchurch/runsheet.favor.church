@@ -546,6 +546,7 @@ export function RunsheetManager({
                 channelId={runsheetData.channelId}
                 channelName={runsheetData.name}
                 columns={runsheetData.columns}
+                initialColumnMetadata={runsheetData.columnMetadata}
                 initialItems={runsheetData.items}
                 initialStartTime={
                   runsheetData.startTime ||

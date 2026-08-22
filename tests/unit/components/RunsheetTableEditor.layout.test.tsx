@@ -22,6 +22,7 @@ jest.mock('@/auth0-hooks/server/getRockSession', () => ({ getRockSession: jest.f
 jest.mock('@/server-actions/rockGetAvailableRunsheetChannels');
 jest.mock('@/server-actions/rockGetRunsheetDetailsBatch');
 jest.mock('@/server-actions/rockBulkSaveRunsheetItems');
+jest.mock('@/server-actions/rockDuplicateServiceRunsheet');
 jest.mock('@/server-actions/rockDeleteServiceRunsheet');
 jest.mock('@/server-actions/getRockContentChannelOptions');
 jest.mock('@/server-actions/rockGetScheduleOptions');
@@ -37,6 +38,7 @@ import '@testing-library/jest-dom';
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { RunsheetTableEditor } from '@/components/runsheet/RunsheetTableEditor';
+import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import { STORAGE_KEY_VIEW_MODE, STORAGE_KEY_ROSTER_COLLAPSED } from '@/lib/userPreferences';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 
@@ -231,5 +233,167 @@ describe('RunsheetTableEditor layout & column ordering', () => {
     // Hydrated state: expanded (Hide Roster button present, Service Roles visible)
     expect(screen.getByRole('button', { name: /Hide Roster/i })).toBeInTheDocument();
     expect(screen.getByText('Service Roles')).toBeInTheDocument();
+  });
+
+  test('respects initialColumnMetadata order and widths on mount', () => {
+    const customMetadata = {
+      order: ['LIGHTING', 'MAININSTRUMENT', 'DESCRIPTION', 'PLATFORM', 'NOTES'],
+      widths: {
+        title: 190,
+        LIGHTING: 220,
+        PLATFORM: 130,
+      },
+    };
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columnsWithDescFirst}
+        initialColumnMetadata={customMetadata}
+        initialItems={items}
+        initialStartTime="10:00 AM"
+      />
+    );
+
+    const headers = screen.getAllByRole('columnheader').map((th) => th.textContent?.trim());
+    const lightingIdx = headers.indexOf('Lighting');
+    const mainInstIdx = headers.indexOf('Main Instrument');
+    const descIdx = headers.indexOf('Detail');
+    const platformIdx = headers.indexOf('Platform');
+    const notesIdx = headers.indexOf('Program Notes');
+
+    expect(lightingIdx).toBeLessThan(mainInstIdx);
+    expect(mainInstIdx).toBeLessThan(descIdx);
+    expect(descIdx).toBeLessThan(platformIdx);
+    expect(platformIdx).toBeLessThan(notesIdx);
+
+    const activityTitleHeader = screen.getByRole('columnheader', { name: /Activity Title/i });
+    const lightingHeader = screen.getByTitle('Lighting');
+    const platformHeader = screen.getByTitle('Platform');
+
+    expect(activityTitleHeader).toHaveStyle({ width: '190px' });
+    expect(lightingHeader).toHaveStyle({ width: '220px' });
+    expect(platformHeader).toHaveStyle({ width: '130px' });
+  });
+
+  test('allows reordering dynamic columns via drag and drop and marks editor dirty', () => {
+    const onDirtyChange = jest.fn();
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columnsWithDescFirst}
+        initialItems={items}
+        initialStartTime="10:00 AM"
+        onDirtyChange={onDirtyChange}
+      />
+    );
+
+    const platformHeader = screen.getByTitle('Platform');
+    const lightingHeader = screen.getByTitle('Lighting');
+
+    fireEvent.dragStart(platformHeader, {
+      dataTransfer: {
+        setData: jest.fn(),
+        effectAllowed: 'move',
+      },
+    });
+
+    fireEvent.dragOver(lightingHeader, {
+      preventDefault: jest.fn(),
+      dataTransfer: { dropEffect: 'move' },
+    });
+
+    fireEvent.drop(lightingHeader);
+    fireEvent.dragEnd(platformHeader);
+
+    const headersAfter = screen.getAllByRole('columnheader').map((th) => th.textContent?.trim());
+    const platformIdx = headersAfter.indexOf('Platform');
+    const lightingIdx = headersAfter.indexOf('Lighting');
+
+    // Platform moved after Lighting
+    expect(platformIdx).toBeGreaterThan(lightingIdx);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  });
+
+  test('allows resizing column widths within boundaries (60px - 600px)', () => {
+    const onDirtyChange = jest.fn();
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columnsWithDescFirst}
+        initialItems={items}
+        initialStartTime="10:00 AM"
+        onDirtyChange={onDirtyChange}
+      />
+    );
+
+    const platformHeader = screen.getByTitle('Platform');
+    expect(platformHeader).toHaveStyle({ width: '100px' });
+
+    const platformResizeHandle = screen.getByRole('separator', { name: /Resize Platform column/i });
+
+    // Drag resize handle +80px
+    fireEvent.mouseDown(platformResizeHandle, { clientX: 100 });
+    fireEvent.mouseMove(window, { clientX: 180 });
+    fireEvent.mouseUp(window);
+
+    expect(platformHeader).toHaveStyle({ width: '180px' });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+    // Test min boundary (shrink by 500px, clamped to 60px)
+    fireEvent.mouseDown(platformResizeHandle, { clientX: 200 });
+    fireEvent.mouseMove(window, { clientX: -400 });
+    fireEvent.mouseUp(window);
+
+    expect(platformHeader).toHaveStyle({ width: '60px' });
+
+    // Test max boundary (expand by 1000px, clamped to 600px)
+    fireEvent.mouseDown(platformResizeHandle, { clientX: 100 });
+    fireEvent.mouseMove(window, { clientX: 1200 });
+    fireEvent.mouseUp(window);
+
+    expect(platformHeader).toHaveStyle({ width: '600px' });
+  });
+
+  test('persists updated column order and widths to rockBulkSaveRunsheetItems on save', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columnsWithDescFirst}
+        initialItems={items}
+        initialStartTime="10:00 AM"
+        onSaveRef={(fn) => (saveFn = fn)}
+      />
+    );
+
+    const platformResizeHandle = screen.getByRole('separator', { name: /Resize Platform column/i });
+    fireEvent.mouseDown(platformResizeHandle, { clientX: 100 });
+    fireEvent.mouseMove(window, { clientX: 250 });
+    fireEvent.mouseUp(window);
+
+    await saveFn?.();
+
+    expect(rockBulkSaveRunsheetItems).toHaveBeenCalledWith(
+      1,
+      expect.anything(),
+      expect.anything(),
+      columnsWithDescFirst,
+      'Sunday Service',
+      undefined,
+      expect.objectContaining({
+        widths: expect.objectContaining({
+          PLATFORM: 250,
+        }),
+      })
+    );
   });
 });

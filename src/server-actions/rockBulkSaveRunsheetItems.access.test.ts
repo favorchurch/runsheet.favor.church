@@ -157,4 +157,50 @@ describe('rockBulkSaveRunsheetItems access ordering', () => {
     expect(mockRockGet).not.toHaveBeenCalled();
     expectNoRockWrites();
   });
+
+  it('patches ChannelUrl when columnMetadata is provided', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+    mockRockGet.mockImplementation(channelReads('MNL Service // August 16, 2026 // 10AM'));
+
+    const columnMetadata = {
+      order: ['PLATFORM', 'DESCRIPTION', 'AUDIO'],
+      widths: { PLATFORM: 120, DESCRIPTION: 180 },
+    };
+
+    const result = await rockBulkSaveRunsheetItems(
+      42,
+      [existingItem],
+      [],
+      [],
+      undefined,
+      undefined,
+      columnMetadata,
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockRockPatch).toHaveBeenCalledWith('/ContentChannels/42', {
+      ChannelUrl: JSON.stringify(columnMetadata),
+    });
+  });
+
+  it('does not patch ChannelUrl when columnMetadata is undefined', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+    mockRockGet.mockImplementation(channelReads('MNL Service // August 16, 2026 // 10AM'));
+
+    const result = await rockBulkSaveRunsheetItems(
+      42,
+      [existingItem],
+      [],
+      [],
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockRockPatch).not.toHaveBeenCalledWith(
+      '/ContentChannels/42',
+      expect.objectContaining({ ChannelUrl: expect.anything() }),
+    );
+  });
 });

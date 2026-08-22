@@ -5,7 +5,7 @@ import { rockPost } from '@/server-actions/internal/rockFetch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import { extractRunsheetCampuses } from '@/lib/runsheetCampus';
 import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
-import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetDetails } from '@/types/Runsheet';
+import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetDetails, RunsheetColumnMetadata } from '@/types/Runsheet';
 
 const RUNSHEET_CONTENT_CHANNEL_TYPE_ID = 13;
 
@@ -15,6 +15,9 @@ export async function rockDuplicateServiceRunsheet(
   categoryId?: number,
   itemsToDuplicate: RunsheetItemRow[] = [],
   columns?: DynamicAttributeColumn[],
+  subtitle?: string,
+  startTime?: string,
+  columnMetadata?: RunsheetColumnMetadata,
 ): Promise<{
   success: boolean;
   id?: number;
@@ -75,8 +78,8 @@ export async function rockDuplicateServiceRunsheet(
       order: idx + 1,
     }));
 
-    if (preparedItems.length > 0) {
-      await rockBulkSaveRunsheetItems(newChannelId, preparedItems, [], columns);
+    if (preparedItems.length > 0 || columnMetadata !== undefined || subtitle !== undefined || startTime !== undefined) {
+      await rockBulkSaveRunsheetItems(newChannelId, preparedItems, [], columns, subtitle, startTime, columnMetadata);
     }
 
     return {
@@ -85,6 +88,9 @@ export async function rockDuplicateServiceRunsheet(
       data: {
         channelId: newChannelId,
         name: targetTitle,
+        subtitle,
+        startTime,
+        columnMetadata,
         contentChannelTypeId: RUNSHEET_CONTENT_CHANNEL_TYPE_ID,
         columns: columns || [],
         items: preparedItems,
