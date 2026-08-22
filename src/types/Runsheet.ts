@@ -6,6 +6,12 @@
  * discovered at runtime rather than hardcoded.
  */
 
+/** Column order and width customization persisted in Rock ContentChannel.ChannelUrl. */
+export interface RunsheetColumnMetadata {
+  order?: string[];
+  widths?: Record<string, number>;
+}
+
 /** One Rock item attribute rendered as a grid column. */
 export interface DynamicAttributeColumn {
   id: number;
@@ -13,6 +19,7 @@ export interface DynamicAttributeColumn {
   name: string;
   /** Rock field type id; `18` is Person (see `ROCK_PERSON_FIELD_TYPE_ID`). */
   fieldTypeId?: number;
+  width?: number;
 }
 
 /** One runsheet segment (a row in the grid). */
@@ -61,6 +68,7 @@ export interface RunsheetDetails {
   subtitle?: string;
   /** Persisted Start Time, stored independently of the channel name/subtitle in Rock's `ForeignKey` field. */
   startTime?: string;
+  columnMetadata?: RunsheetColumnMetadata;
   contentChannelTypeId: number;
   columns: DynamicAttributeColumn[];
   items: RunsheetItemRow[];

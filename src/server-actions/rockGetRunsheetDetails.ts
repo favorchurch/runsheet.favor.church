@@ -2,7 +2,7 @@
 
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
-import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
+import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetColumnMetadata } from '@/types/Runsheet';
 import { isPersonColumn, HIDDEN_ATTRIBUTE_KEYS } from '@/constants/runsheetColumns';
 import { canAccessRunsheetChannel } from '@/lib/runsheetCampus';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
@@ -170,6 +170,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
       Name: string;
       Description?: string;
       ForeignKey?: string;
+      ChannelUrl?: string;
       ContentChannelTypeId: number;
     } | null;
 
@@ -185,6 +186,21 @@ export async function rockGetRunsheetDetails(channelId: number) {
     // blocks a direct/shared link to a channel outside the user's campus too.
     if (!canAccessRunsheetChannel(session.access?.runsheetCampuses, channel.Name)) {
       return { success: false, error: 'You do not have access to this runsheet.' };
+    }
+
+    let columnMetadata: RunsheetColumnMetadata | undefined = undefined;
+    if (channel.ChannelUrl) {
+      try {
+        const parsed = typeof channel.ChannelUrl === 'string' ? JSON.parse(channel.ChannelUrl) : channel.ChannelUrl;
+        if (parsed && typeof parsed === 'object') {
+          columnMetadata = {
+            order: Array.isArray(parsed.order) ? parsed.order : undefined,
+            widths: parsed.widths && typeof parsed.widths === 'object' ? parsed.widths : undefined,
+          };
+        }
+      } catch (err) {
+        console.warn('Failed to parse ChannelUrl as columnMetadata JSON:', err);
+      }
     }
 
     const typeId = channel.ContentChannelTypeId;
@@ -212,14 +228,28 @@ export async function rockGetRunsheetDetails(channelId: number) {
 
     // DURATION drives the dedicated Start/End/Duration columns, SONGITEMID
     // is an internal reference to the linked Song, and SIBLINGKEY is the shared row key.
-    const columns: DynamicAttributeColumn[] = (rawAttrs || [])
+    let columns: DynamicAttributeColumn[] = (rawAttrs || [])
       .filter((attr) => !HIDDEN_ATTRIBUTE_KEYS.includes(attr.Key))
       .map((attr) => ({
         id: attr.Id,
         key: attr.Key,
         name: attr.Name,
         fieldTypeId: attr.FieldTypeId,
+        width: columnMetadata?.widths?.[attr.Key],
       }));
+
+    if (columnMetadata?.order && columnMetadata.order.length > 0) {
+      const orderMap = new Map<string, number>();
+      columnMetadata.order.forEach((key, idx) => {
+        orderMap.set(key, idx);
+      });
+      columns.sort((a, b) => {
+        const orderA = orderMap.has(a.key) ? orderMap.get(a.key)! : Number.MAX_SAFE_INTEGER;
+        const orderB = orderMap.has(b.key) ? orderMap.get(b.key)! : Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) return orderA - orderB;
+        return 0;
+      });
+    }
 
     const rawItems = resolvedItems as any[];
 
@@ -301,6 +331,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
         // touches the runsheet's title — Rock's `ForeignKey` is a free-text
         // field reserved for exactly this kind of external app bookkeeping.
         startTime: channel.ForeignKey || '',
+        columnMetadata,
         contentChannelTypeId: typeId,
         columns,
         items,
