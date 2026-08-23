@@ -25,12 +25,21 @@ export const RICH_TEXT_ALLOWED_TAGS = [
   'ul',
   'ol',
   'li',
+  'a',
 ] as const;
 
 /** Attributes kept during sanitisation. `style` carries colour and alignment. */
-export const RICH_TEXT_ALLOWED_ATTR = ['style'] as const;
+export const RICH_TEXT_ALLOWED_ATTR = [
+  'style',
+  'href',
+  'target',
+  'rel',
+  'data-cell-url',
+  'class',
+] as const;
 
 const HTML_TAG_PATTERN = /<\/?[a-z][^>]*>/i;
+const CELL_LINK_TAG_REGEX = /<a\b[^>]*?(?:data-cell-url|runsheet-cell-link)[^>]*>[\s\S]*?<\/a>/gi;
 
 function escapeHtml(value: string): string {
   return value
@@ -38,6 +47,62 @@ function escapeHtml(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/**
+ * Extracts any attached cell URL / file reference from a runsheet cell HTML string,
+ * returning the clean inner content HTML and the URL string (if any).
+ */
+export function extractCellUrl(value: string): { contentHtml: string; url: string | null } {
+  if (!value) {
+    return { contentHtml: '', url: null };
+  }
+
+  let extractedUrl: string | null = null;
+
+  // Match data-cell-url attribute first
+  const dataUrlMatch = value.match(/<a\b[^>]*\bdata-cell-url=(?:"([^"]*)"|'([^']*)')/i);
+  if (dataUrlMatch) {
+    extractedUrl = (dataUrlMatch[1] ?? dataUrlMatch[2] ?? '').trim() || null;
+  }
+
+  // Fallback: match href if class contains runsheet-cell-link
+  if (!extractedUrl) {
+    const linkMatch =
+      value.match(/<a\b[^>]*\bclass=(?:"[^"]*\brunsheet-cell-link\b[^"]*"|'[^']*\brunsheet-cell-link\b[^']*')[^>]*\bhref=(?:"([^"]*)"|'([^']*)')/i) ??
+      value.match(/<a\b[^>]*\bhref=(?:"([^"]*)"|'([^']*)')[^>]*\bclass=(?:"[^"]*\brunsheet-cell-link\b[^"]*"|'[^']*\brunsheet-cell-link\b[^']*')/i);
+    if (linkMatch) {
+      extractedUrl = (linkMatch[1] ?? linkMatch[2] ?? '').trim() || null;
+    }
+  }
+
+  const contentHtml = value.replace(CELL_LINK_TAG_REGEX, '').trim();
+
+  return {
+    contentHtml,
+    url: extractedUrl,
+  };
+}
+
+/**
+ * Embeds or updates an attached cell URL / file reference into runsheet HTML.
+ * If url is empty or null, strips any existing embedded cell link.
+ */
+export function embedCellUrl(contentHtml: string, url: string | null): string {
+  const { contentHtml: cleanHtml } = extractCellUrl(contentHtml || '');
+  const cleanUrl = (url || '').trim();
+
+  if (!cleanUrl) {
+    return cleanHtml;
+  }
+
+  const linkTag = `<a href="${cleanUrl}" data-cell-url="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="runsheet-cell-link">${cleanUrl}</a>`;
+
+  if (!cleanHtml) {
+    return linkTag;
+  }
+
+  return `${cleanHtml}${linkTag}`;
 }
 
 /**
@@ -72,6 +137,7 @@ export function htmlToPlainText(value: string): string {
   if (!value) return '';
 
   return value
+    .replace(CELL_LINK_TAG_REGEX, '')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|li|h[1-6]|blockquote)\s*>/gi, '\n')
     .replace(/<[^>]*>/g, '')
@@ -88,7 +154,9 @@ export function htmlToPlainText(value: string): string {
 
 /** True when the value carries no visible text (e.g. Tiptap's empty `<p></p>`). */
 export function isRichTextEmpty(value: string): boolean {
-  return htmlToPlainText(value) === '';
+  const { contentHtml, url } = extractCellUrl(value);
+  if (url) return false;
+  return htmlToPlainText(contentHtml) === '';
 }
 
 /**
