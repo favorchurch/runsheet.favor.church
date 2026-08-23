@@ -6,6 +6,7 @@ import { isPersonColumn } from '@/constants/runsheetColumns';
 import { PeopleSearchDropdown, parsePeopleString } from './PeopleSearchDropdown';
 import { htmlToPlainText, legacyValueToHtml } from '@/lib/richText';
 import { sanitizeRichText } from '@/lib/sanitizeRichText';
+import { formatDurationToHMS, formatMinutesToTimeWithSeconds, parseTimeToMinutes } from '@/lib/runsheetTime';
 import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDetailsBatch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
@@ -25,9 +26,22 @@ interface LoadedSheet {
   channelId: number;
   name: string;
   time: string;
+  startTime?: string;
   columns: DynamicAttributeColumn[];
   items: RunsheetItemRow[];
 }
+
+const START_TIME_COLUMN: DynamicAttributeColumn = {
+  id: -1,
+  key: 'START_TIME',
+  name: 'Start Time',
+};
+
+const DURATION_COLUMN: DynamicAttributeColumn = {
+  id: -2,
+  key: 'DURATION',
+  name: 'Duration',
+};
 
 const PLATFORM_COLUMN_KEYS = [
   'ANCHORPREACHER',
@@ -122,6 +136,7 @@ export function RunsheetCompareView({
         channelId: r.channelId,
         name: r.data!.name,
         time: r.data!.name.split('//').pop()?.trim() || `Channel ${r.channelId}`,
+        startTime: r.data!.startTime || r.data!.subtitle || r.data!.name.split('//').pop()?.trim() || '',
         columns: r.data!.columns,
         items: r.data!.items,
       }));
@@ -358,6 +373,34 @@ export function RunsheetCompareView({
     onClose();
   };
 
+  const sheetTimingMap = useMemo(() => {
+    const map = new Map<number, Map<string, { startTime: string; duration: string }>>();
+    for (const sheet of sheets) {
+      const itemMap = new Map<string, { startTime: string; duration: string }>();
+      let currentMinutes = parseTimeToMinutes(sheet.startTime || '08:00:00 AM');
+      const runsheetItemsOnly = sheet.items.filter((item) => !(item.title && item.title.startsWith('Roster:')));
+
+      for (const item of runsheetItemsOnly) {
+        const itemTitle = item.attributeValues?.ACTIVITYTITLE || item.title;
+        const duration = Number(item.duration) || 0;
+        const startStr = formatMinutesToTimeWithSeconds(currentMinutes);
+        const durStr = formatDurationToHMS(duration);
+
+        if (itemTitle && !itemMap.has(itemTitle)) {
+          itemMap.set(itemTitle, {
+            startTime: startStr,
+            duration: durStr,
+          });
+        }
+
+        currentMinutes += duration;
+      }
+
+      map.set(sheet.channelId, itemMap);
+    }
+    return map;
+  }, [sheets]);
+
   // Group comparison data by segment row (title)
   const segmentRows = useMemo(() => {
     const result: {
@@ -395,6 +438,29 @@ export function RunsheetCompareView({
       const columnsInSegment: { col: DynamicAttributeColumn; values: (string | null)[]; differs: boolean }[] = [];
       let segmentDiffers = false;
 
+      // 1. Start Time
+      const startTimeValues = sheets.map((s) => sheetTimingMap.get(s.channelId)?.get(title)?.startTime ?? null);
+      const nonNullStartTimes = startTimeValues.filter((v): v is string => v !== null);
+      const distinctStartTimes = new Set(nonNullStartTimes.map((v) => v.trim()));
+      const startTimeDiffers = distinctStartTimes.size > 1;
+
+      if (startTimeDiffers) segmentDiffers = true;
+      if (!showDifferencesOnly || startTimeDiffers) {
+        columnsInSegment.push({ col: START_TIME_COLUMN, values: startTimeValues, differs: startTimeDiffers });
+      }
+
+      // 2. Duration
+      const durationValues = sheets.map((s) => sheetTimingMap.get(s.channelId)?.get(title)?.duration ?? null);
+      const nonNullDurations = durationValues.filter((v): v is string => v !== null);
+      const distinctDurations = new Set(nonNullDurations.map((v) => v.trim()));
+      const durationDiffers = distinctDurations.size > 1;
+
+      if (durationDiffers) segmentDiffers = true;
+      if (!showDifferencesOnly || durationDiffers) {
+        columnsInSegment.push({ col: DURATION_COLUMN, values: durationValues, differs: durationDiffers });
+      }
+
+      // 3. Dynamic Attribute Columns
       for (const col of allColumns) {
         const values = sheets.map((s) => cellValue(s, title, col.key));
         const nonNulls = values.filter((v): v is string => v !== null);
@@ -417,7 +483,7 @@ export function RunsheetCompareView({
     }
 
     return result;
-  }, [rowTitles, allColumns, sheets, showDifferencesOnly, cellValue, rosterPersonColumn]);
+  }, [rowTitles, allColumns, sheets, showDifferencesOnly, cellValue, rosterPersonColumn, sheetTimingMap]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/60 backdrop-blur-xs">
@@ -607,12 +673,19 @@ export function RunsheetCompareView({
                         </th>
                         {sheets.map((sheet) => (
                           <th key={sheet.channelId} className="min-w-[180px] border-r border-slate-200 p-1.5 sm:p-2 last:border-r-0">
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between gap-1">
                               <span className="font-mono text-xs font-bold text-slate-900">{sheet.time}</span>
                               <span className="text-[10px] text-slate-500 font-normal truncate max-w-[100px]">
                                 {sheet.name.split('//')[0]?.trim()}
                               </span>
                             </div>
+                            {sheet.startTime ? (
+                              <div className="mt-1 flex items-center gap-1 text-[10px] font-medium text-slate-600">
+                                <span className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 border border-slate-200">
+                                  Start: {sheet.startTime}
+                                </span>
+                              </div>
+                            ) : null}
                           </th>
                         ))}
                       </tr>
@@ -633,19 +706,22 @@ export function RunsheetCompareView({
                           {sheets.map((sheet, i) => {
                             const val = values[i];
                             const isMissing = val === null;
+                            const isComputedCol = col.key === 'START_TIME' || col.key === 'DURATION';
                             const isEditingThisCell =
+                              !isComputedCol &&
                               editingCell?.channelId === sheet.channelId &&
                               editingCell?.itemTitle === segment.title &&
                               editingCell?.columnKey === col.key;
-                            const isCellDirty = dirtyEdits.get(sheet.channelId)?.get(segment.title)?.has(col.key);
+                            const isCellDirty =
+                              !isComputedCol && dirtyEdits.get(sheet.channelId)?.get(segment.title)?.has(col.key);
 
                             return (
                               <td
                                 key={sheet.channelId}
                                 className={`group relative border-r border-slate-200 p-1.5 sm:p-2 align-top last:border-r-0 text-[11px] ${differs ? 'border-amber-200/80' : ''
-                                  } ${isCellDirty ? 'bg-pink-50/80 ring-1 ring-pink-300 inset-0' : ''} ${!isMissing && !isEditingThisCell ? 'cursor-pointer hover:bg-blue-50/40' : ''}`}
+                                  } ${isCellDirty ? 'bg-pink-50/80 ring-1 ring-pink-300 inset-0' : ''} ${!isMissing && !isComputedCol && !isEditingThisCell ? 'cursor-pointer hover:bg-blue-50/40' : ''}`}
                                 onClick={() => {
-                                  if (!readOnly && !isMissing && !isEditingThisCell) {
+                                  if (!readOnly && !isMissing && !isComputedCol && !isEditingThisCell) {
                                     handleStartEditCell(sheet.channelId, segment.title, col.key, val);
                                   }
                                 }}
@@ -671,7 +747,13 @@ export function RunsheetCompareView({
                                   />
                                 ) : (
                                   <div className="flex flex-col justify-between gap-1.5 h-full min-h-[38px]">
-                                    {isPersonColumn(col) ? <RenderPeopleCell value={val} /> : <RenderRichCell value={val} />}
+                                    {isPersonColumn(col) ? (
+                                      <RenderPeopleCell value={val} />
+                                    ) : isComputedCol ? (
+                                      <span className="font-mono text-xs font-semibold text-slate-800">{val}</span>
+                                    ) : (
+                                      <RenderRichCell value={val} />
+                                    )}
                                   </div>
                                 )}
                               </td>
