@@ -31,8 +31,41 @@ jest.mock('@/components/runsheet/RunsheetCompareView', () => ({
   ),
 }));
 jest.mock('@/components/runsheet/RunsheetTableEditor', () => ({
-  RunsheetTableEditor: ({ readOnly }: { readOnly?: boolean }) => (
-    <div data-testid="runsheet-editor" data-readonly={String(Boolean(readOnly))} />
+  RunsheetTableEditor: ({
+    readOnly,
+    canEdit,
+    editorMode,
+    onModeChange,
+  }: {
+    readOnly?: boolean;
+    canEdit?: boolean;
+    editorMode?: 'view' | 'edit';
+    onModeChange?: (mode: 'view' | 'edit') => void;
+  }) => (
+    <div data-testid="runsheet-editor" data-readonly={String(Boolean(readOnly))}>
+      {canEdit && (
+        <div role="group" aria-label="Runsheet mode">
+          <button
+            type="button"
+            aria-label="View mode"
+            title="View mode"
+            aria-pressed={editorMode === 'view'}
+            onClick={() => onModeChange?.('view')}
+          >
+            View
+          </button>
+          <button
+            type="button"
+            aria-label="Edit mode"
+            title="Edit mode"
+            aria-pressed={editorMode === 'edit'}
+            onClick={() => onModeChange?.('edit')}
+          >
+            Edit
+          </button>
+        </div>
+      )}
+    </div>
   ),
 }));
 
@@ -137,6 +170,10 @@ describe('RunsheetManager View/Edit toggle', () => {
     fireEvent.click(screen.getByRole('button', { name: /edit mode/i }));
 
     fireEvent.click(screen.getByRole('button', { name: /create new runsheet/i }));
+    expect(screen.queryByTestId('runsheet-editor')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '1' } });
+    await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-readonly', 'true'));
     expect(screen.getByRole('button', { name: /view mode/i })).toHaveAttribute('aria-pressed', 'true');
   });
 

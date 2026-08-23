@@ -400,4 +400,92 @@ describe('RunsheetTableEditor layout & column ordering', () => {
       })
     );
   });
+
+  test('renders View / Edit toggle in sticky header next to start time and triggers onModeChange', () => {
+    const onModeChange = jest.fn();
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columnsWithDescFirst}
+        initialItems={items}
+        initialStartTime="10:00 AM"
+        readOnly={true}
+        canEdit={true}
+        onModeChange={onModeChange}
+      />
+    );
+
+    const modeGroup = screen.getByRole('group', { name: 'Runsheet mode' });
+    expect(modeGroup).toBeInTheDocument();
+
+    const viewButton = screen.getByRole('button', { name: /view mode/i });
+    const editButton = screen.getByRole('button', { name: /edit mode/i });
+
+    expect(viewButton).toHaveAttribute('aria-pressed', 'true');
+    expect(editButton).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(editButton);
+    expect(onModeChange).toHaveBeenCalledWith('edit');
+
+    fireEvent.click(viewButton);
+    expect(onModeChange).toHaveBeenCalledWith('view');
+  });
+
+  test('hides View / Edit toggle when canEdit is false', () => {
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columnsWithDescFirst}
+        initialItems={items}
+        initialStartTime="10:00 AM"
+        readOnly={true}
+        canEdit={false}
+      />
+    );
+
+    expect(screen.queryByRole('group', { name: 'Runsheet mode' })).not.toBeInTheDocument();
+  });
+
+  test('renders EventTeamRosterCard above the sticky runsheet title in DOM order', () => {
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columnsWithDescFirst}
+        initialItems={items}
+        initialStartTime="10:00 AM"
+      />
+    );
+
+    const rosterHeading = screen.getByText('Event Team Roster');
+    const channelHeading = screen.getByText('Sun 10:00 AM');
+    const scheduleHeading = screen.getByText('Runsheet Schedule');
+
+    // Roster card appears before the runsheet channel title in the DOM
+    expect(rosterHeading.compareDocumentPosition(channelHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Runsheet channel title appears before the Runsheet Schedule section in the DOM
+    expect(channelHeading.compareDocumentPosition(scheduleHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('renders Card / Table layout toggle floated to the right of Runsheet Schedule header', () => {
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columnsWithDescFirst}
+        initialItems={items}
+        initialStartTime="10:00 AM"
+      />
+    );
+
+    const scheduleHeading = screen.getByText('Runsheet Schedule');
+    const layoutGroup = screen.getByRole('group', { name: 'Layout view mode' });
+
+    expect(layoutGroup).toBeInTheDocument();
+    // Layout toggle appears in the schedule header container after the title
+    expect(scheduleHeading.compareDocumentPosition(layoutGroup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
