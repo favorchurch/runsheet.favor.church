@@ -122,4 +122,201 @@ describe('RunsheetCompareView', () => {
     await waitFor(() => expect(onSaveSettled).toHaveBeenCalledWith(1));
     expect(onSaveSettled).toHaveBeenCalledTimes(1);
   });
+
+  it('displays service start time in column headers', async () => {
+    (rockGetRunsheetDetailsBatch as jest.Mock).mockResolvedValue([
+      {
+        channelId: 1,
+        success: true,
+        data: {
+          channelId: 1,
+          name: 'MNL Crowne // Aug 16, 2026 // 10:00 AM',
+          startTime: '10:00:00 AM',
+          columns: [{ id: 1, key: 'NOTES', name: 'Notes' }],
+          items: [{ id: 10, title: 'Opener', order: 1, duration: 5, attributeValues: { NOTES: 'Note 1' } }],
+        },
+      },
+      {
+        channelId: 2,
+        success: true,
+        data: {
+          channelId: 2,
+          name: 'MNL Crowne // Aug 16, 2026 // 12:00 PM',
+          startTime: '12:00:00 PM',
+          columns: [{ id: 1, key: 'NOTES', name: 'Notes' }],
+          items: [{ id: 20, title: 'Opener', order: 1, duration: 5, attributeValues: { NOTES: 'Note 1' } }],
+        },
+      },
+    ]);
+
+    render(<RunsheetCompareView channelIds={[1, 2]} onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText(/Start:\s*10:00:00 AM/)).toBeInTheDocument());
+    expect(screen.getByText(/Start:\s*12:00:00 PM/)).toBeInTheDocument();
+  });
+
+  it('displays calculated segment start times and durations in comparison rows', async () => {
+    (rockGetRunsheetDetailsBatch as jest.Mock).mockResolvedValue([
+      {
+        channelId: 1,
+        success: true,
+        data: {
+          channelId: 1,
+          name: 'MNL Crowne // Aug 16, 2026 // 10:00 AM',
+          startTime: '10:00:00 AM',
+          columns: [{ id: 1, key: 'NOTES', name: 'Notes' }],
+          items: [
+            { id: 10, title: 'Opener', order: 1, duration: 5, attributeValues: { NOTES: 'Same' } },
+            { id: 11, title: 'Praise', order: 2, duration: 15, attributeValues: { NOTES: 'Same' } },
+          ],
+        },
+      },
+      {
+        channelId: 2,
+        success: true,
+        data: {
+          channelId: 2,
+          name: 'MNL Crowne // Aug 16, 2026 // 10:00 AM',
+          startTime: '10:00:00 AM',
+          columns: [{ id: 1, key: 'NOTES', name: 'Notes' }],
+          items: [
+            { id: 20, title: 'Opener', order: 1, duration: 5, attributeValues: { NOTES: 'Same' } },
+            { id: 21, title: 'Praise', order: 2, duration: 15, attributeValues: { NOTES: 'Same' } },
+          ],
+        },
+      },
+    ]);
+
+    render(<RunsheetCompareView channelIds={[1, 2]} onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getAllByText('Start Time').length).toBeGreaterThan(0));
+
+    // 'Opener' starts at 10:00:00 AM with duration 00:05:00
+    expect(screen.getAllByText('10:00:00 AM').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('00:05:00').length).toBeGreaterThan(0);
+
+    // 'Praise' starts at 10:05:00 AM with duration 00:15:00
+    expect(screen.getAllByText('10:05:00 AM').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('00:15:00').length).toBeGreaterThan(0);
+  });
+
+  it('detects and highlights differences in segment start times and durations across services', async () => {
+    (rockGetRunsheetDetailsBatch as jest.Mock).mockResolvedValue([
+      {
+        channelId: 1,
+        success: true,
+        data: {
+          channelId: 1,
+          name: 'MNL Crowne // Aug 16, 2026 // 10:00 AM',
+          startTime: '10:00:00 AM',
+          columns: [{ id: 1, key: 'NOTES', name: 'Notes' }],
+          items: [
+            { id: 10, title: 'Worship', order: 1, duration: 20, attributeValues: { NOTES: 'Same Note' } },
+          ],
+        },
+      },
+      {
+        channelId: 2,
+        success: true,
+        data: {
+          channelId: 2,
+          name: 'MNL Crowne // Aug 16, 2026 // 03:00 PM',
+          startTime: '03:00:00 PM',
+          columns: [{ id: 1, key: 'NOTES', name: 'Notes' }],
+          items: [
+            { id: 20, title: 'Worship', order: 1, duration: 25, attributeValues: { NOTES: 'Same Note' } },
+          ],
+        },
+      },
+    ]);
+
+    render(<RunsheetCompareView channelIds={[1, 2]} onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText('Worship')).toBeInTheDocument());
+
+    // Both Start Time and Duration differ
+    expect(screen.getByText('10:00:00 AM')).toBeInTheDocument();
+    expect(screen.getByText('3:00:00 PM')).toBeInTheDocument();
+    expect(screen.getByText('00:20:00')).toBeInTheDocument();
+    expect(screen.getByText('00:25:00')).toBeInTheDocument();
+
+    // Segment should show differing indicator
+    expect(screen.getByText(/Differing/i)).toBeInTheDocument();
+  });
+
+  it('filters to show only segments and columns with differences when Show Differences Only is checked', async () => {
+    (rockGetRunsheetDetailsBatch as jest.Mock).mockResolvedValue([
+      {
+        channelId: 1,
+        success: true,
+        data: {
+          channelId: 1,
+          name: 'MNL Crowne // Aug 16, 2026 // 10:00 AM',
+          startTime: '10:00:00 AM',
+          columns: [{ id: 1, key: 'NOTES', name: 'Notes' }],
+          items: [
+            { id: 10, title: 'Welcome', order: 1, duration: 5, attributeValues: { NOTES: 'Same' } },
+            { id: 11, title: 'Sermon', order: 2, duration: 30, attributeValues: { NOTES: 'Part 1' } },
+          ],
+        },
+      },
+      {
+        channelId: 2,
+        success: true,
+        data: {
+          channelId: 2,
+          name: 'MNL Crowne // Aug 16, 2026 // 10:00 AM',
+          startTime: '10:00:00 AM',
+          columns: [{ id: 1, key: 'NOTES', name: 'Notes' }],
+          items: [
+            { id: 20, title: 'Welcome', order: 1, duration: 5, attributeValues: { NOTES: 'Same' } },
+            { id: 21, title: 'Sermon', order: 2, duration: 35, attributeValues: { NOTES: 'Part 2' } },
+          ],
+        },
+      },
+    ]);
+
+    render(<RunsheetCompareView channelIds={[1, 2]} onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText('Welcome')).toBeInTheDocument());
+    expect(screen.getByText('Sermon')).toBeInTheDocument();
+
+    // Toggle Show Differences Only
+    fireEvent.click(screen.getByLabelText(/Show Differences Only/i));
+
+    // Welcome has matching start time (10:00:00 AM), matching duration (00:05:00), matching notes ("Same") -> hidden
+    expect(screen.queryByText('Welcome')).not.toBeInTheDocument();
+    // Sermon has differing duration (00:30:00 vs 00:35:00) and differing notes ("Part 1" vs "Part 2") -> visible
+    expect(screen.getByText('Sermon')).toBeInTheDocument();
+  });
+
+  it('does not allow editing computed start time or duration cells', async () => {
+    (rockGetRunsheetDetailsBatch as jest.Mock).mockResolvedValue([
+      {
+        channelId: 1,
+        success: true,
+        data: {
+          channelId: 1,
+          name: 'MNL Crowne // Aug 16, 2026 // 10:00 AM',
+          startTime: '10:00:00 AM',
+          columns: [{ id: 1, key: 'NOTES', name: 'Notes' }],
+          items: [{ id: 10, title: 'Welcome', order: 1, duration: 5, attributeValues: { NOTES: 'Editable Note' } }],
+        },
+      },
+    ]);
+
+    render(<RunsheetCompareView channelIds={[1]} onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText('10:00:00 AM')).toBeInTheDocument());
+
+    const startTimeCell = screen.getByText('10:00:00 AM').closest('td');
+    expect(startTimeCell).not.toBeNull();
+    fireEvent.click(startTimeCell!);
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+
+    const durationCell = screen.getByText('00:05:00').closest('td');
+    expect(durationCell).not.toBeNull();
+    fireEvent.click(durationCell!);
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+
+    const notesCell = screen.getByText('Editable Note').closest('td');
+    expect(notesCell).not.toBeNull();
+    fireEvent.click(notesCell!);
+    expect(screen.getByRole('textbox')).toHaveValue('Editable Note');
+  });
 });
