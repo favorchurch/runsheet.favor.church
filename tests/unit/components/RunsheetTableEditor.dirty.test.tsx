@@ -29,8 +29,12 @@ jest.mock('@/lib/richText', () => ({
   htmlToPlainText: (s: string) => s,
   legacyValueToHtml: (s: string) => s,
   sanitizeRichText: (s: string) => s,
+  extractCellUrl: (s: string) => ({ contentHtml: s, url: null }),
+  embedCellUrl: (contentHtml: string, url: string | null) => (url ? `${contentHtml}${url}` : contentHtml),
+  isRichTextEmpty: (s: string) => !s,
+  normalizeRichTextValue: (s: string) => s || '',
   RICH_TEXT_ALLOWED_TAGS: ['p', 'b', 'i', 'strong', 'em', 'span', 'br', 'ul', 'ol', 'li', 'a'],
-  RICH_TEXT_ALLOWED_ATTR: ['href', 'target', 'style', 'class', 'rel'],
+  RICH_TEXT_ALLOWED_ATTR: ['href', 'target', 'style', 'class', 'rel', 'data-cell-url'],
 }));
 
 import '@testing-library/jest-dom';
