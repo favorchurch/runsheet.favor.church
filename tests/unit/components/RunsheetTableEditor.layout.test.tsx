@@ -401,7 +401,7 @@ describe('RunsheetTableEditor layout & column ordering', () => {
     );
   });
 
-  test('renders View / Edit toggle in sticky header next to start time and triggers onModeChange', () => {
+  test('renders View / Edit toggle in sticky header and triggers onModeChange', () => {
     const onModeChange = jest.fn();
 
     render(
@@ -431,6 +431,28 @@ describe('RunsheetTableEditor layout & column ordering', () => {
 
     fireEvent.click(viewButton);
     expect(onModeChange).toHaveBeenCalledWith('view');
+  });
+
+  test('renders View / Edit toggle to the right of Save Runsheet button in edit mode', () => {
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columnsWithDescFirst}
+        initialItems={items}
+        initialStartTime="10:00 AM"
+        readOnly={false}
+        canEdit={true}
+      />
+    );
+
+    const saveButton = screen.getByRole('button', { name: /Save Runsheet/i });
+    const modeGroup = screen.getByRole('group', { name: 'Runsheet mode' });
+
+    expect(saveButton).toBeInTheDocument();
+    expect(modeGroup).toBeInTheDocument();
+    // Mode toggle appears after Save Runsheet in DOM order (floated to the right of Save Runsheet)
+    expect(saveButton.compareDocumentPosition(modeGroup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   test('hides View / Edit toggle when canEdit is false', () => {

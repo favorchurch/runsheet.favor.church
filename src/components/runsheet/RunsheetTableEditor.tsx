@@ -1978,6 +1978,80 @@ export function RunsheetTableEditor({
                 />
               </div>
 
+              {!readOnly && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleUndo}
+                    disabled={history.length === 0}
+                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Undo (⌘Z)"
+                  >
+                    <HiArrowUturnLeft className="h-3.5 w-3.5 text-slate-700" />
+                    <span>Undo</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleRedo}
+                    disabled={future.length === 0}
+                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Redo (⌘⇧Z)"
+                  >
+                    <HiArrowUturnRight className="h-3.5 w-3.5 text-slate-700" />
+                    <span>Redo</span>
+                  </button>
+
+                  <button
+                    onClick={handleResetFormClick}
+                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+                    title="Reset to the standard Favor Runsheet template"
+                  >
+                    <HiArrowPath className="h-3.5 w-3.5 text-blue-600" />
+                    <span>Reset Form</span>
+                  </button>
+
+                  <button
+                    onClick={handleAddRow}
+                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+                  >
+                    <HiPlus className="h-3.5 w-3.5 text-blue-600" />
+                    <span>Add Row</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDuplicateError('');
+                      setShowDuplicateModal(true);
+                    }}
+                    className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-slate-100 px-2.5 text-[11px] font-semibold text-slate-900 hover:bg-slate-200 active:bg-slate-300 transition-colors"
+                    title="Duplicate current runsheet as a different service time"
+                  >
+                    <HiDocumentDuplicate className="h-3.5 w-3.5 text-slate-700" />
+                    <span>Duplicate</span>
+                  </button>
+
+                  <button
+                    onClick={() => setShowDeleteModal(true)}
+                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-semibold text-rose-800 hover:bg-rose-100 focus:outline-none"
+                    title="Delete this Runsheet"
+                  >
+                    <HiTrash className="h-3.5 w-3.5 text-rose-600" />
+                    <span>Delete</span>
+                  </button>
+
+                  <button
+                    onClick={handleSave}
+                    disabled={status.type === 'saving' || !isDirty}
+                    className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-pink-700 px-3 text-[11px] font-semibold text-white hover:bg-pink-800 focus:outline-none active:bg-pink-900 disabled:opacity-40"
+                  >
+                    <HiCheck className="h-3.5 w-3.5" />
+                    <span>{status.type === 'saving' ? 'Saving...' : 'Save Runsheet'}</span>
+                  </button>
+                </>
+              )}
+
               {canEdit !== false && (
                 <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
                   <button
@@ -2008,80 +2082,6 @@ export function RunsheetTableEditor({
                   </button>
                 </div>
               )}
-
-            {!readOnly && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleUndo}
-                  disabled={history.length === 0}
-                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="Undo (⌘Z)"
-                >
-                  <HiArrowUturnLeft className="h-3.5 w-3.5 text-slate-700" />
-                  <span>Undo</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleRedo}
-                  disabled={future.length === 0}
-                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="Redo (⌘⇧Z)"
-                >
-                  <HiArrowUturnRight className="h-3.5 w-3.5 text-slate-700" />
-                  <span>Redo</span>
-                </button>
-
-                <button
-                  onClick={handleResetFormClick}
-                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
-                  title="Reset to the standard Favor Runsheet template"
-                >
-                  <HiArrowPath className="h-3.5 w-3.5 text-blue-600" />
-                  <span>Reset Form</span>
-                </button>
-
-                <button
-                  onClick={handleAddRow}
-                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
-                >
-                  <HiPlus className="h-3.5 w-3.5 text-blue-600" />
-                  <span>Add Row</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDuplicateError('');
-                    setShowDuplicateModal(true);
-                  }}
-                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-slate-100 px-2.5 text-[11px] font-semibold text-slate-900 hover:bg-slate-200 active:bg-slate-300 transition-colors"
-                  title="Duplicate current runsheet as a different service time"
-                >
-                  <HiDocumentDuplicate className="h-3.5 w-3.5 text-slate-700" />
-                  <span>Duplicate</span>
-                </button>
-
-                <button
-                  onClick={() => setShowDeleteModal(true)}
-                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-semibold text-rose-800 hover:bg-rose-100 focus:outline-none"
-                  title="Delete this Runsheet"
-                >
-                  <HiTrash className="h-3.5 w-3.5 text-rose-600" />
-                  <span>Delete</span>
-                </button>
-
-                <button
-                  onClick={handleSave}
-                  disabled={status.type === 'saving' || !isDirty}
-                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-pink-700 px-3 text-[11px] font-semibold text-white hover:bg-pink-800 focus:outline-none active:bg-pink-900 disabled:opacity-40"
-                >
-                  <HiCheck className="h-3.5 w-3.5" />
-                  <span>{status.type === 'saving' ? 'Saving...' : 'Save Runsheet'}</span>
-                </button>
-              </>
-            )}
           </div>
         </div>
 
