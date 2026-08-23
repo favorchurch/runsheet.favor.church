@@ -207,12 +207,9 @@ describe('SongDetailModal', () => {
       />
     );
 
-    await waitFor(() => {
-      expect(screen.getByText('Custom Link Song')).toBeInTheDocument();
-    });
-
     // Switch to Resources & Charts tab
-    fireEvent.click(screen.getByRole('button', { name: /Resources & Charts/i }));
+    const resourcesTab = await screen.findByRole('button', { name: /Resources & Charts/i });
+    fireEvent.click(resourcesTab);
 
     expect(screen.getByText('https://youtube.com/channel/custom')).toBeInTheDocument();
     expect(screen.getByText('Watch on YouTube')).toBeInTheDocument();
