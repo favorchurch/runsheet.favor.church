@@ -3,7 +3,7 @@
 import type { Editor } from '@tiptap/react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiChevronDown, HiChevronUp, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiRectangleStack, HiTableCells, HiTrash } from 'react-icons/hi2';
+import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiChevronDown, HiChevronUp, HiDocumentDuplicate, HiExclamationCircle, HiEye, HiLockClosed, HiMusicalNote, HiPencilSquare, HiPlus, HiRectangleStack, HiTableCells, HiTrash } from 'react-icons/hi2';
 
 import { htmlToPlainText } from '@/lib/richText';
 import { getViewModePreference, setViewModePreference } from '@/lib/userPreferences';
@@ -104,6 +104,9 @@ interface RunsheetTableEditorProps {
   /** Pixel height of an outer page header this editor's own sticky bar must sit below, so the two don't stack on top of each other at `top: 0`. */
   stickyTopOffset?: number;
   readOnly?: boolean;
+  canEdit?: boolean;
+  editorMode?: 'view' | 'edit';
+  onModeChange?: (mode: 'view' | 'edit') => void;
   runsheetCampuses?: string[];
   onCreated?: (channelId: number, title: string, createdData?: RunsheetDetails) => void;
   onDeleted?: () => void;
@@ -202,6 +205,9 @@ export function RunsheetTableEditor({
   initialSubtitle = '',
   stickyTopOffset = 0,
   readOnly = false,
+  canEdit,
+  editorMode,
+  onModeChange,
   runsheetCampuses,
   onCreated,
   onDeleted,
@@ -1875,101 +1881,133 @@ export function RunsheetTableEditor({
   }
 
   return (
-    <div className="flex w-full max-w-full min-w-0 flex-col gap-2.5 rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:p-3">
-      {/* Sticky Locked Header & Toolbar Container — sits just below the app's own sticky nav header (stickyTopOffset), not also at top:0, or the two would overlap. */}
-      <div
-        style={{ top: stickyTopOffset }}
-        className="sticky z-40 bg-white/95 backdrop-blur border-b border-slate-300 p-1.5 sm:p-2 shadow-xs space-y-1 rounded-t-xl -mx-2 -mt-2 sm:-mx-3 sm:-mt-3"
-      >
-        <div className="flex flex-col justify-between gap-1.5 sm:flex-row sm:items-center">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm sm:text-base font-bold leading-tight text-slate-900">{channelName}</h2>
-              {readOnly && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.2 text-[10px] font-bold text-amber-900 border border-amber-300">
-                  <HiLockClosed className="h-3 w-3 text-amber-700" />
-                  Read Only
-                </span>
-              )}
+    <div className="flex w-full max-w-full min-w-0 flex-col gap-2.5">
+      {/* Event Team Roster Card */}
+      <EventTeamRosterCard
+        items={items}
+        columns={dynamicAttrCols}
+        readOnly={readOnly}
+        editingRoleTitle={
+          editingCell
+            ? items.find((it) => it.id === editingCell.itemId)?.title?.startsWith('Roster:')
+              ? items.find((it) => it.id === editingCell.itemId)?.title || null
+              : null
+            : null
+        }
+        onOpenRolePicker={(roleTitle) => {
+          const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
+          const targetItem = items.find((item) => item.title === roleTitle);
+          if (targetItem) {
+            setEditingCell({ itemId: targetItem.id, key: personKey });
+          }
+        }}
+        renderPeoplePicker={(roleTitle) => {
+          const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
+          const targetItem = items.find((item) => item.title === roleTitle);
+          if (!targetItem) return null;
+          const currentVal = readRunsheetCellValue(targetItem, personKey);
+
+          return (
+            <PeopleSearchDropdown
+              initialValue={currentVal}
+              onSelectPerson={(selectedName) => handleAttrValueChange(targetItem.id, personKey, selectedName)}
+              onClose={() => closeCell(targetItem.id, personKey)}
+            />
+          );
+        }}
+      />
+
+      <div className="flex w-full max-w-full min-w-0 flex-col gap-2.5 rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:p-3">
+        {/* Sticky Locked Header & Toolbar Container — sits just below the app's own sticky nav header (stickyTopOffset), not also at top:0, or the two would overlap. */}
+        <div
+          style={{ top: stickyTopOffset }}
+          className="sticky z-40 bg-white/95 backdrop-blur border-b border-slate-300 p-1.5 sm:p-2 shadow-xs space-y-1 rounded-t-xl -mx-2 -mt-2 sm:-mx-3 sm:-mt-3"
+        >
+          <div className="flex flex-col justify-between gap-1.5 sm:flex-row sm:items-center">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-bold leading-tight text-slate-900">{channelName}</h2>
+                {readOnly && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.2 text-[10px] font-bold text-amber-900 border border-amber-300">
+                    <HiLockClosed className="h-3 w-3 text-amber-700" />
+                    Read Only
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 flex flex-col items-start gap-0.5">
+                <div className="inline-grid grid-cols-1 items-center rounded-md border border-slate-800 bg-slate-900 px-2 py-0.5 text-xs sm:text-sm font-medium text-white shadow-xs transition-all focus-within:border-slate-600 focus-within:ring-2 focus-within:ring-slate-700">
+                  <span className="col-start-1 row-start-1 text-xs sm:text-sm font-medium text-transparent select-none whitespace-pre pointer-events-none px-0.5">
+                    {subtitle || 'Sunday Service'}
+                  </span>
+                  <input
+                    type="text"
+                    disabled={readOnly}
+                    value={subtitle}
+                    onChange={(e) => {
+                      setSubtitle(e.target.value);
+                      setIsDirty(true);
+                    }}
+                    placeholder="Sunday Service"
+                    className="col-start-1 row-start-1 w-full bg-transparent text-xs sm:text-sm font-medium text-white placeholder:text-white focus:outline-none disabled:bg-transparent px-0.5"
+                  />
+                </div>
+                {!readOnly && (
+                  <span className="text-[9px] font-semibold text-slate-500 select-none">
+                    (Click to edit subtitle)
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="mt-0.5 flex flex-col items-start gap-0.5">
-              <div className="inline-grid grid-cols-1 items-center rounded-md border border-slate-800 bg-slate-900 px-2 py-0.5 text-xs sm:text-sm font-medium text-white shadow-xs transition-all focus-within:border-slate-600 focus-within:ring-2 focus-within:ring-slate-700">
-                <span className="col-start-1 row-start-1 text-xs sm:text-sm font-medium text-transparent select-none whitespace-pre pointer-events-none px-0.5">
-                  {subtitle || 'Sunday Service'}
-                </span>
+
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
+                <label className="whitespace-nowrap text-[11px] font-semibold text-slate-700" htmlFor="runsheet-start-time">
+                  Start:
+                </label>
                 <input
+                  id="runsheet-start-time"
                   type="text"
                   disabled={readOnly}
-                  value={subtitle}
-                  onChange={(e) => {
-                    setSubtitle(e.target.value);
+                  className="w-20 rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
+                  value={startTime}
+                  onChange={(event) => {
+                    setStartTime(event.target.value);
                     setIsDirty(true);
                   }}
-                  placeholder="Sunday Service"
-                  className="col-start-1 row-start-1 w-full bg-transparent text-xs sm:text-sm font-medium text-white placeholder:text-white focus:outline-none disabled:bg-transparent px-0.5"
+                  placeholder="08:00:00 AM"
                 />
               </div>
-              {!readOnly && (
-                <span className="text-[9px] font-semibold text-slate-500 select-none">
-                  (Click to edit subtitle)
-                </span>
+
+              {canEdit !== false && (
+                <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
+                  <button
+                    type="button"
+                    aria-label="View mode"
+                    title="View mode"
+                    aria-pressed={editorMode ? editorMode === 'view' : readOnly}
+                    onClick={() => onModeChange?.('view')}
+                    className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${(editorMode ? editorMode === 'view' : readOnly)
+                      ? 'bg-white text-slate-900 shadow-xs font-bold'
+                      : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <HiEye className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Edit mode"
+                    title="Edit mode"
+                    aria-pressed={editorMode ? editorMode === 'edit' : !readOnly}
+                    onClick={() => onModeChange?.('edit')}
+                    className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${(editorMode ? editorMode === 'edit' : !readOnly)
+                      ? 'bg-white text-slate-900 shadow-xs font-bold'
+                      : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <HiPencilSquare className="h-4 w-4" />
+                  </button>
+                </div>
               )}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
-              <label className="whitespace-nowrap text-[11px] font-semibold text-slate-700" htmlFor="runsheet-start-time">
-                Start:
-              </label>
-              <input
-                id="runsheet-start-time"
-                type="text"
-                disabled={readOnly}
-                className="w-20 rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
-                value={startTime}
-                onChange={(event) => {
-                  setStartTime(event.target.value);
-                  setIsDirty(true);
-                }}
-                placeholder="08:00:00 AM"
-              />
-            </div>
-
-            <div role="group" aria-label="Layout view mode" className="flex items-center rounded-md border border-slate-300 bg-slate-100 p-0.5">
-              <button
-                type="button"
-                aria-label="Card view"
-                title="Card view"
-                aria-pressed={mobileViewMode === 'cards'}
-                onClick={() => {
-                  setMobileViewMode('cards');
-                  setViewModePreference('cards');
-                }}
-                className={`flex items-center justify-center rounded p-1 transition-all cursor-pointer ${mobileViewMode === 'cards'
-                    ? 'bg-white text-slate-900 shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                  }`}
-              >
-                <HiRectangleStack className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                aria-label="Table view"
-                title="Table view"
-                aria-pressed={mobileViewMode === 'grid'}
-                onClick={() => {
-                  setMobileViewMode('grid');
-                  setViewModePreference('grid');
-                }}
-                className={`flex items-center justify-center rounded p-1 transition-all cursor-pointer ${mobileViewMode === 'grid'
-                    ? 'bg-white text-slate-900 shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                  }`}
-              >
-                <HiTableCells className="h-3.5 w-3.5" />
-              </button>
-            </div>
 
             {!readOnly && (
               <>
@@ -2316,55 +2354,56 @@ export function RunsheetTableEditor({
         />
       )}
 
-      {/* Event Team Roster Card */}
-      <EventTeamRosterCard
-        items={items}
-        columns={dynamicAttrCols}
-        readOnly={readOnly}
-        editingRoleTitle={
-          editingCell
-            ? items.find((it) => it.id === editingCell.itemId)?.title?.startsWith('Roster:')
-              ? items.find((it) => it.id === editingCell.itemId)?.title || null
-              : null
-            : null
-        }
-        onOpenRolePicker={(roleTitle) => {
-          const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
-          const targetItem = items.find((item) => item.title === roleTitle);
-          if (targetItem) {
-            setEditingCell({ itemId: targetItem.id, key: personKey });
-          }
-        }}
-        renderPeoplePicker={(roleTitle) => {
-          const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
-          const targetItem = items.find((item) => item.title === roleTitle);
-          if (!targetItem) return null;
-          const currentVal = readRunsheetCellValue(targetItem, personKey);
+      {/* Schedule Header & Layout View Toggle */}
+      <div className="flex items-center justify-between px-1">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-extrabold uppercase tracking-wider text-white shadow-xs">
+            <HiTableCells className="h-3.5 w-3.5 text-slate-300" />
+            Runsheet Schedule
+          </span>
+          <span className="text-xs font-semibold text-slate-600">
+            ({processedRows.length} segments)
+          </span>
+        </div>
 
-          return (
-            <PeopleSearchDropdown
-              initialValue={currentVal}
-              onSelectPerson={(selectedName) => handleAttrValueChange(targetItem.id, personKey, selectedName)}
-              onClose={() => closeCell(targetItem.id, personKey)}
-            />
-          );
-        }}
-      />
+        <div role="group" aria-label="Layout view mode" className="flex items-center rounded-md border border-slate-300 bg-slate-100 p-0.5">
+          <button
+            type="button"
+            aria-label="Card view"
+            title="Card view"
+            aria-pressed={mobileViewMode === 'cards'}
+            onClick={() => {
+              setMobileViewMode('cards');
+              setViewModePreference('cards');
+            }}
+            className={`flex items-center justify-center rounded p-1 transition-all cursor-pointer ${mobileViewMode === 'cards'
+                ? 'bg-white text-slate-900 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+              }`}
+          >
+            <HiRectangleStack className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="Table view"
+            title="Table view"
+            aria-pressed={mobileViewMode === 'grid'}
+            onClick={() => {
+              setMobileViewMode('grid');
+              setViewModePreference('grid');
+            }}
+            className={`flex items-center justify-center rounded p-1 transition-all cursor-pointer ${mobileViewMode === 'grid'
+                ? 'bg-white text-slate-900 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+              }`}
+          >
+            <HiTableCells className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
 
       {/* Spreadsheet Table View */}
       <div className={`w-full max-w-full min-w-0 flex flex-col gap-1.5 ${mobileViewMode === 'cards' ? 'hidden' : 'block'}`}>
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-extrabold uppercase tracking-wider text-white shadow-xs">
-              <HiTableCells className="h-3.5 w-3.5 text-slate-300" />
-              Runsheet Schedule
-            </span>
-            <span className="text-xs font-semibold text-slate-600">
-              ({processedRows.length} segments)
-            </span>
-          </div>
-        </div>
-
         <div className="w-full max-w-full overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-xs">
           <table className="w-full min-w-full border-collapse bg-white text-[11px] text-slate-900" style={{ tableLayout: 'fixed' }}>
             <thead className="sticky top-0 z-30 bg-slate-900 text-white shadow-xs">
@@ -2981,6 +3020,7 @@ export function RunsheetTableEditor({
         }}
         onClose={() => setSongModalState({ isOpen: false })}
       />
+      </div>
     </div>
   );
 }

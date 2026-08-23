@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from 'react-query';
-import { HiArrowsRightLeft, HiEye, HiPencilSquare } from 'react-icons/hi2';
+import { HiArrowsRightLeft } from 'react-icons/hi2';
 import { canUserEditRunsheet } from '@/lib/permissions';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
 import { extractChannelTime, sortRunsheetChannels } from '@/lib/runsheetDate';
@@ -471,37 +471,6 @@ export function RunsheetManager({
                   <span>Compare</span>
                 </button>
               )}
-
-              {canEdit && (
-                <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
-                  <button
-                    type="button"
-                    aria-label="View mode"
-                    title="View mode"
-                    aria-pressed={editorMode === 'view'}
-                    onClick={() => handleModeChange('view')}
-                    className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${editorMode === 'view'
-                      ? 'bg-white text-slate-900 shadow-xs font-bold'
-                      : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    <HiEye className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Edit mode"
-                    title="Edit mode"
-                    aria-pressed={editorMode === 'edit'}
-                    onClick={() => handleModeChange('edit')}
-                    className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${editorMode === 'edit'
-                      ? 'bg-white text-slate-900 shadow-xs font-bold'
-                      : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    <HiPencilSquare className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
             </div>
 
             {canEdit && (
@@ -557,6 +526,9 @@ export function RunsheetManager({
                 initialSubtitle={runsheetData.subtitle}
                 stickyTopOffset={appHeaderHeight}
                 readOnly={!isEditMode}
+                canEdit={canEdit}
+                editorMode={editorMode}
+                onModeChange={handleModeChange}
                 runsheetCampuses={user?.access?.runsheetCampuses}
                 onCreated={handleRunsheetCreated}
                 onDeleted={() => handleRunsheetDeleted(runsheetData.channelId)}
