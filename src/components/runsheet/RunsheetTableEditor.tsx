@@ -3,7 +3,7 @@
 import type { Editor } from '@tiptap/react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiChevronDown, HiChevronUp, HiDocumentDuplicate, HiExclamationCircle, HiEye, HiLockClosed, HiMusicalNote, HiPencilSquare, HiPlus, HiRectangleStack, HiTableCells, HiTrash } from 'react-icons/hi2';
+import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiChevronDown, HiChevronUp, HiDocumentDuplicate, HiExclamationCircle, HiEye, HiLockClosed, HiMusicalNote, HiPencilSquare, HiPlus, HiRectangleStack, HiShare, HiTableCells, HiTrash } from 'react-icons/hi2';
 
 import { htmlToPlainText } from '@/lib/richText';
 import { getViewModePreference, setViewModePreference } from '@/lib/userPreferences';
@@ -56,6 +56,7 @@ import { RichTextContent } from './RichTextContent';
 import { RichTextToolbar } from './RichTextToolbar';
 import { SongSearchDropdown } from './SongSearchDropdown';
 import { SongDetailModal } from './SongDetailModal';
+import { ShareRunsheetModal } from './ShareRunsheetModal';
 import { EventTeamRosterCard, ensureRosterItems } from './EventTeamRosterCard';
 
 function extractCategoryCampus(catName: string): RunsheetCampusCode | null {
@@ -475,6 +476,7 @@ export function RunsheetTableEditor({
   const [isDeleting, setIsDeleting] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [rowToDelete, setRowToDelete] = useState<RunsheetItemRow | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   const handleInsertRow = (targetIndex: number, position: 'above' | 'below') => {
     if (readOnly) return;
@@ -2052,6 +2054,16 @@ export function RunsheetTableEditor({
                 </>
               )}
 
+              <button
+                type="button"
+                onClick={() => setShowShareModal(true)}
+                className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+                title="Share the runsheet app"
+              >
+                <HiShare className="h-3.5 w-3.5 text-blue-600" />
+                <span>Share</span>
+              </button>
+
               {canEdit !== false && (
                 <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
                   <button
@@ -2088,6 +2100,8 @@ export function RunsheetTableEditor({
         {/* Formatting bar for whichever cell is open (hidden in read-only mode) */}
         {!readOnly && <RichTextToolbar editor={activeEditor} />}
       </div>
+
+      <ShareRunsheetModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} />
 
       {/* Duplicate Runsheet Modal */}
       {showDuplicateModal && (
