@@ -11,6 +11,7 @@ import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDet
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
+import toast from 'react-hot-toast';
 
 interface RunsheetCompareViewProps {
   channelIds: number[];
@@ -332,14 +333,19 @@ export function RunsheetCompareView({
       if (allOk) {
         setDirtyEdits(new Map());
         setMatrixSaveStatus('All comparison edits saved successfully!');
+        toast.success('All comparison edits saved successfully!');
         await fetchSheets(selectedChannelIds);
         return true;
       } else {
-        setMatrixSaveStatus('Some edits failed to save to Rock. Please try again.');
+        const errorMsg = 'Some edits failed to save to Rock RMS. Please try again.';
+        setMatrixSaveStatus(errorMsg);
+        toast.error(errorMsg);
         return false;
       }
     } catch (err: any) {
-      setMatrixSaveStatus(`Error saving edits: ${err?.message || 'Unknown error'}`);
+      const errorMsg = `Error saving edits: ${err?.message || 'Unknown error'}`;
+      setMatrixSaveStatus(errorMsg);
+      toast.error(errorMsg);
       return false;
     } finally {
       // Compare writes use a separate batch read/state path from the manager.

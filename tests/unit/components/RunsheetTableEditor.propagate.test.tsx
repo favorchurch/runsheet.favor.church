@@ -77,7 +77,7 @@ describe('RunsheetTableEditor propagate bar', () => {
           name: 'MNL Crowne // August 16, 2026 // 11:30AM',
           contentChannelTypeId: 13,
           columns: [{ id: 1, key: 'NOTES', name: 'Notes' }],
-          items: [{ id: 20, title: 'Welcome', order: 1, duration: 5, attributeValues: { NOTES: 'Doors open 8:30' } }],
+          items: [{ id: 20, title: 'Welcome', order: 1, duration: 5, attributeValues: { NOTES: 'Old note' } }],
         },
       },
     ]);
@@ -107,6 +107,57 @@ describe('RunsheetTableEditor propagate bar', () => {
     // Initial item baseline has NOTES: 'Doors open 8:30', let's test subtitle save
     await waitFor(() => {
       expect(screen.getByText(/Favor Runsheet successfully saved/i)).toBeInTheDocument();
+    });
+  });
+
+  it('calls onSaveSettled for each target sibling when propagation changes are applied', async () => {
+    const onSaveSettledMock = jest.fn();
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="MNL Crowne // August 16, 2026 // 9AM"
+        initialSubtitle="Sunday Service"
+        contentChannelTypeId={13}
+        columns={[{ id: 1, key: 'NOTES', name: 'Notes' }]}
+        initialItems={[{ id: 1, title: 'Welcome', order: 1, duration: 5, attributeValues: { NOTES: 'Old note' } }]}
+        readOnly={false}
+        onSaveSettled={onSaveSettledMock}
+      />
+    );
+
+    // Switch to Card view to edit the Notes field cleanly
+    fireEvent.click(screen.getByRole('button', { name: /card view/i }));
+    fireEvent.click(screen.getByText('Edit Card'));
+
+    const notesTextarea = screen.getByPlaceholderText('Enter notes...') as HTMLTextAreaElement;
+    fireEvent.change(notesTextarea, { target: { value: 'New note' } });
+    fireEvent.blur(notesTextarea);
+
+    // Save card (which also triggers runsheet save)
+    const saveCardBtn = screen.getAllByRole('button', { name: /save card/i })[0];
+    fireEvent.click(saveCardBtn);
+
+    // Propagate bar should appear
+    await waitFor(() => {
+      expect(screen.getByText(/Review/i)).toBeInTheDocument();
+    });
+
+    // Open review modal
+    const reviewBtn = screen.getByText(/Review/i);
+    fireEvent.click(reviewBtn);
+
+    // Wait for review modal
+    await waitFor(() => {
+      expect(screen.getByText(/Apply changes to other services today/i)).toBeInTheDocument();
+    });
+
+    // Click Apply changes
+    const applyBtn = screen.getByRole('button', { name: /apply.*change/i });
+    fireEvent.click(applyBtn);
+
+    // Should call onSaveSettled for channel 2 (the sibling)
+    await waitFor(() => {
+      expect(onSaveSettledMock).toHaveBeenCalledWith(2);
     });
   });
 });

@@ -7,6 +7,7 @@ import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiC
 
 import { htmlToPlainText } from '@/lib/richText';
 import { getViewModePreference, setViewModePreference } from '@/lib/userPreferences';
+import toast from 'react-hot-toast';
 
 interface RunsheetSnapshot {
   items: RunsheetItemRow[];
@@ -1430,7 +1431,9 @@ export function RunsheetTableEditor({
       );
     } catch (err: any) {
       onSaveSettled?.(channelId);
-      setStatus({ type: 'error', message: err?.message || 'Failed to save changes.' });
+      const msg = err?.message || 'Failed to save changes.';
+      setStatus({ type: 'error', message: msg });
+      toast.error(msg);
       return false;
     }
 
@@ -1477,6 +1480,7 @@ export function RunsheetTableEditor({
       });
 
       setStatus({ type: 'success', message: 'Favor Runsheet successfully saved to Rock RMS!' });
+      toast.success('Favor Runsheet successfully saved to Rock RMS!');
       setIsDirty(false);
       setDeletedIds([]);
 
@@ -1543,6 +1547,7 @@ export function RunsheetTableEditor({
           : result.error || 'Failed to save changes.';
 
       setStatus({ type: 'error', message });
+      toast.error(message);
       onSaveSettled?.(channelId);
       return false;
     }
@@ -1581,17 +1586,41 @@ export function RunsheetTableEditor({
   const handlePropagateApply = React.useCallback(async () => {
     if (!propagatePlan) return;
     setPropagateApplying(true);
+    const toastId = toast.loading('Applying changes to other services...');
+    const targetChannelIds = propagatePlan.targets.map((t) => t.channel.channelId);
     try {
       const outcomes = await executePropagationPlan(propagatePlan, propagateTargetRows, columns);
       setPropagateOutcomes(outcomes);
-      if (outcomes.every((o) => o.ok)) {
+
+      const allOk = outcomes.every((o) => o.ok);
+      const appliedServicesCount = outcomes.filter((o) => o.ok && o.appliedCount > 0).length;
+
+      if (allOk) {
         setPropagateReviewOpen(false);
         setPropagateBarDismissed(true);
+        toast.success(
+          appliedServicesCount > 0
+            ? `Successfully applied changes to ${appliedServicesCount} service${appliedServicesCount === 1 ? '' : 's'}!`
+            : 'Changes applied successfully!',
+          { id: toastId },
+        );
+      } else {
+        const failedOutcomes = outcomes.filter((o) => !o.ok);
+        toast.error(
+          `Some changes could not be applied: ${failedOutcomes.map((o) => o.channelName).join(', ')}`,
+          { id: toastId },
+        );
       }
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to apply changes to other services.', { id: toastId });
     } finally {
+      // Invalidate queries for all target channels so switching to other services displays the latest changes
+      for (const channelId of targetChannelIds) {
+        onSaveSettled?.(channelId);
+      }
       setPropagateApplying(false);
     }
-  }, [propagatePlan, propagateTargetRows, columns]);
+  }, [propagatePlan, propagateTargetRows, columns, onSaveSettled]);
 
   // The template auto-fill above only sets local (dirty) state — without
   // this, a freshly created runsheet's template exists only in the browser
@@ -1613,21 +1642,45 @@ export function RunsheetTableEditor({
       const targetItem = processedRows[index];
       const targetId = targetItem?.id;
 
-      setEditingCardIndex(null);
-      if (isDirty) {
-        handleSaveRef.current();
+      if (targetId !== undefined) {
+        const durationVal = parseDurationInputToMinutes(cardDurationDraft);
+        setItems((previous) => {
+          const idx = previous.findIndex((it) => it.id === targetId);
+          if (idx === -1) return previous;
+          const updated = [...previous];
+          const item = { ...updated[idx] };
+          item.duration = durationVal;
+
+          if (!musicCellMap[String(targetId)]) {
+            item.title = cardTitleDraft;
+            item.attributeValues = { ...(item.attributeValues || {}), ACTIVITYTITLE: cardTitleDraft };
+          }
+
+          for (const [colKey, draftVal] of Object.entries(cardAttrDrafts)) {
+            writeRunsheetCellValue(item, colKey, draftVal);
+          }
+
+          updated[idx] = item;
+          return updated;
+        });
+        setIsDirty(true);
       }
+
+      setEditingCardIndex(null);
+      setTimeout(() => {
+        handleSaveRef.current();
+      }, 0);
 
       if (targetId !== undefined) {
         setTimeout(() => {
           const el = document.getElementById(`card_item_${targetId}`);
-          if (el) {
+          if (el && typeof el.scrollIntoView === 'function') {
             el.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }
         }, 100);
       }
     },
-    [processedRows, isDirty]
+    [processedRows, cardDurationDraft, cardTitleDraft, cardAttrDrafts, musicCellMap]
   );
 
   const closeCell = (itemId: number | string, key: string) => {
