@@ -126,6 +126,30 @@ describe('runsheetInlineDiff', () => {
     expect(result.map((entry) => entry.sourceRow?.title || entry.targetRow?.title)).toEqual(['A', 'B', 'Y']);
   });
 
+  test('keeps a source-only row in its source-relative position between matched rows', () => {
+    const source = [
+      row(1, 'A', { SIBLINGKEY: 'a' }),
+      row(2, 'Removed', { SIBLINGKEY: 'removed' }),
+      row(3, 'B', { SIBLINGKEY: 'b' }),
+    ];
+    const target = [
+      row(10, 'A', { SIBLINGKEY: 'a' }),
+      row(11, 'B', { SIBLINGKEY: 'b' }),
+    ];
+
+    const result = buildInlineDiffRows({
+      sourceRows: source,
+      targetRows: target,
+      targetChannelId: 2,
+      columns: [],
+      sourceStartTime: '3:00 PM',
+      targetStartTime: '3:00 PM',
+    });
+
+    expect(result.map((entry) => entry.sourceRow?.title || entry.targetRow?.title)).toEqual(['A', 'Removed', 'B']);
+    expect(result[1].rowStatus).toBe('source-only');
+  });
+
   test('inherits a timed segment start for a following zero-duration row', () => {
     const source = [
       row(1, 'Segment', { SIBLINGKEY: 'segment' }, 30),

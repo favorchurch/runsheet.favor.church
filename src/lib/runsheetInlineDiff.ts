@@ -205,8 +205,51 @@ export function buildInlineDiffRows(input: BuildInlineDiffRowsInput): InlineDiff
       const matchedRow = matchedRowsByTargetIdentity.get(rowIdentity(row));
       return matchedRow ? [matchedRow] : [];
     }),
-    ...matchedRows.filter((row) => row.rowStatus === 'source-only'),
   ];
+
+  // Reinsert source-only rows around their nearest matched source neighbor so
+  // removed activities retain their chronological context after matched rows
+  // are projected into target order.
+  for (const sourceOnlyRow of matchedRows.filter((row) => row.rowStatus === 'source-only')) {
+    const sourceIndex = sourceOnlyRow.sourceIndex;
+    if (sourceIndex === null) {
+      result.push(sourceOnlyRow);
+      continue;
+    }
+
+    let insertionIndex = result.length;
+    let foundBackward = false;
+
+    for (let i = sourceIndex - 1; i >= 0; i--) {
+      const matchedIndex = result.findIndex(
+        (candidate) => candidate.rowStatus === 'matched' && candidate.sourceIndex === i,
+      );
+      if (matchedIndex < 0) continue;
+      insertionIndex = matchedIndex + 1;
+      while (
+        insertionIndex < result.length &&
+        result[insertionIndex].rowStatus === 'source-only' &&
+        (result[insertionIndex].sourceIndex ?? -1) < sourceIndex
+      ) {
+        insertionIndex++;
+      }
+      foundBackward = true;
+      break;
+    }
+
+    if (!foundBackward) {
+      for (let i = sourceIndex + 1; i < sourceRows.length; i++) {
+        const matchedIndex = result.findIndex(
+          (candidate) => candidate.rowStatus === 'matched' && candidate.sourceIndex === i,
+        );
+        if (matchedIndex < 0) continue;
+        insertionIndex = matchedIndex;
+        break;
+      }
+    }
+
+    result.splice(insertionIndex, 0, sourceOnlyRow);
+  }
 
   const targetOnlyRows = targetRows
     .map((row, targetIndex) => ({ row, targetIndex }))
