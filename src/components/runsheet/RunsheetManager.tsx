@@ -19,7 +19,7 @@ import {
   useRunsheetDetails,
 } from './runsheetQueries';
 import { CreateRunsheetForm } from './CreateRunsheetForm';
-import { RunsheetTableEditor } from './RunsheetTableEditor';
+import { RunsheetTableEditor } from './RunsheetTableEditorDiff';
 import { RunsheetCompareView } from './RunsheetCompareView';
 import { RunsheetTableSkeleton } from './RunsheetTableSkeleton';
 import { RunsheetLandingView } from './RunsheetLandingView';
