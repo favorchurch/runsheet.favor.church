@@ -1,6 +1,6 @@
 {
   "name": "runsheet-favor-church",
-  "version": "1.13.2",
+  "version": "1.14.0",
   "private": true,
   "ts-node": {
     "esm": true,
@@ -34,7 +34,7 @@
     "@mui/material": "^5.17.1",
     "@mui/x-data-grid": "^6.20.4",
     "@next/third-parties": "^15.3.2",
-    "@tailwindcss/aspect-ratio": "^0.4.2",
+    "@tailwindcss/aspect-ratio": "^3.0.0",
     "@tiptap/extension-text-align": "^3.29.2",
     "@tiptap/extension-text-style": "^3.29.2",
     "@tiptap/react": "^3.23.5",
