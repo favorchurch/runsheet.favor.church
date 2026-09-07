@@ -1,185 +1,135 @@
-# Inline Per-Cell Service Diff - Implementation Plan
+# Inline Per-Cell Service Diff — Implementation Plan
 
 ## Source
 - Issue: https://github.com/favorchurch/runsheet.favor.church/issues/61
-- Repository/ref inspected: `favorchurch/runsheet.favor.church` `main` at `e9093be0ebc5e5834c737eb9f264d7b38664208f`
-- User reference: current runsheet table on `runsheet.favor.church`, comparing a current service such as 3:00 PM against a sibling such as 5:30 PM.
+- PR: https://github.com/favorchurch/runsheet.favor.church/pull/64
+- Baseline inspected: `main` at `e9093be0ebc5e5834c737eb9f264d7b38664208f`
 
 ## Goal
-Let a user choose one same-campus, same-date sibling service and see a Git-style diff directly inside the active runsheet table: unchanged cells stay normal, source removals are muted in parentheses, and comparison additions are highlighted yellow.
+Let a user choose one same-campus, same-date sibling service and see a Git-style diff in the active runsheet footprint: unchanged cells stay calm, current/source removals are muted in parentheses, and comparison additions are highlighted yellow.
 
 ## Scope
 ### In scope
-- One comparison sibling at a time.
-- A compact `− Diff +` control in the active runsheet surface; red `−`, green `+`.
-- Same-campus, same-date sibling selection using the existing sibling resolver.
-- Read-only comparison data loaded without navigation.
-- Per-cell unchanged / replaced / removed / added rendering in the existing table footprint.
-- Explicit source-only and target-only segment handling without positional guessing.
-- Existing visible person/platform columns participate in inline diff.
-- Computed Start and Duration values participate in diff.
-- View-mode support, including users who cannot edit.
-- Mobile-safe stacked values inside each cell.
-- Regression coverage for the existing full-screen Compare and edit/save flows.
-- Semver feature version bump during implementation.
+- One sibling comparison at a time.
+- Compact red `−`, center `Diff`, green `+` control.
+- Same-campus/date sibling resolution.
+- Read-only target loading without navigation.
+- Cell states: same, changed, removed, added.
+- Explicit source-only and target-only segments.
+- Existing visible dynamic/person/platform columns.
+- Computed Start and Duration values.
+- View-only users.
+- Mobile-safe stacked old/new values.
+- Existing full-screen Compare remains available.
+- Semver bump to `1.14.0`.
 
 ### Out of scope
-- Replacing the existing 2–4 service full-screen Compare view.
-- Editing or saving the comparison service from inline Diff.
-- Multi-target inline Diff.
-- Cross-campus or cross-date inline Diff.
-- Automatic propagation/push from inline Diff.
+- Editing the comparison service.
+- Multi-target inline diff.
+- Cross-campus/date comparison.
+- Propagation/push from this surface.
 - Rock schema changes or migrations.
 
 ## Repository evidence
-| Path / symbol | Current responsibility / observed behavior | Why it matters |
+| Path / symbol | Current responsibility | Implementation use |
 | --- | --- | --- |
-| `src/components/runsheet/RunsheetManager.tsx` | Owns the active channel, the access-filtered `availableChannels`, view/edit mode, and the existing full-screen Compare entry point. It passes the active data into `RunsheetTableEditor`. | The editor needs the already-authorized channel list so it can offer only eligible sibling services without creating a second discovery path. |
-| `src/components/runsheet/RunsheetTableEditor.tsx` | Owns the current table, cell rendering, computed row timing, edit/save behavior, and already imports `resolveSiblings`, `matchRows`, and `rockGetRunsheetDetailsBatch` for propagation workflows. | Inline Diff belongs here because the requirement is to keep the current table shape and render the diff inside each existing cell. |
-| `src/lib/runsheetSiblings.ts` / `resolveSiblings` | Returns channels with the same campus and date, excluding the source channel. | Reuse this instead of inventing separate service-pairing rules. |
-| `src/lib/runsheetMatch.ts` / `matchRows` | Matches source rows to target rows by `SIBLINGKEY`, then unique title, otherwise reports `none`; title fallback also returns optional backfill metadata. | Reuse its matching semantics, but inline Diff must ignore backfill and perform no writes. |
-| `src/server-actions/rockGetRunsheetDetailsBatch.ts` | Read-only fan-out over `rockGetRunsheetDetails`; already used by Compare/propagation. | Existing read boundary is sufficient for loading the selected sibling; no new server action is required. |
-| `src/components/runsheet/RichTextContent.tsx` | Read-only rich-text renderer using legacy conversion plus DOMPurify sanitization, with plain-text hydration fallback. | Both removed and added rich-text values should go through this renderer rather than introducing a new unsafe HTML path. |
-| `src/components/runsheet/RunsheetCompareView.tsx` | Existing separate overlay that loads multiple sheets and computes value differences, including derived Start/Duration values. | Inline Diff should coexist with this surface and can reuse its comparison conventions without duplicating its side-by-side UI. |
-| `tests/unit/lib/runsheetMatch.test.ts` and `tests/unit/lib/runsheetSiblings.test.ts` | Cover sibling resolution and non-positional row matching behavior. | New tests should build on these guarantees instead of restating all matching logic. |
-| `tests/unit/components/RunsheetManager.compare.test.tsx` | Protects the current full-screen Compare entry point. | Must remain green after the inline workflow is added. |
-| `package.json` | Current version is `1.13.2`; repo instructions require semver version updates. | This backward-compatible feature should bump the app to `1.14.0` during implementation. |
+| `src/components/runsheet/RunsheetManager.tsx` | Active channel, editor mode, full-screen Compare | Switches the table import to the inline-diff wrapper while preserving existing manager behavior. |
+| `src/components/runsheet/RunsheetTableEditor.tsx` | Existing single-runsheet editor/save state | Kept mounted and unchanged beneath the wrapper so normal editing/save behavior remains authoritative. |
+| `src/components/runsheet/RunsheetTableEditorDiff.tsx` | New wrapper | Owns `− Diff +`, read-only target loading, and diff-table presentation. |
+| `src/lib/runsheetSiblings.ts` | Same-campus/date sibling selection | Reused directly. |
+| `src/lib/runsheetMatch.ts` | `SIBLINGKEY` then unique-title matching | Reused; backfill output is ignored so visual diff cannot write. |
+| `src/lib/runsheetInlineDiff.ts` | New pure diff model | Computes cell/row states and target-only alignment without server actions. |
+| `src/server-actions/rockGetAvailableRunsheetChannels.ts` | Authorized channel discovery | Wrapper uses the existing authenticated read path to discover eligible siblings. |
+| `src/server-actions/rockGetRunsheetDetailsBatch.ts` | Authorized batch details read | Loads exactly the selected target service. |
+| `src/components/runsheet/RichTextContent.tsx` | Sanitized read-only cell renderer | Used for both removed and added values. |
 
-## Current state
-The active runsheet is a single-sheet grid rendered by `RunsheetTableEditor`. A separate `RunsheetCompareView` can compare several services in an overlay, but it changes the visual model to service columns and does not provide a Git-style old/new rendering inside the current table.
+## Target behavior
+- Same value: render normally once.
+- Changed value: source/current value first, muted and parenthesized; target value below in yellow.
+- Removed value: source/current muted and parenthesized only.
+- Added value: target yellow only.
+- Source-only row: keep the row and mark it absent in the target.
+- Target-only row: insert a synthetic read-only added row near the nearest matched neighbor.
+- Ambiguous duplicate titles are never matched by position.
+- Selecting/switching/clearing Diff performs reads only.
 
-The codebase already has the required primitives: access-filtered channel discovery in the manager, same-date/campus sibling selection, row correspondence via sibling key/title, a batch details reader, safe read-only rich-text rendering, and calculated timing logic. No Rock write or schema change is necessary for this feature.
+## Implementation
+### 1. Pure diff model
+`src/lib/runsheetInlineDiff.ts`:
+- filters non-schedule roster placeholder rows;
+- computes displayed Start/Duration values for both services;
+- normalizes rich-text values to rendered text + attached URL for equality;
+- delegates row correspondence to `matchRows`;
+- ignores `matchRows.backfill` entirely;
+- classifies `same | changed | removed | added` per cell;
+- inserts unmatched target rows deterministically around matched neighbors.
 
-## Target state
-An open runsheet exposes `− Diff +`. The green `+` selects or changes one eligible sibling; the red `−` clears the active comparison. While a sibling is selected, the current table remains the spatial reference:
+### 2. Inline diff wrapper
+`src/components/runsheet/RunsheetTableEditorDiff.tsx`:
+- wraps the existing editor rather than refactoring its large single-sheet state model;
+- discovers authorized channels through `rockGetAvailableRunsheetChannels(false)` and narrows them with `resolveSiblings`;
+- loads the selected target using `rockGetRunsheetDetailsBatch([id])`;
+- uses a request version guard so stale target responses cannot win after fast switching/clearing;
+- keeps the base editor mounted while Diff is active, but hides it and renders a read-only diff table;
+- disables entering Diff while the source has unsaved edits. This is an intentional implementation tightening: it avoids comparing persisted target data against an unstable source state and guarantees clearing Diff returns to the exact mounted editor state;
+- never imports a Rock mutation action.
 
-- Same value: render exactly as the normal current cell.
-- Replacement: render current/source value muted and parenthesized, then comparison value in a yellow-highlighted block beneath it.
-- Removal: render only the current/source value muted and parenthesized.
-- Addition: render only the comparison value in yellow.
-- Source-only segment: keep the source row and render it as removed/unmatched rather than pairing it by index.
-- Target-only segment: render a synthetic diff-only added row in the same table, positioned relative to the nearest matched target neighbor, with populated target cells highlighted yellow.
+### 3. Manager integration
+`RunsheetManager.tsx` imports the wrapper under the existing `RunsheetTableEditor` symbol. No existing Compare, navigation, save, optimistic-cache, or permission flow is removed.
 
-Diff mode is visual only. Selecting, changing, or clearing the comparison never calls a Rock write action. Comparison values are never editable.
+### 4. Tests
+Added:
+- `tests/unit/lib/runsheetInlineDiff.test.ts`
+  - classification of same/change/remove/add;
+  - computed Start change;
+  - `SIBLINGKEY` match across rename;
+  - ambiguous duplicate titles remain unmatched;
+  - deterministic target-only insertion.
+- `tests/unit/components/RunsheetTableEditor.diff.test.tsx`
+  - view-only access;
+  - sibling selection and target read;
+  - same/change/remove/add DOM states;
+  - red minus clearing;
+  - no Rock bulk-save calls;
+  - dirty-source Diff lockout.
 
-## Implementation approach
+Existing full-screen Compare tests remain in place as regression coverage.
 
-### 1. Add a pure inline-diff model
-- Proposed file: `src/lib/runsheetInlineDiff.ts`.
-- Define a small pure model for `same | changed | removed | added | unmatched` cell/row states.
-- Feed it source rows, target rows, source/target computed timing values, and the visible dynamic columns.
-- Use `matchRows` for source-to-target correspondence; discard its `backfill` output entirely in this read-only workflow.
-- Track matched target row IDs and classify remaining target rows as target-only additions.
-- Align synthetic target-only rows by target order around the nearest matched predecessor/successor; never pair rows solely because their array indices happen to match.
-- Compare rich-text cell values using normalized rendered content rather than raw storage syntax so legacy markers and equivalent sanitized HTML do not create false visual differences. Preserve actual visible formatting changes where practical; document/test the normalization contract.
-- For Start and Duration, compare the same formatted values the table displays, not raw Rock timestamps.
-- Keep this helper free of server actions and state so it is easy to prove that diff computation cannot write.
-
-### 2. Wire sibling availability and selection into the active editor
-- Update `RunsheetManager` to pass its existing access-filtered `availableChannels` into `RunsheetTableEditor`.
-- Add an optional `availableChannels` prop to the editor.
-- In the editor, memoize `resolveSiblings(channelId, channelName, availableChannels)`.
-- Add local diff state: selected sibling ID, target details, loading/error state.
-- Load exactly the selected sibling with the existing `rockGetRunsheetDetailsBatch([id])` read path. Ignore stale responses if the user rapidly switches targets or clears Diff.
-- Do not call `rockGetAvailableRunsheetChannels` from a new path just for Diff; the manager already owns the authorized result set.
-- Show the control in view and edit modes whenever at least one sibling exists. Proposed interaction:
-  - green `+`: open the sibling picker; if already active, it changes the target;
-  - center `Diff`: opens the same picker / shows the selected target label;
-  - red `−`: clear the target and return to the normal table.
-- Use time-first labels (`5:30 PM`) with enough service context to disambiguate if names are unusual.
-- If loading fails, leave the source table untouched and show a compact retry/error state; never partially apply stale target data.
-
-### 3. Render the diff through the existing table/cell pipeline
-- Keep the source runsheet's column order and widths as the table layout authority.
-- Introduce a small proposed presentational component/helper such as `InlineDiffCell` under `src/components/runsheet/` or a focused local renderer in `RunsheetTableEditor` if it remains small.
-- For unchanged values, call the existing normal renderer with no extra wrapper so `Runsheet Huddle`-style identical cells look exactly as they do today.
-- For removed source content, render a muted parenthesized wrapper. Rich text still renders through `RichTextContent` inside that wrapper.
-- For added target content, stack it below the source/removal and use an amber/yellow background/border treatment with sufficient contrast.
-- Person cells should reuse `parsePeopleString` / existing person display semantics; the target branch is display-only.
-- Music/title cells should retain the source song-detail affordance only for the source value; do not make the target diff branch interactive.
-- While Diff is active, suppress direct cell editing for the diff-rendered grid even if the manager remains in edit mode. Clearing Diff returns the user to the same prior editor mode. This prevents an ambiguous mixed edit/diff state and provides a hard UI guarantee that comparison mode itself has no write path.
-- Keep non-cell editor state (selected service, existing dirty source changes, editor mode) intact. If the source already has unsaved edits before Diff is entered, compare against the currently displayed source values and do not mutate the baseline/save state.
-- If source data changes locally while Diff is active through a non-cell control, recompute the visual diff from current source state; never copy target values into source state.
-
-### 4. Handle structural differences explicitly
-- Source row with no target match: show an inline muted `segment absent in <target time>` marker and treat its source cell values as removals.
-- Target-only row: render a non-editable synthetic added row using the target's visible values, highlighted yellow, inserted by the alignment rule from step 1.
-- If title fallback is ambiguous, keep the rows unmatched. Do not guess. Legacy rows whose titles changed and lack `SIBLINGKEY` may therefore appear as a remove + add pair; this is preferable to showing a false match.
-- Do not persist `SIBLINGKEY` backfills from visual Diff.
-
-### 5. Preserve the existing Compare and write boundaries
-- Do not remove or repurpose `RunsheetCompareView` or the existing `Compare` button.
-- Do not route inline Diff through `rockBulkSaveRunsheetItems`, propagation execution, or any target write helper.
-- Keep current save/dirty computation unchanged except for making sure diff-only synthetic rows are never inserted into the editor's `items` state.
-- Add regression assertions that selecting/clearing Diff only invokes read actions.
-
-### 6. Tests and versioning
-- Proposed `tests/unit/lib/runsheetInlineDiff.test.ts`:
-  - identical cells => `same`;
-  - replacement => old + new;
-  - source-only value => `removed`;
-  - target-only value => `added`;
-  - SIBLINGKEY match survives title/order change;
-  - ambiguous/missing row is not positionally paired;
-  - target-only row alignment is deterministic;
-  - computed Start/Duration changes classify correctly.
-- Proposed `tests/unit/components/RunsheetTableEditor.diff.test.tsx`:
-  - `− Diff +` visible to a view-only user with eligible siblings;
-  - `+` selects a sibling and performs only a detail read;
-  - unchanged cell stays normal;
-  - replacement/removal/addition DOM and classes match the requested visual semantics;
-  - red `−` clears the diff and restores normal rendering;
-  - target value is non-editable;
-  - source editing is suppressed only while Diff is active and restored after clear;
-  - no call to `rockBulkSaveRunsheetItems` or propagation execution from selection/render/clear.
-- Keep `tests/unit/components/RunsheetManager.compare.test.tsx` green as regression coverage for full-screen Compare.
-- Update/add focused layout coverage if synthetic added rows affect row spans or mobile card/table modes.
-- During implementation bump `package.json` from `1.13.2` to `1.14.0` per the repository semver instruction; update lock metadata only if the package manager changes it.
-
-## Data / migration considerations
-None. Diff state is client-local and the target sheet is read through existing authenticated server actions. No Rock attributes, ContentChannelItems, or migrations are added.
-
-## Security / permissions
-- Sibling candidates come from `RunsheetManager`'s already-authorized `availableChannels` result and are further narrowed by `resolveSiblings`.
-- Target details continue through `rockGetRunsheetDetails` via `rockGetRunsheetDetailsBatch`, preserving the existing per-channel read authorization boundary.
-- Inline Diff is available to view-only users because it is a read feature; no new edit privilege is introduced.
-- No backfill or write side effect is allowed from visual matching.
+## Security / data
+- No migration or schema change.
+- Sibling discovery and target details both go through existing authenticated/authorized server actions.
+- Diff model contains no server action or mutation dependency.
+- `matchRows` backfill metadata is never persisted.
+- Synthetic target-only rows exist only in the rendered diff model and never enter source `items` state.
 
 ## Validation
-Commands are repository-declared but were not executed during planning:
+Repository commands:
 - `pnpm typecheck`
 - `pnpm test`
 - `pnpm build`
 
-Focused checks during implementation:
-- `pnpm test -- --runInBand tests/unit/lib/runsheetInlineDiff.test.ts tests/unit/components/RunsheetTableEditor.diff.test.tsx tests/unit/components/RunsheetManager.compare.test.tsx`
-- Manual desktop: open 3:00 PM, diff against 5:30 PM, verify an identical row such as Runsheet Huddle is visually unchanged and a changed value shows old-muted/new-yellow.
-- Manual add/remove: verify blank-to-value, value-to-blank, source-only row, and target-only row states.
-- Manual mobile: verify old/new values stack inside the existing cell width and synthetic rows do not force a new service column.
-- Manual permissions: repeat with a view-only account; Diff should work while all target content remains non-editable.
-- Browser/network verification: selecting, switching, and clearing Diff must issue reads only and no Rock mutation request.
+Validation evidence during implementation:
+- Focused extracted TypeScript harness for the pure diff model passed classification, computed timing, `SIBLINGKEY`, ambiguous-title, and target-only alignment cases.
+- New TS/TSX implementation/test files were syntax-transpiled with TypeScript without diagnostics before push.
+- Vercel preview build for the branch completed successfully after the implementation commits, providing full-project build/type integration evidence.
+- The local execution sandbox does not contain the repo's installed React/Jest dependencies and has no network access, so the newly committed Jest suite could not be executed there. The tests are committed for normal repo/CI execution and this limitation must not be represented as a Jest pass.
 
 ## Acceptance criteria mapping
-- [ ] Select one sibling via `− Diff +` -> component test + manual 3:00 PM / 5:30 PM flow.
-- [ ] No navigation to another service -> manager/editor component test and URL manual check.
-- [ ] Identical cells have no diff noise -> pure helper + renderer test.
-- [ ] Replacement = muted parenthesized source + yellow target -> renderer test.
-- [ ] Removal = muted parenthesized source only -> renderer test.
-- [ ] Addition = yellow target only -> renderer test.
-- [ ] No positional row matching -> helper tests around SIBLINGKEY/title/ambiguous cases.
-- [ ] Missing rows explicit -> structural-diff tests.
-- [ ] Diff performs no writes -> mocked write-action assertions + browser network check.
-- [ ] Existing edit/save and full-screen Compare remain -> existing compare tests + full suite.
-- [ ] Mobile remains usable -> responsive/manual validation plus any affected layout test.
+- [x] `− Diff +` selection UI implemented.
+- [x] Selected service loads without navigation.
+- [x] Same cells render without diff decoration.
+- [x] Changed cells render muted current + yellow target.
+- [x] Pure removals render muted current only.
+- [x] Pure additions render yellow target only.
+- [x] Row matching reuses `SIBLINGKEY` / unique-title logic, never row index.
+- [x] Missing rows are explicit.
+- [x] Diff code path contains no Rock writes; component tests assert bulk-save is not called.
+- [x] Existing full-screen Compare remains intact.
+- [x] Values stack inside the source table footprint rather than adding another service column.
+- [x] Focused unit/component tests are committed.
 
 ## Rollout / rollback
-No migration or backend deployment ordering is required. Ship as a normal app release after tests/build pass. Rollback is a code revert to the previous client UI; no persisted diff state or Rock data needs cleanup.
+No backend ordering is required. This is a client/read-only feature with a normal semver minor release. Rollback is a code revert; there is no persisted diff state or Rock cleanup.
 
-## Risks and assumptions
-- Legacy rows without `SIBLINGKEY` that have different titles cannot be safely identified as the same row. They will intentionally appear unmatched rather than be guessed.
-- Target-only row insertion must not alter the source `items` array, dirty tracking, drag ordering, row-span calculations, or save payload.
-- Rich-text equality needs one explicit normalization contract. Prefer comparing sanitized/normalized display content; markup-only differences that render identically should not create noise.
-- Inline Diff is intentionally display-only while active. This avoids the high-risk case where a user mistakes the yellow comparison branch for editable source content; clearing Diff restores the previous view/edit mode.
-
-## Review notes
-Self-review and an internal adversarial fallback were applied before the initial commit. The plan was tightened around four failure modes: accidentally implementing in `rsvp.favor.church` instead of the actual runsheet repository, bypassing the existing read authorization path, allowing `matchRows` backfill metadata to become a write side effect, and letting synthetic target-only rows leak into source save/dirty state.
+## Residual validation
+Before merging, run the committed Jest tests (or full `pnpm test`) in a dependency-complete environment. Manual authenticated smoke testing should verify a real 3PM → 5:30PM pair on desktop/mobile and confirm network activity remains read-only while selecting/clearing Diff.
