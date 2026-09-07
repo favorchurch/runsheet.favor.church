@@ -1,6 +1,17 @@
 /**
  * @jest-environment jsdom
  */
+import { TextDecoder, TextEncoder } from 'util';
+global.TextEncoder = TextEncoder;
+global.TextDecoder = TextDecoder as any;
+
+if (typeof (global as any).Request === 'undefined') {
+  (global as any).Request = class Request {};
+}
+if (typeof (global as any).Response === 'undefined') {
+  (global as any).Response = class Response {};
+}
+
 import '@testing-library/jest-dom';
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -12,6 +23,13 @@ import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDet
 jest.mock('@/server-actions/rockGetAvailableRunsheetChannels');
 jest.mock('@/server-actions/rockGetRunsheetDetailsBatch');
 jest.mock('@/server-actions/rockBulkSaveRunsheetItems');
+jest.mock('@auth0/nextjs-auth0', () => ({
+  getSession: jest.fn().mockResolvedValue(null),
+}));
+jest.mock('@/server-actions/internal/rockFetch');
+jest.mock('@/auth0-hooks/server/assertAuthenticated');
+jest.mock('@/auth0-hooks/server/getServerSession');
+jest.mock('@/auth0-hooks/server/getRockSession', () => ({ getRockSession: jest.fn().mockResolvedValue({}) }));
 jest.mock('@/components/runsheet/RichTextContent', () => ({
   RichTextContent: ({ value }: { value: string }) => <span>{value}</span>,
 }));

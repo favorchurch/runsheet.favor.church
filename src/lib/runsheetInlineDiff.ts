@@ -48,17 +48,35 @@ function titleValue(row: RunsheetItemRow): string {
   return row.attributeValues?.ACTIVITYTITLE || row.title || '';
 }
 
-function buildTimingMap(rows: RunsheetItemRow[], startTime: string) {
-  const map = new Map<string, { start: string; duration: string }>();
-  let currentMinutes = parseTimeToMinutes(startTime || '08:00:00 AM');
+type TimingEntry = { start: string; end: string; duration: string };
 
-  for (const row of visibleRows(rows)) {
-    const duration = Number(row.duration) || 0;
-    map.set(rowIdentity(row), {
-      start: formatMinutesToTimeWithSeconds(currentMinutes),
-      duration: duration > 0 ? formatDurationToHMS(duration) : '',
-    });
-    currentMinutes += duration;
+function buildTimingMap(rows: RunsheetItemRow[], startTime: string) {
+  const map = new Map<string, TimingEntry>();
+  let currentMinutes = parseTimeToMinutes(startTime || '08:00:00 AM');
+  const rowsToDisplay = visibleRows(rows);
+
+  let index = 0;
+  while (index < rowsToDisplay.length) {
+    const start = formatMinutesToTimeWithSeconds(currentMinutes);
+    const duration = Number(rowsToDisplay[index].duration) || 0;
+
+    if (duration > 0) {
+      currentMinutes += duration;
+      const end = formatMinutesToTimeWithSeconds(currentMinutes);
+      const formattedDuration = formatDurationToHMS(duration);
+      map.set(rowIdentity(rowsToDisplay[index]), { start, end, duration: formattedDuration });
+      index++;
+
+      while (index < rowsToDisplay.length && (Number(rowsToDisplay[index].duration) || 0) === 0) {
+        map.set(rowIdentity(rowsToDisplay[index]), { start, end, duration: '' });
+        index++;
+      }
+    } else {
+      while (index < rowsToDisplay.length && (Number(rowsToDisplay[index].duration) || 0) === 0) {
+        map.set(rowIdentity(rowsToDisplay[index]), { start, end: start, duration: '' });
+        index++;
+      }
+    }
   }
 
   return map;
@@ -104,10 +122,11 @@ export function classifyInlineDiffCell(sourceValue: string, targetValue: string)
 function readCell(
   row: RunsheetItemRow | null,
   columnKey: string,
-  timingMap: Map<string, { start: string; duration: string }>,
+  timingMap: Map<string, TimingEntry>,
 ): string {
   if (!row) return '';
   if (columnKey === 'START') return timingMap.get(rowIdentity(row))?.start || '';
+  if (columnKey === 'END') return timingMap.get(rowIdentity(row))?.end || '';
   if (columnKey === 'DURATION') return timingMap.get(rowIdentity(row))?.duration || '';
   if (columnKey === 'title') return titleValue(row);
   return readRunsheetCellValue(row, columnKey);
@@ -120,8 +139,8 @@ function makeRow(
   targetIndex: number | null,
   rowStatus: InlineDiffRowStatus,
   columnKeys: string[],
-  sourceTimingMap: Map<string, { start: string; duration: string }>,
-  targetTimingMap: Map<string, { start: string; duration: string }>,
+  sourceTimingMap: Map<string, TimingEntry>,
+  targetTimingMap: Map<string, TimingEntry>,
 ): InlineDiffRow {
   const cells: Record<string, InlineDiffCell> = {};
   for (const key of columnKeys) {
@@ -160,11 +179,12 @@ export function buildInlineDiffRows(input: BuildInlineDiffRowsInput): InlineDiff
   const targetIndexById = new Map<string, number>();
   targetRows.forEach((row, index) => targetIndexById.set(rowIdentity(row), index));
 
-  const result: InlineDiffRow[] = matchResult.matches.map((match, sourceIndex) => {
+  const matchedRowsByTargetIdentity = new Map<string, InlineDiffRow>();
+  const matchedRows = matchResult.matches.map((match, sourceIndex) => {
     const targetRow = match.targetRow;
     const targetIndex = targetRow ? targetIndexById.get(rowIdentity(targetRow)) ?? null : null;
     if (targetRow) matchedTargetToSourceIndex.set(rowIdentity(targetRow), sourceIndex);
-    return makeRow(
+    const diffRow = makeRow(
       match.sourceRow,
       targetRow,
       sourceIndex,
@@ -174,7 +194,19 @@ export function buildInlineDiffRows(input: BuildInlineDiffRowsInput): InlineDiff
       sourceTimingMap,
       targetTimingMap,
     );
+    if (targetRow) matchedRowsByTargetIdentity.set(rowIdentity(targetRow), diffRow);
+    return diffRow;
   });
+
+  // Matched rows follow the target's visual order so target-only insertions
+  // remain adjacent to their nearest target neighbor even when rows moved.
+  const result: InlineDiffRow[] = [
+    ...targetRows.flatMap((row) => {
+      const matchedRow = matchedRowsByTargetIdentity.get(rowIdentity(row));
+      return matchedRow ? [matchedRow] : [];
+    }),
+    ...matchedRows.filter((row) => row.rowStatus === 'source-only'),
+  ];
 
   const targetOnlyRows = targetRows
     .map((row, targetIndex) => ({ row, targetIndex }))
@@ -185,6 +217,7 @@ export function buildInlineDiffRows(input: BuildInlineDiffRowsInput): InlineDiff
   // imply correspondence.
   for (const { row, targetIndex } of targetOnlyRows) {
     let insertionIndex = result.length;
+    let foundBackward = false;
 
     for (let i = targetIndex - 1; i >= 0; i--) {
       const sourceIndex = matchedTargetToSourceIndex.get(rowIdentity(targetRows[i]));
@@ -197,10 +230,11 @@ export function buildInlineDiffRows(input: BuildInlineDiffRowsInput): InlineDiff
       ) {
         insertionIndex++;
       }
+      foundBackward = true;
       break;
     }
 
-    if (insertionIndex === result.length) {
+    if (!foundBackward) {
       for (let i = targetIndex + 1; i < targetRows.length; i++) {
         const sourceIndex = matchedTargetToSourceIndex.get(rowIdentity(targetRows[i]));
         if (sourceIndex === undefined) continue;
