@@ -29,8 +29,12 @@ jest.mock('@/lib/richText', () => ({
   htmlToPlainText: (s: string) => s,
   legacyValueToHtml: (s: string) => s,
   sanitizeRichText: (s: string) => s,
+  extractCellUrl: (s: string) => ({ contentHtml: s, url: null }),
+  embedCellUrl: (contentHtml: string, url: string | null) => (url ? `${contentHtml}${url}` : contentHtml),
+  isRichTextEmpty: (s: string) => !s,
+  normalizeRichTextValue: (s: string) => s || '',
   RICH_TEXT_ALLOWED_TAGS: ['p', 'b', 'i', 'strong', 'em', 'span', 'br', 'ul', 'ol', 'li', 'a'],
-  RICH_TEXT_ALLOWED_ATTR: ['href', 'target', 'style', 'class', 'rel'],
+  RICH_TEXT_ALLOWED_ATTR: ['href', 'target', 'style', 'class', 'rel', 'data-cell-url'],
 }));
 
 import '@testing-library/jest-dom';
@@ -100,6 +104,64 @@ describe('RunsheetTableEditor dirty state', () => {
 
     // After render, onDirtyChange should have been called with false (or last call should be false)
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  test('publishes the successfully saved local state for optimistic query reconciliation', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    (rockGetAvailableRunsheetChannels as jest.Mock).mockResolvedValue({ success: true, channels: [] });
+    const onOptimisticSave = jest.fn();
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="10:00:00 AM"
+        onSaveRef={(fn) => (saveFn = fn)}
+        onOptimisticSave={onOptimisticSave}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Start:'), { target: { value: '09:30:00 AM' } });
+    await expect(saveFn?.()).resolves.toBe(true);
+
+    expect(onOptimisticSave).toHaveBeenCalledWith(expect.objectContaining({
+      channelId: 1,
+      contentChannelTypeId: 13,
+      startTime: '09:30:00 AM',
+      items: expect.arrayContaining([
+        expect.objectContaining({ id: 101 }),
+        expect.objectContaining({ id: 102 }),
+      ]),
+    }));
+  });
+
+  test('invalidates the detail query after a failed or partial save', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({
+      success: false,
+      results: [{ clientId: 101, ok: true, rockId: 101 }, { clientId: 102, ok: false }],
+    });
+    const onSaveSettled = jest.fn();
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    const props = {
+      channelId: 1,
+      channelName: 'Sun 10:00 AM',
+      columns,
+      initialItems,
+      initialStartTime: '10:00:00 AM',
+      onSaveRef: (fn: () => Promise<boolean>) => (saveFn = fn),
+      onSaveSettled,
+    } as any;
+
+    render(<RunsheetTableEditor {...props} />);
+
+    fireEvent.change(screen.getByLabelText('Start:'), { target: { value: '09:30:00 AM' } });
+    await expect(saveFn?.()).resolves.toBe(false);
+
+    expect(onSaveSettled).toHaveBeenCalledWith(1);
   });
 
   test('marks editor dirty when only the Start Time field is edited', () => {
@@ -207,7 +269,7 @@ describe('RunsheetTableEditor dirty state', () => {
     );
 
     fireEvent.click(screen.getByText('Add Row'));
-    fireEvent.click(screen.getByText('Cards'));
+    fireEvent.click(screen.getByRole('button', { name: /card view/i }));
 
     const moveUpButtons = screen.getAllByTitle('Move up');
     expect(moveUpButtons).toHaveLength(3);
@@ -239,7 +301,7 @@ describe('RunsheetTableEditor dirty state', () => {
       />
     );
 
-    fireEvent.click(screen.getByText('Cards'));
+    fireEvent.click(screen.getByRole('button', { name: /card view/i }));
 
     // Move "Welcome & Announcements" (index 0) down past "Praise & Worship".
     const moveDownButtons = screen.getAllByTitle('Move down');
@@ -275,7 +337,7 @@ describe('RunsheetTableEditor dirty state', () => {
       />
     );
 
-    fireEvent.click(screen.getByText('Cards'));
+    fireEvent.click(screen.getByRole('button', { name: /card view/i }));
     fireEvent.click(screen.getAllByText('Edit Card')[0]);
 
     const durationInput = screen.getByPlaceholderText('00:05:00');
@@ -366,7 +428,7 @@ describe('RunsheetTableEditor dirty state', () => {
       />
     );
 
-    fireEvent.click(screen.getByText('Cards'));
+    fireEvent.click(screen.getByRole('button', { name: /card view/i }));
     fireEvent.click(screen.getAllByText('Edit Card')[0]);
 
     const titleInput = screen.getByPlaceholderText('Enter activity title...') as HTMLInputElement;
@@ -397,7 +459,7 @@ describe('RunsheetTableEditor dirty state', () => {
       />
     );
 
-    fireEvent.click(screen.getByText('Cards'));
+    fireEvent.click(screen.getByRole('button', { name: /card view/i }));
     fireEvent.click(screen.getAllByText('Edit Card')[0]);
 
     const descriptionInput = screen.getByPlaceholderText('Enter description...') as HTMLTextAreaElement;

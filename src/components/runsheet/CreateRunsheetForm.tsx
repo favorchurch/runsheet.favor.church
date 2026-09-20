@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { getRockContentChannelOptions, ContentChannelCategoryOption } from '@/server-actions/getRockContentChannelOptions';
 import { rockGetScheduleOptions, ScheduleOption } from '@/server-actions/rockGetScheduleOptions';
 import { rockCreateServiceRunsheet } from '@/server-actions/rockCreateServiceRunsheet';
+import toast from 'react-hot-toast';
 
 function getNextSunday() {
   const d = new Date();
@@ -217,17 +218,21 @@ export function CreateRunsheetForm({ runsheetCampuses, onCreated, onCancel }: Cr
     );
 
     if (res.success && res.id) {
+      const successMsg = `Successfully created "${finalTitle}"!`;
       setStatus({
         type: 'success',
-        message: `Successfully created "${finalTitle}"!`,
+        message: successMsg,
       });
+      toast.success(successMsg);
 
       // Automatically load into editor
       if (onCreated) {
         onCreated(res.id, finalTitle, res.data);
       }
     } else {
-      setStatus({ type: 'error', message: res.error || 'Unknown error' });
+      const errorMsg = res.error || 'Unknown error';
+      setStatus({ type: 'error', message: errorMsg });
+      toast.error(errorMsg);
     }
   };
 

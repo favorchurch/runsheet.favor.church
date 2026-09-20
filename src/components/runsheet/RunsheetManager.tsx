@@ -4,16 +4,25 @@
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from 'react-query';
+import { HiArrowsRightLeft } from 'react-icons/hi2';
 import { canUserEditRunsheet } from '@/lib/permissions';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
-import { extractChannelTime } from '@/lib/runsheetDate';
-import { rockGetAvailableRunsheetChannels, type RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
-import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
+import { extractChannelTime, sortRunsheetChannels } from '@/lib/runsheetDate';
+import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import type { AuthUser } from '@/types/AuthUser';
 import type { RunsheetDetails } from '@/types/Runsheet';
+import {
+  getRunsheetAccessScope,
+  runsheetQueryKeys,
+  useAvailableRunsheetChannels,
+  useRunsheetDetails,
+} from './runsheetQueries';
 import { CreateRunsheetForm } from './CreateRunsheetForm';
-import { RunsheetTableEditor } from './RunsheetTableEditor';
+import { RunsheetTableEditor } from './RunsheetTableEditorDiff';
 import { RunsheetCompareView } from './RunsheetCompareView';
+import { RunsheetTableSkeleton } from './RunsheetTableSkeleton';
+import { RunsheetLandingView } from './RunsheetLandingView';
 
 interface RunsheetManagerProps {
   user?: AuthUser;
@@ -33,11 +42,7 @@ export function RunsheetManager({
   initialChannelId = null,
   initialShowCreate = false,
 }: RunsheetManagerProps) {
-  const [availableChannels, setAvailableChannels] = useState<RunsheetChannelOption[]>([]);
-  const [channelsLoading, setChannelsLoading] = useState(true);
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(initialChannelId);
-  const [runsheetData, setRunsheetData] = useState<RunsheetDetails | null>(null);
-  const [loading, setLoading] = useState(initialChannelId !== null);
   const [showCreateForm, setShowCreateForm] = useState(initialShowCreate);
 
   const [isEditorDirty, setIsEditorDirty] = useState(false);
@@ -71,10 +76,26 @@ export function RunsheetManager({
 
   const saveRunsheetRef = React.useRef<(() => Promise<boolean>) | null>(null);
   const activeChannelIdRef = React.useRef<number | null>(initialChannelId);
+  const lastInitialChannelIdRef = React.useRef<number | null>(initialChannelId);
+  const localRouteTargetRef = React.useRef<number | null | undefined>(undefined);
+  const restoredRouteRef = React.useRef<number | null | undefined>(undefined);
   const deletedChannelIdsRef = React.useRef<Set<number>>(new Set());
 
   const canEdit = canUserEditRunsheet(user);
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const accessScope = getRunsheetAccessScope(user);
+  const channelsQuery = useAvailableRunsheetChannels(showArchived, accessScope);
+  const detailsQuery = useRunsheetDetails(selectedChannelId, accessScope);
+
+  const availableChannels: RunsheetChannelOption[] = sortRunsheetChannels(
+    (channelsQuery.data?.channels || []).filter(
+      (channel) => !deletedChannelIdsRef.current.has(channel.id),
+    ),
+  );
+  const runsheetData: RunsheetDetails | null = detailsQuery.data?.data || null;
+  const channelsLoading = channelsQuery.isLoading && !channelsQuery.data;
+  const loading = selectedChannelId !== null && detailsQuery.isLoading;
 
   /**
    * Switching channels used to call `window.history.pushState` directly —
@@ -88,9 +109,9 @@ export function RunsheetManager({
    * `router.push` keeps Next's router state and the URL bar in agreement,
    * so that fallback reload never has a reason to fire.
    */
-  const updateUrl = (path: string) => {
+  const updateUrl = React.useCallback((path: string) => {
     router.push(path, { scroll: false });
-  };
+  }, [router]);
 
   // A view-only account landing directly on a page it has no access to
   // (e.g. `/create`) correctly renders nothing — but without this, the URL
@@ -116,47 +137,52 @@ export function RunsheetManager({
     return () => window.removeEventListener('popstate', handlePopState);
   }, [isEditorDirty]);
 
-  const loadChannelDetails = React.useCallback(async (id: number) => {
+  /**
+   * Dynamic route pages can remain mounted while Next supplies a new server
+   * prop. Treat that prop as an external navigation unless it is the target
+   * of a navigation this manager already accepted. Dirty editors keep their
+   * active channel until the existing confirmation flow accepts or discards
+   * the pending route.
+   */
+  useEffect(() => {
+    if (initialChannelId === lastInitialChannelIdRef.current) return;
+    lastInitialChannelIdRef.current = initialChannelId;
+
+    if (restoredRouteRef.current === initialChannelId) {
+      restoredRouteRef.current = undefined;
+      return;
+    }
+
+    if (localRouteTargetRef.current === initialChannelId) {
+      localRouteTargetRef.current = undefined;
+      return;
+    }
+
+    const pendingRouteAction: PendingNavigationAction = initialChannelId
+      ? { type: 'selectChannel', id: initialChannelId }
+      : { type: 'selectEmptyChannel' };
+
+    if (isEditorDirty) {
+      setPendingAction(pendingRouteAction);
+      setShowUnsavedModal(true);
+      restoredRouteRef.current = activeChannelIdRef.current;
+      updateUrl(activeChannelIdRef.current === null ? '/' : `/${activeChannelIdRef.current}`);
+      return;
+    }
+
+    activeChannelIdRef.current = initialChannelId;
+    setSelectedChannelId(initialChannelId);
+    setEditorMode('view');
+    if (initialChannelId !== null) setShowCreateForm(false);
+  }, [initialChannelId, isEditorDirty, updateUrl]);
+
+  const loadChannelDetails = React.useCallback((id: number) => {
+    localRouteTargetRef.current = id;
     activeChannelIdRef.current = id;
     setEditorMode('view');
     setSelectedChannelId(id);
-    setLoading(true);
     updateUrl(`/${id}`);
-    try {
-      let res = await rockGetRunsheetDetails(id);
-
-      // Retry once after 400ms if initial read fails (e.g. right after channel creation or cold start)
-      if (!res.success && activeChannelIdRef.current === id) {
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        if (activeChannelIdRef.current === id) {
-          res = await rockGetRunsheetDetails(id);
-        }
-      }
-
-      if (activeChannelIdRef.current !== id) return;
-
-      if (res.success && res.data) {
-        setRunsheetData(res.data);
-      } else {
-        alert(res.error || 'Could not load runsheet');
-        activeChannelIdRef.current = null;
-        setSelectedChannelId(null);
-        setRunsheetData(null);
-        updateUrl('/');
-      }
-    } catch (err: any) {
-      if (activeChannelIdRef.current !== id) return;
-      alert(err?.message || 'Could not load runsheet');
-      activeChannelIdRef.current = null;
-      setSelectedChannelId(null);
-      setRunsheetData(null);
-      updateUrl('/');
-    } finally {
-      if (activeChannelIdRef.current === id) {
-        setLoading(false);
-      }
-    }
-  }, []);
+  }, [updateUrl]);
 
   const handleModeChange = (nextMode: 'view' | 'edit') => {
     if (nextMode === 'edit' && !canUserEditRunsheet(user)) {
@@ -172,45 +198,18 @@ export function RunsheetManager({
     if (!canEdit) setEditorMode('view');
   }, [canEdit]);
 
-  // On initial mount with a channelId in URL (e.g. /45 on refresh), load the channel details immediately
   useEffect(() => {
-    if (initialChannelId) {
-      loadChannelDetails(initialChannelId);
-    }
-  }, [initialChannelId, loadChannelDetails]);
+    if (channelsQuery.error) console.error('Error loading channels:', channelsQuery.error);
+  }, [channelsQuery.error]);
 
   useEffect(() => {
-    let isCancelled = false;
-    async function loadChannels() {
-      setChannelsLoading(true);
-      try {
-        const res = await rockGetAvailableRunsheetChannels(showArchived);
-        if (isCancelled) return;
+    if (!detailsQuery.error || selectedChannelId === null || activeChannelIdRef.current !== selectedChannelId) return;
 
-        if (res.success && res.channels) {
-          const filtered = res.channels.filter((c) => !deletedChannelIdsRef.current.has(c.id));
-          setAvailableChannels(filtered);
-        }
-        // A channel missing from this list (deleted, no campus access, or a
-        // transient race right after a write) is NOT treated as fatal here —
-        // this effect only populates the picker dropdown. Whether the
-        // currently open channel is actually valid is loadChannelDetails's
-        // job alone; duplicating that check against this separately-fetched
-        // list previously wiped the whole session (including an open
-        // propagate review) whenever the two fetches raced.
-      } catch (err) {
-        console.error('Error loading channels:', err);
-      } finally {
-        if (!isCancelled) {
-          setChannelsLoading(false);
-        }
-      }
-    }
-    loadChannels();
-    return () => {
-      isCancelled = true;
-    };
-  }, [initialChannelId, showArchived]);
+    alert(detailsQuery.error instanceof Error ? detailsQuery.error.message : 'Could not load runsheet');
+    activeChannelIdRef.current = null;
+    setSelectedChannelId(null);
+    updateUrl('/');
+  }, [detailsQuery.error, selectedChannelId, updateUrl]);
 
   const executeAction = (action: PendingNavigationAction) => {
     if (!action) return;
@@ -222,20 +221,18 @@ export function RunsheetManager({
     } else if (action.type === 'toggleCreateForm') {
       const nextShow = !showCreateForm;
       if (nextShow) {
+        localRouteTargetRef.current = null;
         activeChannelIdRef.current = null;
         setSelectedChannelId(null);
-        setRunsheetData(null);
-        setLoading(false);
         setEditorMode('view');
       }
       setShowCreateForm(nextShow);
       if (nextShow) updateUrl('/create');
     } else if (action.type === 'selectEmptyChannel') {
+      localRouteTargetRef.current = null;
       activeChannelIdRef.current = null;
       setShowCreateForm(false);
       setSelectedChannelId(null);
-      setRunsheetData(null);
-      setLoading(false);
       setEditorMode('view');
       updateUrl('/');
     } else if (action.type === 'browserBack') {
@@ -279,17 +276,23 @@ export function RunsheetManager({
   };
 
   const handleRunsheetCreated = (newChannelId: number, title: string, createdData?: RunsheetDetails) => {
-    setAvailableChannels((prev) => [{ id: newChannelId, name: title, time: extractChannelTime(title) }, ...prev]);
+    const newChannel = { id: newChannelId, name: title, time: extractChannelTime(title) };
+    queryClient.setQueryData(runsheetQueryKeys.channels(showArchived, accessScope), (current: any) => ({
+      success: true,
+      channels: [newChannel, ...(current?.channels || []).filter((channel: RunsheetChannelOption) => channel.id !== newChannelId)],
+    }));
+    queryClient.invalidateQueries(runsheetQueryKeys.channelsRoot);
     setShowCreateForm(false);
     setIsEditorDirty(false);
     setEditorMode('view');
+    localRouteTargetRef.current = newChannelId;
     activeChannelIdRef.current = newChannelId;
     setSelectedChannelId(newChannelId);
     updateUrl(`/${newChannelId}`);
 
     if (createdData && createdData.items) {
-      setRunsheetData(createdData);
-      setLoading(false);
+      queryClient.setQueryData(runsheetQueryKeys.details(newChannelId, accessScope), { success: true, data: createdData });
+      queryClient.invalidateQueries(runsheetQueryKeys.details(newChannelId, accessScope));
     } else {
       loadChannelDetails(newChannelId);
     }
@@ -299,25 +302,29 @@ export function RunsheetManager({
   // another runsheet, so the address bar and the displayed content agree
   // instead of racing each other.
   const handleRunsheetDeleted = async (deletedId: number) => {
+    localRouteTargetRef.current = null;
     deletedChannelIdsRef.current.add(deletedId);
     activeChannelIdRef.current = null;
     setIsEditorDirty(false);
-    setRunsheetData(null);
     setSelectedChannelId(null);
-    setLoading(false);
     updateUrl('/');
 
-    setAvailableChannels((previous) => previous.filter((c) => c.id !== deletedId));
-
-    try {
-      const res = await rockGetAvailableRunsheetChannels(showArchived);
-      if (res.success && res.channels) {
-        setAvailableChannels(res.channels.filter((c) => !deletedChannelIdsRef.current.has(c.id)));
-      }
-    } catch (err) {
-      console.warn('Error loading channels after delete:', err);
-    }
+    queryClient.setQueryData(runsheetQueryKeys.channels(showArchived, accessScope), (current: any) => ({
+      success: true,
+      channels: (current?.channels || []).filter((channel: RunsheetChannelOption) => channel.id !== deletedId),
+    }));
+    queryClient.invalidateQueries(runsheetQueryKeys.channelsRoot);
+    queryClient.invalidateQueries(runsheetQueryKeys.details(deletedId, accessScope));
   };
+
+  const handleOptimisticSave = React.useCallback((updatedData: RunsheetDetails) => {
+    queryClient.setQueryData(runsheetQueryKeys.details(updatedData.channelId, accessScope), { success: true, data: updatedData });
+    queryClient.invalidateQueries(runsheetQueryKeys.details(updatedData.channelId, accessScope));
+  }, [accessScope, queryClient]);
+
+  const handleSaveSettled = React.useCallback((channelId: number) => {
+    queryClient.invalidateQueries(runsheetQueryKeys.details(channelId, accessScope));
+  }, [accessScope, queryClient]);
 
   const handleSaveAndLeave = async () => {
     if (saveRunsheetRef.current) {
@@ -349,28 +356,28 @@ export function RunsheetManager({
       {/* Sticky App Header — always visible, even while editing */}
       <header
         ref={appHeaderRef}
-        className="sticky top-0 z-40 -mx-3 sm:-mx-6 mb-2 bg-white/95 backdrop-blur border-b border-slate-200/80 px-4 sm:px-6 py-3 flex items-center justify-between shadow-xs"
+        className="sticky top-0 z-40 -mx-3 sm:-mx-6 mb-2 bg-white/95 backdrop-blur border-b border-slate-200/80 px-3 sm:px-6 py-2 sm:py-2.5 flex items-center justify-between shadow-xs"
       >
         <button
           type="button"
           onClick={handleGoHome}
-          className="flex items-center gap-2.5 cursor-pointer rounded-lg hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="flex items-center gap-2 cursor-pointer rounded-lg hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           title="Back to home"
         >
           <Image
             src="/img/favorlogo-black-on-transparent.png"
             alt="Favor Church logo"
-            width={32}
-            height={32}
-            className="h-8 w-8 shrink-0"
+            width={30}
+            height={30}
+            className="h-7 w-7 sm:h-8 sm:w-8 shrink-0"
             priority
           />
-          <span className="text-sm sm:text-base font-extrabold tracking-tight text-slate-900 leading-tight">
+          <span className="text-xs sm:text-base font-extrabold tracking-tight text-slate-900 leading-tight">
             Favor Runsheet Platform
           </span>
         </button>
 
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex items-center gap-1.5 sm:gap-2 text-xs">
           {user && (
             <span className="hidden sm:inline-flex items-center gap-1.5 rounded-md bg-slate-100 border border-slate-200 px-2.5 py-1 font-semibold text-slate-800">
               <span className="text-slate-500">👤</span>
@@ -379,135 +386,177 @@ export function RunsheetManager({
           )}
           <a
             href="/api/auth/logout"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 font-semibold text-white hover:bg-slate-700 transition-colors"
+            className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 sm:px-3 py-1 sm:py-1.5 font-semibold text-white hover:bg-slate-700 transition-colors"
           >
             Log out
           </a>
         </div>
       </header>
 
-      {/* Top Controls Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center gap-2.5 sm:gap-4 w-full md:w-auto min-w-0">
-          <label className="text-xs sm:text-sm font-semibold text-slate-800 whitespace-nowrap">
-            Select Runsheet:
-          </label>
-          <div className="flex flex-col gap-1">
-            <select
-              className="w-full sm:w-auto min-w-0 max-w-full md:max-w-md text-ellipsis rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100"
-              value={selectedChannelId || ''}
-              disabled={channelsLoading}
-              onChange={(e) => {
-                const val = Number(e.target.value);
-                if (val) handleSelectChannel(val);
-              }}
-            >
-              {(!selectedChannelId || channelsLoading) && (
-                <option value="" disabled hidden>
-                  {channelsLoading ? 'Loading runsheets...' : 'Select a Runsheet...'}
-                </option>
-              )}
-              {availableChannels.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            {canEdit && availableChannels.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-600">
-                <span className="font-semibold text-slate-700">Compare selection:</span>
-                {availableChannels.map((c) => (
-                  <label key={c.id} className="flex items-center gap-1 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      aria-label="Select for compare"
-                      checked={compareSelection.has(c.id)}
-                      onChange={() => {
-                        setCompareSelection((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(c.id)) next.delete(c.id);
-                          else if (next.size < 4) next.add(c.id);
-                          return next;
-                        });
-                      }}
-                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                    />
-                    <span>{c.name.split('//').pop()?.trim() || c.name}</span>
-                  </label>
-                ))}
+      {/* Landing Page View when no runsheet is selected and not in create form */}
+      {!selectedChannelId && !showCreateForm ? (
+        <RunsheetLandingView
+          channels={availableChannels}
+          isLoading={channelsLoading}
+          canEdit={canEdit}
+          showArchived={showArchived}
+          onToggleShowArchived={(show) => setShowArchived(show)}
+          onSelectChannel={handleSelectChannel}
+          onCreateNew={canEdit ? handleToggleCreateForm : undefined}
+          accessScope={accessScope}
+        />
+      ) : (
+        <>
+          {/* Top Controls Bar */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 p-2.5 sm:p-3 rounded-xl border border-slate-200 bg-white shadow-xs">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full md:w-auto min-w-0">
+              <label className="text-xs sm:text-sm font-semibold text-slate-800 whitespace-nowrap">
+                Select Runsheet:
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  className="w-full sm:w-auto min-w-0 max-w-full md:max-w-md text-ellipsis rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs sm:text-sm font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100"
+                  value={selectedChannelId || ''}
+                  disabled={channelsLoading}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (val) handleSelectChannel(val);
+                  }}
+                >
+                  {(!selectedChannelId || channelsLoading) && (
+                    <option value="" disabled hidden>
+                      {channelsLoading ? 'Loading runsheets...' : 'Select a Runsheet...'}
+                    </option>
+                  )}
+                  {availableChannels.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
               </div>
+
+              {canEdit && (
+                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={showArchived}
+                    onChange={(e) => setShowArchived(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <span>Show Archived</span>
+                </label>
+              )}
+
+              {canEdit && availableChannels.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (compareSelection.size === 0 && selectedChannelId) {
+                      const other = availableChannels.find((c) => c.id !== selectedChannelId);
+                      if (other) {
+                        setCompareSelection(new Set([selectedChannelId, other.id]));
+                      } else {
+                        setCompareSelection(new Set(availableChannels.slice(0, 2).map((c) => c.id)));
+                      }
+                    } else if (compareSelection.size === 0 && availableChannels.length >= 2) {
+                      setCompareSelection(new Set(availableChannels.slice(0, 2).map((c) => c.id)));
+                    }
+                    setCompareViewOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer shadow-xs"
+                  title="Compare runsheets side-by-side"
+                >
+                  <HiArrowsRightLeft className="h-3.5 w-3.5 text-slate-600" />
+                  <span>Compare</span>
+                </button>
+              )}
+            </div>
+
+            {canEdit && (
+              <button
+                onClick={handleToggleCreateForm}
+                className="w-full md:w-auto shrink-0 whitespace-nowrap rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer min-h-[34px]"
+              >
+                {showCreateForm ? 'Close Form' : '+ Create New Runsheet'}
+              </button>
             )}
           </div>
 
-          {canEdit && (
-            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none whitespace-nowrap">
-              <input
-                type="checkbox"
-                checked={showArchived}
-                onChange={(e) => setShowArchived(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+          {canEdit && showCreateForm && (
+            <div className="mx-auto max-w-lg">
+              <CreateRunsheetForm
+                runsheetCampuses={user?.access?.runsheetCampuses}
+                onCreated={handleRunsheetCreated}
+                onCancel={handleToggleCreateForm}
               />
-              <span>Show Archived</span>
-            </label>
-          )}
-
-          {canEdit && (
-            <button
-              type="button"
-              disabled={compareSelection.size < 2}
-              onClick={() => setCompareViewOpen(true)}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
-            >
-              Compare ({compareSelection.size})
-            </button>
-          )}
-
-          {canEdit && (
-            <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-50 p-0.5">
-              <button
-                type="button"
-                aria-pressed={editorMode === 'view'}
-                onClick={() => handleModeChange('view')}
-                className={`rounded-md px-2.5 py-1.5 text-xs font-semibold cursor-pointer ${editorMode === 'view'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                View
-              </button>
-              <button
-                type="button"
-                aria-pressed={editorMode === 'edit'}
-                onClick={() => handleModeChange('edit')}
-                className={`rounded-md px-2.5 py-1.5 text-xs font-semibold cursor-pointer ${editorMode === 'edit'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Edit
-              </button>
             </div>
           )}
-        </div>
 
-        {canEdit && (
-          <button
-            onClick={handleToggleCreateForm}
-            className="w-full md:w-auto shrink-0 whitespace-nowrap rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer min-h-[38px]"
-          >
-            {showCreateForm ? 'Close Form' : '+ Create New Runsheet'}
-          </button>
-        )}
-      </div>
+          {((detailsQuery.isFetching && selectedChannelId !== null) || (channelsQuery.isFetching && !channelsLoading)) && (
+            <span
+              role="status"
+              aria-label="Fetching runsheet"
+              aria-live="polite"
+              className="inline-flex items-center gap-2 text-xs font-medium text-slate-600"
+            >
+              <span aria-hidden="true" className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
+              Updating runsheet data…
+            </span>
+          )}
 
-      {canEdit && showCreateForm && (
-        <div className="mx-auto max-w-lg">
-          <CreateRunsheetForm
-            runsheetCampuses={user?.access?.runsheetCampuses}
-            onCreated={handleRunsheetCreated}
-            onCancel={handleToggleCreateForm}
-          />
-        </div>
+          {/* Runsheet HTML Table Editor */}
+          {loading && !runsheetData ? (
+            <RunsheetTableSkeleton />
+          ) : runsheetData && !showCreateForm ? (
+            <div className="relative">
+              <RunsheetTableEditor
+                key={runsheetData.channelId}
+                channelId={runsheetData.channelId}
+                channelName={runsheetData.name}
+                columns={runsheetData.columns}
+                initialColumnMetadata={runsheetData.columnMetadata}
+                initialItems={runsheetData.items}
+                initialStartTime={
+                  runsheetData.startTime ||
+                  (runsheetData.subtitle && /^\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)$/i.test(runsheetData.subtitle.trim())
+                    ? runsheetData.subtitle.trim()
+                    : parseStartTimeFromRunsheetName(runsheetData.name))
+                }
+                initialSubtitle={runsheetData.subtitle}
+                stickyTopOffset={appHeaderHeight}
+                readOnly={!isEditMode}
+                canEdit={canEdit}
+                editorMode={editorMode}
+                onModeChange={handleModeChange}
+                runsheetCampuses={user?.access?.runsheetCampuses}
+                onCreated={handleRunsheetCreated}
+                onDeleted={() => handleRunsheetDeleted(runsheetData.channelId)}
+                onDirtyChange={(dirty) => setIsEditorDirty(dirty)}
+                onSaveRef={(saveFn) => (saveRunsheetRef.current = saveFn)}
+                onOptimisticSave={handleOptimisticSave}
+                onSaveSettled={handleSaveSettled}
+              />
+              {detailsQuery.isFetching && (
+                <div
+                  role="status"
+                  aria-label="Updating runsheet"
+                  className="absolute inset-0 z-45 flex items-start justify-center pt-24 bg-white/60 backdrop-blur-[1px] rounded-xl transition-all duration-200"
+                >
+                  <div className="sticky top-28 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-900/90 text-white shadow-lg backdrop-blur text-xs font-semibold">
+                    <span
+                      aria-hidden="true"
+                      className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
+                    />
+                    <span>Updating runsheet data…</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : loading ? (
+            <RunsheetTableSkeleton />
+          ) : null}
+        </>
       )}
 
       {/* Unsaved Changes Confirmation Modal with 3 Options */}
@@ -553,47 +602,13 @@ export function RunsheetManager({
         </div>
       )}
 
-      {/* Runsheet HTML Table Editor */}
-      {loading ? (
-        <div className="py-12 text-center text-sm font-medium text-slate-600">Loading Runsheet from Rock...</div>
-      ) : !runsheetData && !showCreateForm && canEdit ? (
-        <div className="mx-auto max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-slate-900">Getting Started</h2>
-          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-700">
-            <li>Pick an existing runsheet from the <span className="font-semibold">Select Runsheet</span> dropdown above, or click <span className="font-semibold">+ Create New Runsheet</span>.</li>
-            <li>Click any cell to edit it — use the toolbar above the grid for formatting.</li>
-            <li>Click the music icon on a segment to mark it as a song and link it to Rock.</li>
-            <li>Click <span className="font-semibold">Save Runsheet</span> when you&apos;re done — nothing is saved until you do.</li>
-          </ol>
-        </div>
-      ) : runsheetData && !showCreateForm ? (
-        <RunsheetTableEditor
-          key={runsheetData.channelId}
-          channelId={runsheetData.channelId}
-          channelName={runsheetData.name}
-          columns={runsheetData.columns}
-          initialItems={runsheetData.items}
-          initialStartTime={
-            runsheetData.startTime ||
-            (runsheetData.subtitle && /^\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)$/i.test(runsheetData.subtitle.trim())
-              ? runsheetData.subtitle.trim()
-              : parseStartTimeFromRunsheetName(runsheetData.name))
-          }
-          initialSubtitle={runsheetData.subtitle}
-          stickyTopOffset={appHeaderHeight}
-          readOnly={!isEditMode}
-          runsheetCampuses={user?.access?.runsheetCampuses}
-          onCreated={handleRunsheetCreated}
-          onDeleted={() => handleRunsheetDeleted(runsheetData.channelId)}
-          onDirtyChange={(dirty) => setIsEditorDirty(dirty)}
-          onSaveRef={(saveFn) => (saveRunsheetRef.current = saveFn)}
-        />
-      ) : null}
-
       {compareViewOpen && (
         <RunsheetCompareView
           channelIds={Array.from(compareSelection)}
+          availableChannels={availableChannels}
+          onSelectionChange={(next) => setCompareSelection(new Set(next))}
           readOnly={!isEditMode}
+          onSaveSettled={handleSaveSettled}
           onClose={() => setCompareViewOpen(false)}
         />
       )}

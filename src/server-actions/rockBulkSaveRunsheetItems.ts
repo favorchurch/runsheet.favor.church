@@ -5,7 +5,7 @@ import { htmlToPlainText } from '@/lib/richText';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockDelete, rockGet, rockPatch, rockPost } from '@/server-actions/internal/rockFetch';
 import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
-import type { BulkSaveResult, DynamicAttributeColumn, ItemResult, RunsheetItemRow } from '@/types/Runsheet';
+import type { BulkSaveResult, DynamicAttributeColumn, ItemResult, RunsheetColumnMetadata, RunsheetItemRow } from '@/types/Runsheet';
 
 /** Rock's `ContentChannelItem` entity type, used to find item attributes. */
 const CONTENT_CHANNEL_ITEM_ENTITY_TYPE_ID = 208;
@@ -140,6 +140,7 @@ export async function rockBulkSaveRunsheetItems(
   columns?: DynamicAttributeColumn[],
   subtitle?: string,
   startTime?: string,
+  columnMetadata?: RunsheetColumnMetadata,
 ): Promise<BulkSaveResult> {
   try {
     if (!Number.isSafeInteger(channelId) || channelId <= 0) {
@@ -190,6 +191,10 @@ export async function rockBulkSaveRunsheetItems(
     // Name/Description, keeping it fully independent of the runsheet title.
     if (startTime !== undefined) {
       await rockPatch(`/ContentChannels/${channelId}`, { ForeignKey: startTime });
+    }
+
+    if (columnMetadata !== undefined) {
+      await rockPatch(`/ContentChannels/${channelId}`, { ChannelUrl: JSON.stringify(columnMetadata) });
     }
 
     // 1. Delete removed items in parallel

@@ -6,23 +6,43 @@ import { isPersonColumn } from '@/constants/runsheetColumns';
 import { PeopleSearchDropdown, parsePeopleString } from './PeopleSearchDropdown';
 import { htmlToPlainText, legacyValueToHtml } from '@/lib/richText';
 import { sanitizeRichText } from '@/lib/sanitizeRichText';
+import { formatDurationToHMS, formatMinutesToTimeWithSeconds, parseTimeToMinutes } from '@/lib/runsheetTime';
 import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDetailsBatch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
+import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
+import toast from 'react-hot-toast';
 
 interface RunsheetCompareViewProps {
   channelIds: number[];
+  availableChannels?: RunsheetChannelOption[];
+  onSelectionChange?: (channelIds: number[]) => void;
   onClose: () => void;
   readOnly?: boolean;
+  /** Invalidate each manager detail query after an attempted compare write. */
+  onSaveSettled?: (channelId: number) => void;
 }
 
 interface LoadedSheet {
   channelId: number;
   name: string;
   time: string;
+  startTime?: string;
   columns: DynamicAttributeColumn[];
   items: RunsheetItemRow[];
 }
+
+const START_TIME_COLUMN: DynamicAttributeColumn = {
+  id: -1,
+  key: 'START_TIME',
+  name: 'Start Time',
+};
+
+const DURATION_COLUMN: DynamicAttributeColumn = {
+  id: -2,
+  key: 'DURATION',
+  name: 'Duration',
+};
 
 const PLATFORM_COLUMN_KEYS = [
   'ANCHORPREACHER',
@@ -74,7 +94,19 @@ function RenderPeopleCell({ value, textClass = 'text-slate-800' }: { value: stri
   );
 }
 
-export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: RunsheetCompareViewProps) {
+export function RunsheetCompareView({
+  channelIds,
+  availableChannels = [],
+  onSelectionChange,
+  onClose,
+  readOnly = false,
+  onSaveSettled,
+}: RunsheetCompareViewProps) {
+  const [selectedChannelIds, setSelectedChannelIds] = useState<number[]>(() => {
+    if (channelIds.length >= 2) return channelIds;
+    if (availableChannels.length >= 2) return availableChannels.slice(0, 2).map((c) => c.id);
+    return channelIds;
+  });
   const [sheets, setSheets] = useState<LoadedSheet[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPeopleColumns, setShowPeopleColumns] = useState(false);
@@ -91,31 +123,38 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
 
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
 
-  const fetchSheets = React.useCallback(async () => {
-    const batch = await rockGetRunsheetDetailsBatch(channelIds);
-    return batch
+  const fetchSheets = React.useCallback(async (idsToFetch: number[]) => {
+    if (idsToFetch.length === 0) {
+      setSheets([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const batch = await rockGetRunsheetDetailsBatch(idsToFetch);
+    const loaded = batch
       .filter((r) => r.success && r.data)
       .map((r) => ({
         channelId: r.channelId,
         name: r.data!.name,
         time: r.data!.name.split('//').pop()?.trim() || `Channel ${r.channelId}`,
+        startTime: r.data!.startTime || r.data!.subtitle || r.data!.name.split('//').pop()?.trim() || '',
         columns: r.data!.columns,
         items: r.data!.items,
       }));
-  }, [channelIds]);
+    setSheets(loaded);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const loaded = await fetchSheets();
       if (!active) return;
-      setSheets(loaded);
-      setLoading(false);
+      await fetchSheets(selectedChannelIds);
     })();
     return () => {
       active = false;
     };
-  }, [fetchSheets]);
+  }, [fetchSheets, selectedChannelIds]);
 
   useEffect(() => {
     if (!readOnly) return;
@@ -252,6 +291,7 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
     if (readOnly || !hasDirtyEdits || savingMatrix) return true;
     setSavingMatrix(true);
     setMatrixSaveStatus(null);
+    const attemptedChannelIds: number[] = [];
 
     try {
       const savePromises: Promise<any>[] = [];
@@ -282,6 +322,7 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
         }
 
         if (itemsToSave.length > 0) {
+          attemptedChannelIds.push(channelId);
           savePromises.push(rockBulkSaveRunsheetItems(channelId, itemsToSave, [], sheet.columns));
         }
       }
@@ -292,17 +333,27 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
       if (allOk) {
         setDirtyEdits(new Map());
         setMatrixSaveStatus('All comparison edits saved successfully!');
-        const freshSheets = await fetchSheets();
-        setSheets(freshSheets);
+        toast.success('All comparison edits saved successfully!');
+        await fetchSheets(selectedChannelIds);
         return true;
       } else {
-        setMatrixSaveStatus('Some edits failed to save to Rock. Please try again.');
+        const errorMsg = 'Some edits failed to save to Rock RMS. Please try again.';
+        setMatrixSaveStatus(errorMsg);
+        toast.error(errorMsg);
         return false;
       }
     } catch (err: any) {
-      setMatrixSaveStatus(`Error saving edits: ${err?.message || 'Unknown error'}`);
+      const errorMsg = `Error saving edits: ${err?.message || 'Unknown error'}`;
+      setMatrixSaveStatus(errorMsg);
+      toast.error(errorMsg);
       return false;
     } finally {
+      // Compare writes use a separate batch read/state path from the manager.
+      // Notify it for every attempted channel, including partial/error results,
+      // so its detail query cannot remain fresh with pre-save data.
+      // The IDs are captured in the save loop and are intentionally local to
+      // this invocation; read-only compare never enters this path.
+      attemptedChannelIds.forEach((channelId) => onSaveSettled?.(channelId));
       setSavingMatrix(false);
     }
   };
@@ -327,6 +378,34 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
     setShowUnsavedModal(false);
     onClose();
   };
+
+  const sheetTimingMap = useMemo(() => {
+    const map = new Map<number, Map<string, { startTime: string; duration: string }>>();
+    for (const sheet of sheets) {
+      const itemMap = new Map<string, { startTime: string; duration: string }>();
+      let currentMinutes = parseTimeToMinutes(sheet.startTime || '08:00:00 AM');
+      const runsheetItemsOnly = sheet.items.filter((item) => !(item.title && item.title.startsWith('Roster:')));
+
+      for (const item of runsheetItemsOnly) {
+        const itemTitle = item.attributeValues?.ACTIVITYTITLE || item.title;
+        const duration = Number(item.duration) || 0;
+        const startStr = formatMinutesToTimeWithSeconds(currentMinutes);
+        const durStr = formatDurationToHMS(duration);
+
+        if (itemTitle && !itemMap.has(itemTitle)) {
+          itemMap.set(itemTitle, {
+            startTime: startStr,
+            duration: durStr,
+          });
+        }
+
+        currentMinutes += duration;
+      }
+
+      map.set(sheet.channelId, itemMap);
+    }
+    return map;
+  }, [sheets]);
 
   // Group comparison data by segment row (title)
   const segmentRows = useMemo(() => {
@@ -365,6 +444,29 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
       const columnsInSegment: { col: DynamicAttributeColumn; values: (string | null)[]; differs: boolean }[] = [];
       let segmentDiffers = false;
 
+      // 1. Start Time
+      const startTimeValues = sheets.map((s) => sheetTimingMap.get(s.channelId)?.get(title)?.startTime ?? null);
+      const nonNullStartTimes = startTimeValues.filter((v): v is string => v !== null);
+      const distinctStartTimes = new Set(nonNullStartTimes.map((v) => v.trim()));
+      const startTimeDiffers = distinctStartTimes.size > 1;
+
+      if (startTimeDiffers) segmentDiffers = true;
+      if (!showDifferencesOnly || startTimeDiffers) {
+        columnsInSegment.push({ col: START_TIME_COLUMN, values: startTimeValues, differs: startTimeDiffers });
+      }
+
+      // 2. Duration
+      const durationValues = sheets.map((s) => sheetTimingMap.get(s.channelId)?.get(title)?.duration ?? null);
+      const nonNullDurations = durationValues.filter((v): v is string => v !== null);
+      const distinctDurations = new Set(nonNullDurations.map((v) => v.trim()));
+      const durationDiffers = distinctDurations.size > 1;
+
+      if (durationDiffers) segmentDiffers = true;
+      if (!showDifferencesOnly || durationDiffers) {
+        columnsInSegment.push({ col: DURATION_COLUMN, values: durationValues, differs: durationDiffers });
+      }
+
+      // 3. Dynamic Attribute Columns
       for (const col of allColumns) {
         const values = sheets.map((s) => cellValue(s, title, col.key));
         const nonNulls = values.filter((v): v is string => v !== null);
@@ -387,53 +489,77 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
     }
 
     return result;
-  }, [rowTitles, allColumns, sheets, showDifferencesOnly, cellValue, rosterPersonColumn]);
-
-  if (loading) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-        <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-xl">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
-          <span className="text-sm font-semibold text-slate-800">Loading service runsheet comparison…</span>
-        </div>
-      </div>
-    );
-  }
+  }, [rowTitles, allColumns, sheets, showDifferencesOnly, cellValue, rosterPersonColumn, sheetTimingMap]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/60 backdrop-blur-xs">
-      <div className="mx-auto flex h-full w-full max-w-7xl flex-col bg-white shadow-2xl overflow-hidden md:my-4 md:h-[calc(100vh-2rem)] md:rounded-2xl border border-slate-200">
+      <div className="mx-auto flex h-full w-full max-w-7xl flex-col bg-white shadow-2xl overflow-hidden md:my-3 md:h-[calc(100vh-1.5rem)] md:rounded-2xl border border-slate-200">
         {/* Header Bar */}
-        <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-900 px-4 py-3 text-white sm:px-6">
-          <div className="flex items-center gap-2.5">
-            <HiArrowsRightLeft className="h-5 w-5 text-blue-400" />
-            <div>
-              <h2 className="text-base sm:text-lg font-bold leading-tight">Runsheet Comparison</h2>
-            </div>
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-900 px-4 py-2.5 text-white sm:px-6">
+          <div className="flex items-center gap-2">
+            <HiArrowsRightLeft className="h-4 w-4 text-blue-400" />
+            <h2 className="text-sm sm:text-base font-bold leading-tight">Runsheet Comparison</h2>
           </div>
           <button
             type="button"
             onClick={handleRequestClose}
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
             title="Close Compare View"
           >
-            <HiXMark className="h-5 w-5" />
+            <HiXMark className="h-4 w-4" />
           </button>
         </div>
 
+        {/* Runsheet Selection Bar */}
+        {availableChannels && availableChannels.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 bg-slate-100/90 px-3 sm:px-6 py-2 text-xs">
+            <span className="font-bold text-slate-700 mr-1">Select to Compare:</span>
+            {availableChannels.map((c) => {
+              const isSelected = selectedChannelIds.includes(c.id);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => {
+                    let next: number[];
+                    if (isSelected) {
+                      if (selectedChannelIds.length <= 1) return; // keep at least 1
+                      next = selectedChannelIds.filter((id) => id !== c.id);
+                    } else {
+                      if (selectedChannelIds.length >= 4) return; // max 4
+                      next = [...selectedChannelIds, c.id];
+                    }
+                    setSelectedChannelIds(next);
+                    onSelectionChange?.(next);
+                  }}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-blue-600 border-blue-700 text-white shadow-xs font-bold'
+                      : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                  title={isSelected ? 'Click to remove from comparison' : 'Click to add to comparison'}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-slate-400'}`} />
+                  <span>{c.name.split('//').pop()?.trim() || c.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {showUnsavedModal && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4">
-            <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-200">
-              <h3 className="text-lg font-bold text-slate-900">Unsaved Comparison Edits</h3>
-              <p className="mt-2 text-sm text-slate-600">
+            <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl border border-slate-200">
+              <h3 className="text-base font-bold text-slate-900">Unsaved Comparison Edits</h3>
+              <p className="mt-1.5 text-xs sm:text-sm text-slate-600">
                 You have unsaved edits in this comparison view. What would you like to do before leaving?
               </p>
-              <div className="mt-6 flex flex-col gap-2">
+              <div className="mt-5 flex flex-col gap-2">
                 <button
                   type="button"
                   onClick={handleSaveAndClose}
                   disabled={readOnly || savingMatrix}
-                  className="w-full rounded-lg bg-pink-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-pink-800 cursor-pointer disabled:opacity-50"
+                  className="w-full rounded-lg bg-pink-700 px-4 py-2 text-xs font-semibold text-white hover:bg-pink-800 cursor-pointer disabled:opacity-50"
                 >
                   {savingMatrix ? 'Saving to Rock...' : '1. Save & Leave'}
                 </button>
@@ -442,7 +568,7 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
                   type="button"
                   onClick={handleDiscardAndClose}
                   disabled={savingMatrix}
-                  className="w-full rounded-lg bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer disabled:opacity-50"
+                  className="w-full rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer disabled:opacity-50"
                 >
                   2. Discard & Leave
                 </button>
@@ -451,7 +577,7 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
                   type="button"
                   onClick={() => setShowUnsavedModal(false)}
                   disabled={savingMatrix}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
                 >
                   3. Cancel & Continue Editing
                 </button>
@@ -461,14 +587,14 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
         )}
 
         {/* Toolbar & Filter Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 sm:px-6">
-          <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-slate-700">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-slate-200 bg-slate-50 px-3 sm:px-6 py-2">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs font-medium text-slate-700">
             <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={showDifferencesOnly}
                 onChange={(e) => setShowDifferencesOnly(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
               />
               <span className="font-semibold text-slate-900">Show Differences Only</span>
             </label>
@@ -478,15 +604,15 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
                 type="checkbox"
                 checked={showPeopleColumns}
                 onChange={(e) => setShowPeopleColumns(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
               />
               <span>Include Roster & Platform Columns</span>
             </label>
           </div>
 
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex items-center gap-2.5 text-xs">
             {matrixSaveStatus && (
-              <span className="font-medium text-slate-700 bg-slate-200 px-2 py-1 rounded">{matrixSaveStatus}</span>
+              <span className="font-medium text-slate-700 bg-slate-200 px-2 py-0.5 rounded text-[11px]">{matrixSaveStatus}</span>
             )}
 
             {!readOnly && (
@@ -494,7 +620,7 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
                 type="button"
                 disabled={!hasDirtyEdits || savingMatrix}
                 onClick={handleSaveAllMatrixEdits}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-pink-700 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-pink-800 disabled:opacity-40 cursor-pointer transition-all"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-pink-700 px-3 py-1 text-xs font-bold text-white shadow-xs hover:bg-pink-800 disabled:opacity-40 cursor-pointer transition-all"
               >
                 {savingMatrix ? 'Saving Edits...' : 'Save Comparison Edits'}
               </button>
@@ -503,8 +629,15 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
         </div>
 
         {/* Per-Segment WYSIWYG Row Comparison List */}
-        <div className="flex-1 overflow-auto bg-slate-100/60 p-3 sm:p-5 space-y-4">
-          {segmentRows.length === 0 ? (
+        <div className="flex-1 overflow-auto bg-slate-100/60 p-2.5 sm:p-4 space-y-2.5">
+          {loading ? (
+            <div className="flex items-center justify-center p-12">
+              <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
+                <span className="text-xs font-semibold text-slate-800">Loading service runsheet comparison…</span>
+              </div>
+            </div>
+          ) : segmentRows.length === 0 ? (
             <div className="rounded-xl border border-slate-300 bg-white p-12 text-center text-slate-500 shadow-sm">
               {showDifferencesOnly
                 ? '✨ All segments and attributes match perfectly across these services!'
@@ -519,21 +652,21 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
               >
                 {/* Segment Header Bar */}
                 <div
-                  className={`flex items-center justify-between px-4 py-2.5 border-b font-bold text-xs ${segment.hasDifferences ? 'bg-amber-100/70 border-amber-200 text-amber-950' : 'bg-slate-800 border-slate-700 text-white'
+                  className={`flex items-center justify-between px-3 py-1.5 border-b font-bold text-xs ${segment.hasDifferences ? 'bg-amber-100/70 border-amber-200 text-amber-950' : 'bg-slate-800 border-slate-700 text-white'
                     }`}
                 >
                   <div className="flex items-center gap-2">
                     <RenderRichCell
                       value={segment.title}
-                      textClass={segment.hasDifferences ? 'text-amber-950 font-bold text-sm' : 'text-white font-bold text-sm'}
+                      textClass={segment.hasDifferences ? 'text-amber-950 font-bold text-xs sm:text-sm' : 'text-white font-bold text-xs sm:text-sm'}
                     />
                     {segment.hasDifferences && (
-                      <span className="inline-flex items-center gap-1 rounded bg-amber-200/80 px-2 py-0.5 text-[10px] font-bold text-amber-900">
-                        <HiExclamationTriangle className="h-3 w-3 text-amber-700" /> Differing Attributes
+                      <span className="inline-flex items-center gap-1 rounded bg-amber-200/80 px-1.5 py-0.2 text-[10px] font-bold text-amber-900">
+                        <HiExclamationTriangle className="h-3 w-3 text-amber-700" /> Differing
                       </span>
                     )}
                   </div>
-                  <span className="text-[11px] font-normal opacity-80">{segment.columns.length} columns</span>
+                  <span className="text-[10px] font-normal opacity-80">{segment.columns.length} cols</span>
                 </div>
 
                 {/* Service Columns Comparison Table within Segment */}
@@ -541,17 +674,24 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
                   <table className="w-full border-collapse text-xs text-left">
                     <thead>
                       <tr className="border-b border-slate-200 bg-slate-50 text-slate-700 font-semibold text-[11px]">
-                        <th className="w-36 sm:w-44 border-r border-slate-200 p-2.5 bg-slate-100/80 text-slate-900">
+                        <th className="w-32 sm:w-40 border-r border-slate-200 p-1.5 sm:p-2 bg-slate-100/80 text-slate-900">
                           Attribute
                         </th>
                         {sheets.map((sheet) => (
-                          <th key={sheet.channelId} className="min-w-[200px] border-r border-slate-200 p-2.5 last:border-r-0">
-                            <div className="flex items-center justify-between">
+                          <th key={sheet.channelId} className="min-w-[180px] border-r border-slate-200 p-1.5 sm:p-2 last:border-r-0">
+                            <div className="flex items-center justify-between gap-1">
                               <span className="font-mono text-xs font-bold text-slate-900">{sheet.time}</span>
-                              <span className="text-[10px] text-slate-500 font-normal truncate max-w-[110px]">
+                              <span className="text-[10px] text-slate-500 font-normal truncate max-w-[100px]">
                                 {sheet.name.split('//')[0]?.trim()}
                               </span>
                             </div>
+                            {sheet.startTime ? (
+                              <div className="mt-1 flex items-center gap-1 text-[10px] font-medium text-slate-600">
+                                <span className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 border border-slate-200">
+                                  Start: {sheet.startTime}
+                                </span>
+                              </div>
+                            ) : null}
                           </th>
                         ))}
                       </tr>
@@ -564,7 +704,7 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
                             }`}
                         >
                           {/* Attribute Name Column */}
-                          <td className="border-r border-slate-200 p-2.5 font-semibold text-slate-700 bg-slate-50/60 align-top">
+                          <td className="border-r border-slate-200 p-1.5 sm:p-2 font-semibold text-slate-700 bg-slate-50/60 align-top text-[11px]">
                             {col.name}
                           </td>
 
@@ -572,19 +712,22 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
                           {sheets.map((sheet, i) => {
                             const val = values[i];
                             const isMissing = val === null;
+                            const isComputedCol = col.key === 'START_TIME' || col.key === 'DURATION';
                             const isEditingThisCell =
+                              !isComputedCol &&
                               editingCell?.channelId === sheet.channelId &&
                               editingCell?.itemTitle === segment.title &&
                               editingCell?.columnKey === col.key;
-                            const isCellDirty = dirtyEdits.get(sheet.channelId)?.get(segment.title)?.has(col.key);
+                            const isCellDirty =
+                              !isComputedCol && dirtyEdits.get(sheet.channelId)?.get(segment.title)?.has(col.key);
 
                             return (
                               <td
                                 key={sheet.channelId}
-                                className={`group relative border-r border-slate-200 p-2.5 align-top last:border-r-0 ${differs ? 'border-amber-200/80' : ''
-                                  } ${isCellDirty ? 'bg-pink-50/80 ring-1 ring-pink-300 inset-0' : ''} ${!isMissing && !isEditingThisCell ? 'cursor-pointer hover:bg-blue-50/40' : ''}`}
+                                className={`group relative border-r border-slate-200 p-1.5 sm:p-2 align-top last:border-r-0 text-[11px] ${differs ? 'border-amber-200/80' : ''
+                                  } ${isCellDirty ? 'bg-pink-50/80 ring-1 ring-pink-300 inset-0' : ''} ${!isMissing && !isComputedCol && !isEditingThisCell ? 'cursor-pointer hover:bg-blue-50/40' : ''}`}
                                 onClick={() => {
-                                  if (!readOnly && !isMissing && !isEditingThisCell) {
+                                  if (!readOnly && !isMissing && !isComputedCol && !isEditingThisCell) {
                                     handleStartEditCell(sheet.channelId, segment.title, col.key, val);
                                   }
                                 }}
@@ -610,7 +753,13 @@ export function RunsheetCompareView({ channelIds, onClose, readOnly = false }: R
                                   />
                                 ) : (
                                   <div className="flex flex-col justify-between gap-1.5 h-full min-h-[38px]">
-                                    {isPersonColumn(col) ? <RenderPeopleCell value={val} /> : <RenderRichCell value={val} />}
+                                    {isPersonColumn(col) ? (
+                                      <RenderPeopleCell value={val} />
+                                    ) : isComputedCol ? (
+                                      <span className="font-mono text-xs font-semibold text-slate-800">{val}</span>
+                                    ) : (
+                                      <RenderRichCell value={val} />
+                                    )}
                                   </div>
                                 )}
                               </td>

@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { rockSearchSongs, SongOption } from '@/server-actions/rockSearchSongs';
 import { cleanSongTitle } from '@/lib/songUtils';
-import { HiMagnifyingGlass, HiMusicalNote, HiCheck, HiXMark } from 'react-icons/hi2';
+import { HiMagnifyingGlass, HiMusicalNote, HiCheck, HiXMark, HiArrowTopRightOnSquare } from 'react-icons/hi2';
 
 const MUSICAL_KEYS = ['C', 'C#', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -12,6 +12,7 @@ interface SongSearchDropdownProps {
   /** Rock ContentChannelItem.Id of the song currently linked to this cell, if any. */
   initialSongItemId?: number | null;
   onSelectSong: (formattedSong: string, songItemId: number | null) => void;
+  onOpenFullModal?: () => void;
   onClose: () => void;
 }
 
@@ -56,6 +57,7 @@ export function SongSearchDropdown({
   initialValue,
   initialSongItemId = null,
   onSelectSong,
+  onOpenFullModal,
   onClose,
 }: SongSearchDropdownProps) {
   const parsed = parseSongAndKey(initialValue);
@@ -145,13 +147,26 @@ export function SongSearchDropdown({
           <HiMusicalNote className="h-4 w-4 text-slate-700" />
           <span>Select Song & Key</span>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-        >
-          <HiXMark className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          {onOpenFullModal && (
+            <button
+              type="button"
+              onClick={onOpenFullModal}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-900 cursor-pointer"
+              title="Open full song details modal"
+            >
+              <span>Details</span>
+              <HiArrowTopRightOnSquare className="h-3 w-3 text-slate-500" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+          >
+            <HiXMark className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* Search Input */}

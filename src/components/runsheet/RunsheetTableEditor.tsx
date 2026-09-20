@@ -3,15 +3,19 @@
 import type { Editor } from '@tiptap/react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiChevronDown, HiChevronUp, HiDocumentDuplicate, HiExclamationCircle, HiLockClosed, HiMusicalNote, HiPlus, HiTableCells, HiTrash } from 'react-icons/hi2';
+import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiChevronDown, HiChevronUp, HiDocumentDuplicate, HiExclamationCircle, HiEye, HiLockClosed, HiMusicalNote, HiPencilSquare, HiPlus, HiRectangleStack, HiShare, HiTableCells, HiTrash } from 'react-icons/hi2';
 
 import { htmlToPlainText } from '@/lib/richText';
+import { getViewModePreference, setViewModePreference } from '@/lib/userPreferences';
+import toast from 'react-hot-toast';
 
 interface RunsheetSnapshot {
   items: RunsheetItemRow[];
   startTime: string;
   musicCellMap: Record<string, boolean>;
   deletedIds: (number | string)[];
+  columnOrder?: string[];
+  columnWidths?: Record<string, number>;
 }
 import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
 import {
@@ -33,8 +37,7 @@ import { rockDeleteServiceRunsheet } from '@/server-actions/rockDeleteServiceRun
 import { getRockContentChannelOptions, ContentChannelCategoryOption } from '@/server-actions/getRockContentChannelOptions';
 import { rockGetScheduleOptions, ScheduleOption } from '@/server-actions/rockGetScheduleOptions';
 import { rockDuplicateServiceRunsheet } from '@/server-actions/rockDuplicateServiceRunsheet';
-import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetDetails } from '@/types/Runsheet';
-import { cleanSongTitle } from '@/lib/songUtils';
+import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetDetails, RunsheetColumnMetadata } from '@/types/Runsheet';
 import { resolveSiblings, type SiblingChannel } from '@/lib/runsheetSiblings';
 import { matchRows, type MatchResult } from '@/lib/runsheetMatch';
 import { buildPropagationPlan, type PropagationPlan, type CandidateCellChange } from '@/lib/runsheetPropagate';
@@ -53,6 +56,8 @@ import { CELL_ATTRIBUTE, RichTextCell } from './RichTextCell';
 import { RichTextContent } from './RichTextContent';
 import { RichTextToolbar } from './RichTextToolbar';
 import { SongSearchDropdown } from './SongSearchDropdown';
+import { SongDetailModal } from './SongDetailModal';
+import { ShareRunsheetModal } from './ShareRunsheetModal';
 import { EventTeamRosterCard, ensureRosterItems } from './EventTeamRosterCard';
 
 function extractCategoryCampus(catName: string): RunsheetCampusCode | null {
@@ -94,17 +99,24 @@ interface RunsheetTableEditorProps {
   channelId: number;
   channelName: string;
   columns?: DynamicAttributeColumn[];
+  initialColumnMetadata?: RunsheetColumnMetadata;
   initialItems: RunsheetItemRow[];
   initialStartTime?: string;
   initialSubtitle?: string;
   /** Pixel height of an outer page header this editor's own sticky bar must sit below, so the two don't stack on top of each other at `top: 0`. */
   stickyTopOffset?: number;
   readOnly?: boolean;
+  canEdit?: boolean;
+  editorMode?: 'view' | 'edit';
+  onModeChange?: (mode: 'view' | 'edit') => void;
   runsheetCampuses?: string[];
   onCreated?: (channelId: number, title: string, createdData?: RunsheetDetails) => void;
   onDeleted?: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
   onSaveRef?: (saveFn: () => Promise<boolean>) => void;
+  onOptimisticSave?: (updatedData: RunsheetDetails) => void;
+  /** Invalidate the authoritative detail query after any attempted write. */
+  onSaveSettled?: (channelId: number) => void;
 }
 
 /** A row plus the clock values derived from the durations above it. */
@@ -120,6 +132,36 @@ interface TimeSpan {
   startStr: string;
   endStr: string;
   formattedDuration: string;
+}
+
+function computeDefaultDynamicColOrder(cols: DynamicAttributeColumn[]): string[] {
+  const filtered = (cols && cols.length > 0 ? cols : FALLBACK_RUNSHEET_COLUMNS).filter(
+    (col) => !RESERVED_RUNSHEET_COLUMN_KEYS.includes(col.key),
+  );
+
+  const isPlatformCol = (col: DynamicAttributeColumn) => {
+    const k = col.key.toUpperCase();
+    const n = col.name.toLowerCase();
+    return k === 'PLATFORM' || k === 'ANCHORPREACHER' || n.includes('platform') || isPersonColumn(col);
+  };
+
+  const isDescriptionCol = (col: DynamicAttributeColumn) => {
+    const k = col.key.toUpperCase();
+    const n = col.name.toLowerCase();
+    return k === 'DESCRIPTION' || k === 'DETIAL' || n.includes('description') || n.includes('detail');
+  };
+
+  const platformIdx = filtered.findIndex(isPlatformCol);
+  const descIdx = filtered.findIndex(isDescriptionCol);
+
+  if (platformIdx !== -1 && descIdx !== -1 && platformIdx > descIdx) {
+    const result = [...filtered];
+    const [platformCol] = result.splice(platformIdx, 1);
+    result.splice(descIdx, 0, platformCol);
+    return result.map((c) => c.key);
+  }
+
+  return filtered.map((c) => c.key);
 }
 
 /** Builds fresh template rows with unique ids, so every call (reset, auto-load) gets its own set. */
@@ -159,16 +201,22 @@ export function RunsheetTableEditor({
   channelId,
   channelName,
   columns = FALLBACK_RUNSHEET_COLUMNS,
+  initialColumnMetadata,
   initialItems,
   initialStartTime = '08:00:00 AM',
   initialSubtitle = '',
   stickyTopOffset = 0,
   readOnly = false,
+  canEdit,
+  editorMode,
+  onModeChange,
   runsheetCampuses,
   onCreated,
   onDeleted,
   onDirtyChange,
   onSaveRef,
+  onOptimisticSave,
+  onSaveSettled,
 }: RunsheetTableEditorProps) {
   /**
    * A brand-new (or emptied-out) runsheet has nothing to lose, so it starts
@@ -192,6 +240,124 @@ export function RunsheetTableEditor({
   const [startTime, setStartTime] = useState(initialStartTime);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => {
+    if (initialColumnMetadata?.order && initialColumnMetadata.order.length > 0) {
+      return initialColumnMetadata.order;
+    }
+    return computeDefaultDynamicColOrder(columns);
+  });
+
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    const widths: Record<string, number> = { ...(initialColumnMetadata?.widths || {}) };
+    (columns || []).forEach((col) => {
+      if (col.width && !widths[col.key]) {
+        widths[col.key] = col.width;
+      }
+    });
+    return widths;
+  });
+
+  const [draggedColumnKey, setDraggedColumnKey] = useState<string | null>(null);
+  const [dragOverColumnKey, setDragOverColumnKey] = useState<string | null>(null);
+
+  const resizingColRef = React.useRef<{
+    key: string;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+
+  const handleResizeStart = (key: string, currentWidth: number, e: React.MouseEvent) => {
+    if (readOnly) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    saveSnapshot();
+
+    resizingColRef.current = {
+      key,
+      startX: e.clientX,
+      startWidth: currentWidth,
+    };
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!resizingColRef.current) return;
+      const { key: colKey, startX, startWidth } = resizingColRef.current;
+      const delta = moveEvent.clientX - startX;
+      const newWidth = Math.max(60, Math.min(600, Math.round(startWidth + delta)));
+
+      setColumnWidths((prev) => ({
+        ...prev,
+        [colKey]: newWidth,
+      }));
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      if (resizingColRef.current) {
+        setIsDirty(true);
+        onDirtyChange?.(true);
+      }
+      resizingColRef.current = null;
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleColumnDragStart = (key: string, e: React.DragEvent) => {
+    if (readOnly) return;
+    e.dataTransfer.setData('text/plain', key);
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedColumnKey(key);
+  };
+
+  const handleColumnDragOver = (key: string, e: React.DragEvent) => {
+    if (readOnly || !draggedColumnKey || draggedColumnKey === key) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverColumnKey !== key) {
+      setDragOverColumnKey(key);
+    }
+  };
+
+  const handleColumnDrop = (targetKey: string, e: React.DragEvent) => {
+    if (readOnly || !draggedColumnKey) return;
+    e.preventDefault();
+    const sourceKey = draggedColumnKey;
+    setDraggedColumnKey(null);
+    setDragOverColumnKey(null);
+
+    if (sourceKey === targetKey) return;
+
+    saveSnapshot();
+
+    setColumnOrder((prevOrder) => {
+      const currentKeys = dynamicAttrCols.map((c) => c.key);
+      const baseOrder = prevOrder.length > 0 ? [...prevOrder] : currentKeys;
+      currentKeys.forEach((k) => {
+        if (!baseOrder.includes(k)) baseOrder.push(k);
+      });
+
+      const sourceIdx = baseOrder.indexOf(sourceKey);
+      const targetIdx = baseOrder.indexOf(targetKey);
+      if (sourceIdx === -1 || targetIdx === -1) return prevOrder;
+
+      const newOrder = [...baseOrder];
+      const [moved] = newOrder.splice(sourceIdx, 1);
+      newOrder.splice(targetIdx, 0, moved);
+      return newOrder;
+    });
+
+    setIsDirty(true);
+    onDirtyChange?.(true);
+  };
+
+  const handleColumnDragEnd = () => {
+    setDraggedColumnKey(null);
+    setDragOverColumnKey(null);
+  };
+
   /** The cell currently open for editing, tracked by item ID to avoid index mismatch with roster items. */
   const [editingCell, setEditingCell] = useState<{ itemId: number | string; key: string } | null>(null);
 
@@ -207,11 +373,14 @@ export function RunsheetTableEditor({
   const [durationDrafts, setDurationDrafts] = useState<{ [id: string]: string }>({});
 
   const [isDirty, setIsDirty] = useState(() => !!initialTemplate);
-  const [mobileViewMode, setMobileViewMode] = useState<'cards' | 'grid'>(() => {
-    if (typeof window === 'undefined') return 'grid';
-    // Touch devices (phones, iPads, tablets) get Cards; laptops/desktops with mouse get Table
-    return window.matchMedia('(pointer: coarse)').matches ? 'cards' : 'grid';
-  });
+  const [mobileViewMode, setMobileViewMode] = useState<'cards' | 'grid'>('grid');
+
+  useEffect(() => {
+    const preferredMode = getViewModePreference();
+    if (preferredMode !== 'grid') {
+      setMobileViewMode(preferredMode);
+    }
+  }, []);
   /** Displayed/persisted subtitle falls back to this when Rock has none set; the baseline for dirty-checking must use the same fallback or an untouched runsheet reads as dirty. */
   const normalizedInitialSubtitle = initialSubtitle || 'Sunday Service';
   const [subtitle, setSubtitle] = useState<string>(normalizedInitialSubtitle);
@@ -308,6 +477,7 @@ export function RunsheetTableEditor({
   const [isDeleting, setIsDeleting] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [rowToDelete, setRowToDelete] = useState<RunsheetItemRow | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   const handleInsertRow = (targetIndex: number, position: 'above' | 'below') => {
     if (readOnly) return;
@@ -479,6 +649,14 @@ export function RunsheetTableEditor({
     return map;
   });
 
+  const [songModalState, setSongModalState] = useState<{
+    isOpen: boolean;
+    rowId?: number | string | null;
+    initialValue?: string;
+    initialSongItemId?: number | null;
+    readOnly?: boolean;
+  }>({ isOpen: false });
+
   const saveSnapshot = React.useCallback(() => {
     setHistory((prev) => [
       ...prev.slice(-49),
@@ -487,10 +665,12 @@ export function RunsheetTableEditor({
         startTime,
         musicCellMap: { ...musicCellMap },
         deletedIds: [...deletedIds],
+        columnOrder: [...columnOrder],
+        columnWidths: { ...columnWidths },
       },
     ]);
     setFuture([]);
-  }, [items, startTime, musicCellMap, deletedIds]);
+  }, [items, startTime, musicCellMap, deletedIds, columnOrder, columnWidths]);
 
   const handleUndo = React.useCallback(() => {
     if (readOnly || history.length === 0) return;
@@ -503,6 +683,8 @@ export function RunsheetTableEditor({
         startTime,
         musicCellMap: { ...musicCellMap },
         deletedIds: [...deletedIds],
+        columnOrder: [...columnOrder],
+        columnWidths: { ...columnWidths },
       },
       ...prev,
     ]);
@@ -512,9 +694,11 @@ export function RunsheetTableEditor({
     setStartTime(previous.startTime);
     setMusicCellMap(previous.musicCellMap);
     setDeletedIds(previous.deletedIds);
+    if (previous.columnOrder) setColumnOrder(previous.columnOrder);
+    if (previous.columnWidths) setColumnWidths(previous.columnWidths);
     setEditingCell(null);
     setIsDirty(true);
-  }, [readOnly, history, items, startTime, musicCellMap, deletedIds]);
+  }, [readOnly, history, items, startTime, musicCellMap, deletedIds, columnOrder, columnWidths]);
 
   const handleRedo = React.useCallback(() => {
     if (readOnly || future.length === 0) return;
@@ -528,6 +712,8 @@ export function RunsheetTableEditor({
         startTime,
         musicCellMap: { ...musicCellMap },
         deletedIds: [...deletedIds],
+        columnOrder: [...columnOrder],
+        columnWidths: { ...columnWidths },
       },
     ]);
 
@@ -536,9 +722,11 @@ export function RunsheetTableEditor({
     setStartTime(next.startTime);
     setMusicCellMap(next.musicCellMap);
     setDeletedIds(next.deletedIds);
+    if (next.columnOrder) setColumnOrder(next.columnOrder);
+    if (next.columnWidths) setColumnWidths(next.columnWidths);
     setEditingCell(null);
     setIsDirty(true);
-  }, [readOnly, future, items, startTime, musicCellMap, deletedIds]);
+  }, [readOnly, future, items, startTime, musicCellMap, deletedIds, columnOrder, columnWidths]);
 
   useEffect(() => {
     if (readOnly) return;
@@ -593,8 +781,44 @@ export function RunsheetTableEditor({
   // The activity title has its own column, so it is dropped from the dynamic loop.
   const dynamicAttrCols = useMemo(() => {
     const list = columns && columns.length > 0 ? columns : FALLBACK_RUNSHEET_COLUMNS;
-    return list.filter((col) => !RESERVED_RUNSHEET_COLUMN_KEYS.includes(col.key));
-  }, [columns]);
+    const filtered = list.filter((col) => !RESERVED_RUNSHEET_COLUMN_KEYS.includes(col.key));
+
+    if (columnOrder.length > 0) {
+      const orderMap = new Map<string, number>();
+      columnOrder.forEach((key, idx) => orderMap.set(key, idx));
+
+      return [...filtered].sort((a, b) => {
+        const orderA = orderMap.has(a.key) ? orderMap.get(a.key)! : Number.MAX_SAFE_INTEGER;
+        const orderB = orderMap.has(b.key) ? orderMap.get(b.key)! : Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) return orderA - orderB;
+        return 0;
+      });
+    }
+
+    const isPlatformCol = (col: DynamicAttributeColumn) => {
+      const k = col.key.toUpperCase();
+      const n = col.name.toLowerCase();
+      return k === 'PLATFORM' || k === 'ANCHORPREACHER' || n.includes('platform') || isPersonColumn(col);
+    };
+
+    const isDescriptionCol = (col: DynamicAttributeColumn) => {
+      const k = col.key.toUpperCase();
+      const n = col.name.toLowerCase();
+      return k === 'DESCRIPTION' || k === 'DETIAL' || n.includes('description') || n.includes('detail');
+    };
+
+    const platformIdx = filtered.findIndex(isPlatformCol);
+    const descIdx = filtered.findIndex(isDescriptionCol);
+
+    if (platformIdx !== -1 && descIdx !== -1 && platformIdx > descIdx) {
+      const result = [...filtered];
+      const [platformCol] = result.splice(platformIdx, 1);
+      result.splice(descIdx, 0, platformCol);
+      return result;
+    }
+
+    return filtered;
+  }, [columns, columnOrder]);
 
   /**
    * Walks the rows in order, accumulating the clock and grouping each timed row
@@ -669,6 +893,15 @@ export function RunsheetTableEditor({
 
     return { processedRows: processed, timeSpanMap: spans, parentBlockMap: parents };
   }, [items, startTime]);
+
+  const totalDurationFormatted = useMemo(() => {
+    let totalMinutes = 0;
+    for (const item of items) {
+      if (item.title && item.title.startsWith('Roster:')) continue;
+      totalMinutes += Number(item.duration) || 0;
+    }
+    return formatDurationToHMS(totalMinutes);
+  }, [items]);
 
   useEffect(() => {
     if (editingCardIndex === null) return;
@@ -863,9 +1096,15 @@ export function RunsheetTableEditor({
   const handleDragStart = (index: number, event: React.DragEvent) => {
     if (readOnly) return;
     setDraggedIndex(index);
-    const rowElement = event.currentTarget.closest('tr');
-    if (rowElement && event.dataTransfer) {
-      event.dataTransfer.setDragImage(rowElement, 20, 20);
+    if (event.dataTransfer) {
+      // Chrome starts the drag with no payload at all, but Firefox and Safari can
+      // refuse to, so seed it the way the working column-drag path already does.
+      // `effectAllowed` also fixes the cursor: without it the drop reports a copy
+      // effect for what is really a move.
+      event.dataTransfer.setData('text/plain', String(index));
+      event.dataTransfer.effectAllowed = 'move';
+      const rowElement = event.currentTarget.closest('tr');
+      if (rowElement) event.dataTransfer.setDragImage(rowElement, 20, 20);
     }
   };
 
@@ -880,10 +1119,21 @@ export function RunsheetTableEditor({
     setItems((previous) => {
       const updated = [...previous];
       const fromIndex = updated.findIndex((item) => item.id === draggedId);
+      const originalToIndex = updated.findIndex((item) => item.id === targetId);
       if (fromIndex === -1) return previous;
+      if (originalToIndex === -1) return updated;
+
       const [moved] = updated.splice(fromIndex, 1);
-      const toIndex = updated.findIndex((item) => item.id === targetId);
-      updated.splice(toIndex === -1 ? fromIndex : toIndex, 0, moved);
+
+      // Insert at the target's ORIGINAL index, captured before the removal above.
+      // Re-finding the target after the splice was the bug: removing the dragged row
+      // shifts everything after it back by one, so a re-found index lands the row
+      // BEFORE the target. That is right going up, but going down it puts the row
+      // back where it started (adjacent) or one slot short (non-adjacent).
+      // The original index needs no adjustment in either direction — going up the
+      // target has not moved, and going down the off-by-one from the removal is
+      // exactly the +1 needed to land after the target.
+      updated.splice(originalToIndex, 0, moved);
       return updated;
     });
     setIsDirty(true);
@@ -962,7 +1212,10 @@ export function RunsheetTableEditor({
       13,
       duplicateCategoryId ? Number(duplicateCategoryId) : undefined,
       allPreparedItems,
-      columns
+      columns,
+      subtitle,
+      startTime,
+      { order: columnOrder, widths: columnWidths }
     );
 
     setIsDuplicating(false);
@@ -989,28 +1242,26 @@ export function RunsheetTableEditor({
         // stable synthetic id and get a baseline fingerprint on load even though
         // they're flagged `isNew` — if nothing about them has changed since, they
         // aren't a real pending save and shouldn't mark the runsheet dirty.
-        const rosterBaseline = baselineRef.current.get(item.id);
-        if (rosterBaseline) {
-          const fingerprint = createRowFingerprint(item);
-          if (JSON.stringify(fingerprint) === JSON.stringify(rosterBaseline)) {
-            return;
+        if (typeof item.id === 'string' && item.title?.startsWith('Roster:')) {
+          const baseline = baselineRef.current.get(item.id);
+          if (baseline) {
+            const currentFp = createRowFingerprint(item);
+            if (JSON.stringify(currentFp) === JSON.stringify(baseline)) {
+              return;
+            }
           }
         }
-        // New items are sent in full without changedKeys
-        itemsToSave.push({ ...item });
+        itemsToSave.push(item);
         return;
       }
 
       const baseline = baselineRef.current.get(item.id);
       if (!baseline) {
-        // If not in baseline, treat as requiring save
-        itemsToSave.push({ ...item });
+        itemsToSave.push(item);
         return;
       }
 
       const changedKeys: string[] = [];
-
-      // Check title / ACTIVITYTITLE
       const richTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
       if (richTitle !== baseline.title) {
         changedKeys.push('title');
@@ -1064,18 +1315,44 @@ export function RunsheetTableEditor({
     });
 
     return { allPreparedItems, itemsToSave };
-  }, [processedRows, items]);
+  }, [processedRows, items, createRowFingerprint]);
 
-  // Derived dirty state
   const computedDirtyState = useMemo(() => {
     if (initialTemplate) return true;
-    if (deletedIds.length > 0) return true;
-    if (subtitle !== normalizedInitialSubtitle) return true;
-    if (startTime !== initialStartTime) return true;
     const { itemsToSave } = computeDiffPayload();
-    return itemsToSave.length > 0;
+    const startTimeChanged = startTime !== initialStartTime;
+    const subtitleChanged = subtitle !== normalizedInitialSubtitle;
+    const baseOrder =
+      initialColumnMetadata?.order && initialColumnMetadata.order.length > 0
+        ? initialColumnMetadata.order
+        : computeDefaultDynamicColOrder(columns);
+    const baseWidths = initialColumnMetadata?.widths || {};
+    const columnMetadataChanged =
+      JSON.stringify(columnOrder) !== JSON.stringify(baseOrder) ||
+      JSON.stringify(columnWidths) !== JSON.stringify(baseWidths);
+
+    return (
+      itemsToSave.length > 0 ||
+      deletedIds.length > 0 ||
+      startTimeChanged ||
+      subtitleChanged ||
+      columnMetadataChanged
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deletedIds.length, subtitle, normalizedInitialSubtitle, startTime, initialStartTime, initialTemplate, computeDiffPayload, baselineVersion]);
+  }, [
+    initialTemplate,
+    computeDiffPayload,
+    deletedIds.length,
+    startTime,
+    initialStartTime,
+    subtitle,
+    normalizedInitialSubtitle,
+    columnOrder,
+    columnWidths,
+    initialColumnMetadata,
+    columns,
+    baselineVersion,
+  ]);
 
   useEffect(() => {
     setIsDirty(computedDirtyState);
@@ -1092,11 +1369,14 @@ export function RunsheetTableEditor({
       const targetRowsMap = new Map<number, RunsheetItemRow[]>();
       const matchResultsByChannel = new Map<number, MatchResult>();
 
-      // Sibling sheets haven't seen this save's edits yet, so a row renamed in
-      // it must be matched under its OLD title — matching under the new one
-      // would find nothing there and silently drop every change on that row.
+      // Rows renamed in the save that triggered propagation have their new title
+      // in processedRows, but target siblings still have the old one. Match
+      // against the old title so the row pairs up cleanly instead of falling
+      // through to "unmatched" (or worse, colliding on a renamed empty slot).
+      const oldTitles = propagateOldTitlesRef.current;
       const matchingSourceRows = processedRows.map((row) => {
-        const oldTitle = typeof row.id === 'number' ? propagateOldTitlesRef.current.get(row.id) : undefined;
+        if (typeof row.id !== 'number') return row;
+        const oldTitle = oldTitles.get(row.id);
         if (oldTitle === undefined) return row;
         return { ...row, title: oldTitle, attributeValues: { ...row.attributeValues, ACTIVITYTITLE: oldTitle } };
       });
@@ -1123,33 +1403,59 @@ export function RunsheetTableEditor({
     const { allPreparedItems, itemsToSave } = computeDiffPayload();
     const startTimeChanged = startTime !== initialStartTime;
 
+    const baseOrder =
+      initialColumnMetadata?.order && initialColumnMetadata.order.length > 0
+        ? initialColumnMetadata.order
+        : computeDefaultDynamicColOrder(columns);
+    const baseWidths = initialColumnMetadata?.widths || {};
+    const columnMetadataChanged =
+      JSON.stringify(columnOrder) !== JSON.stringify(baseOrder) ||
+      JSON.stringify(columnWidths) !== JSON.stringify(baseWidths);
+
     // If nothing changed, return success early
-    if (itemsToSave.length === 0 && deletedIds.length === 0 && subtitle === normalizedInitialSubtitle && !startTimeChanged) {
+    if (
+      itemsToSave.length === 0 &&
+      deletedIds.length === 0 &&
+      subtitle === normalizedInitialSubtitle &&
+      !startTimeChanged &&
+      !columnMetadataChanged
+    ) {
       setStatus({ type: 'success', message: 'No changes to save.' });
       setIsDirty(false);
       return true;
     }
 
-    const result = await rockBulkSaveRunsheetItems(
-      channelId,
-      itemsToSave,
-      deletedIds,
-      columns,
-      subtitle,
-      startTimeChanged ? startTime : undefined
-    );
+    const columnMetadata: RunsheetColumnMetadata = {
+      order: columnOrder,
+      widths: columnWidths,
+    };
+
+    const columnMetadataToSave: RunsheetColumnMetadata | undefined =
+      columnMetadataChanged || initialColumnMetadata !== undefined
+        ? columnMetadata
+        : undefined;
+
+    let result: Awaited<ReturnType<typeof rockBulkSaveRunsheetItems>>;
+    try {
+      result = await rockBulkSaveRunsheetItems(
+        channelId,
+        itemsToSave,
+        deletedIds,
+        columns,
+        subtitle,
+        startTimeChanged ? startTime : undefined,
+        ...(columnMetadataToSave ? [columnMetadataToSave] : [])
+      );
+    } catch (err: any) {
+      onSaveSettled?.(channelId);
+      const msg = err?.message || 'Failed to save changes.';
+      setStatus({ type: 'error', message: msg });
+      toast.error(msg);
+      return false;
+    }
 
     if (result.success) {
-      // Snapshot propagation candidates against the PRE-save baseline before
-      // it gets advanced below — advancing first would make `previousValue`
-      // equal `newValue` for every cell, since baselineRef would already
-      // hold the just-saved value by the time this reads from it.
       const candidates: CandidateCellChange[] = [];
-      // A row whose title changed in this very save is caught here too — the
-      // target sibling hasn't seen the rename yet, so matching by title text
-      // would fail. Its pre-edit title is stashed for handleOpenPropagateReview
-      // to match against, while candidates themselves carry the row's id so
-      // matching never depends on title text at all.
       const oldTitlesForMatching = new Map<number, string>();
       for (const item of itemsToSave) {
         if (typeof item.id === 'string' || item.isNew) continue;
@@ -1174,7 +1480,6 @@ export function RunsheetTableEditor({
       }
       propagateOldTitlesRef.current = oldTitlesForMatching;
 
-      // Advance baseline for all saved items
       (result.results || []).forEach((res) => {
         if (res.ok && res.rockId) {
           const item = allPreparedItems.find((it) => it.id === res.clientId);
@@ -1182,7 +1487,6 @@ export function RunsheetTableEditor({
             const updatedItem: RunsheetItemRow = { ...item, id: res.rockId, isNew: false };
             baselineRef.current.set(res.rockId, createRowFingerprint(updatedItem));
 
-            // If it was a new item with a string id, update local item id state
             if (typeof res.clientId === 'string') {
               setItems((prev) =>
                 prev.map((it) => (it.id === res.clientId ? { ...it, id: res.rockId!, isNew: false } : it))
@@ -1193,8 +1497,27 @@ export function RunsheetTableEditor({
       });
 
       setStatus({ type: 'success', message: 'Favor Runsheet successfully saved to Rock RMS!' });
+      toast.success('Favor Runsheet successfully saved to Rock RMS!');
       setIsDirty(false);
       setDeletedIds([]);
+
+      const optimisticItems = allPreparedItems
+        .map((item) => {
+          const savedResult = (result.results || []).find((res) => res.ok && res.clientId === item.id);
+          return savedResult?.rockId ? { ...item, id: savedResult.rockId, isNew: false } : { ...item, isNew: false };
+        })
+        .filter((item) => !deletedIds.includes(item.id));
+      onOptimisticSave?.({
+        channelId,
+        name: channelName,
+        subtitle,
+        startTime,
+        columnMetadata,
+        contentChannelTypeId: 13,
+        columns,
+        items: optimisticItems,
+      });
+      onSaveSettled?.(channelId);
 
       if (candidates.length > 0) {
         const channelsRes = await rockGetAvailableRunsheetChannels(false);
@@ -1241,9 +1564,11 @@ export function RunsheetTableEditor({
           : result.error || 'Failed to save changes.';
 
       setStatus({ type: 'error', message });
+      toast.error(message);
+      onSaveSettled?.(channelId);
       return false;
     }
-  }, [readOnly, computeDiffPayload, deletedIds, subtitle, normalizedInitialSubtitle, startTime, initialStartTime, channelId, channelName, columns, createRowFingerprint]);
+  }, [readOnly, computeDiffPayload, deletedIds, subtitle, normalizedInitialSubtitle, startTime, initialStartTime, channelId, channelName, columns, columnOrder, columnWidths, initialColumnMetadata, createRowFingerprint, onOptimisticSave, onSaveSettled]);
 
   useEffect(() => {
     onSaveRef?.(handleSave);
@@ -1278,17 +1603,41 @@ export function RunsheetTableEditor({
   const handlePropagateApply = React.useCallback(async () => {
     if (!propagatePlan) return;
     setPropagateApplying(true);
+    const toastId = toast.loading('Applying changes to other services...');
+    const targetChannelIds = propagatePlan.targets.map((t) => t.channel.channelId);
     try {
       const outcomes = await executePropagationPlan(propagatePlan, propagateTargetRows, columns);
       setPropagateOutcomes(outcomes);
-      if (outcomes.every((o) => o.ok)) {
+
+      const allOk = outcomes.every((o) => o.ok);
+      const appliedServicesCount = outcomes.filter((o) => o.ok && o.appliedCount > 0).length;
+
+      if (allOk) {
         setPropagateReviewOpen(false);
         setPropagateBarDismissed(true);
+        toast.success(
+          appliedServicesCount > 0
+            ? `Successfully applied changes to ${appliedServicesCount} service${appliedServicesCount === 1 ? '' : 's'}!`
+            : 'Changes applied successfully!',
+          { id: toastId },
+        );
+      } else {
+        const failedOutcomes = outcomes.filter((o) => !o.ok);
+        toast.error(
+          `Some changes could not be applied: ${failedOutcomes.map((o) => o.channelName).join(', ')}`,
+          { id: toastId },
+        );
       }
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to apply changes to other services.', { id: toastId });
     } finally {
+      // Invalidate queries for all target channels so switching to other services displays the latest changes
+      for (const channelId of targetChannelIds) {
+        onSaveSettled?.(channelId);
+      }
       setPropagateApplying(false);
     }
-  }, [propagatePlan, propagateTargetRows, columns]);
+  }, [propagatePlan, propagateTargetRows, columns, onSaveSettled]);
 
   // The template auto-fill above only sets local (dirty) state — without
   // this, a freshly created runsheet's template exists only in the browser
@@ -1310,21 +1659,45 @@ export function RunsheetTableEditor({
       const targetItem = processedRows[index];
       const targetId = targetItem?.id;
 
-      setEditingCardIndex(null);
-      if (isDirty) {
-        handleSaveRef.current();
+      if (targetId !== undefined) {
+        const durationVal = parseDurationInputToMinutes(cardDurationDraft);
+        setItems((previous) => {
+          const idx = previous.findIndex((it) => it.id === targetId);
+          if (idx === -1) return previous;
+          const updated = [...previous];
+          const item = { ...updated[idx] };
+          item.duration = durationVal;
+
+          if (!musicCellMap[String(targetId)]) {
+            item.title = cardTitleDraft;
+            item.attributeValues = { ...(item.attributeValues || {}), ACTIVITYTITLE: cardTitleDraft };
+          }
+
+          for (const [colKey, draftVal] of Object.entries(cardAttrDrafts)) {
+            writeRunsheetCellValue(item, colKey, draftVal);
+          }
+
+          updated[idx] = item;
+          return updated;
+        });
+        setIsDirty(true);
       }
+
+      setEditingCardIndex(null);
+      setTimeout(() => {
+        handleSaveRef.current();
+      }, 0);
 
       if (targetId !== undefined) {
         setTimeout(() => {
           const el = document.getElementById(`card_item_${targetId}`);
-          if (el) {
+          if (el && typeof el.scrollIntoView === 'function') {
             el.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }
         }, 100);
       }
     },
-    [processedRows, isDirty]
+    [processedRows, cardDurationDraft, cardTitleDraft, cardAttrDrafts, musicCellMap]
   );
 
   const closeCell = (itemId: number | string, key: string) => {
@@ -1356,9 +1729,20 @@ export function RunsheetTableEditor({
             <SongSearchDropdown
               initialValue={value ?? ''}
               initialSongItemId={songItemId}
-              onSelectSong={(formattedSong, selectedSongId) =>
-                handleSelectSong(rowId, formattedSong, selectedSongId)
-              }
+              onSelectSong={(formattedSong, selectedSongId) => {
+                handleSelectSong(rowId, formattedSong, selectedSongId);
+                if (!forceEdit) closeCell(rowId, key);
+              }}
+              onOpenFullModal={() => {
+                if (!forceEdit) closeCell(rowId, key);
+                setSongModalState({
+                  isOpen: true,
+                  rowId,
+                  initialValue: value ?? '',
+                  initialSongItemId: songItemId,
+                  readOnly,
+                });
+              }}
               onClose={() => !forceEdit && closeCell(rowId, key)}
             />
           </div>
@@ -1422,7 +1806,7 @@ export function RunsheetTableEditor({
         )}
 
         <div
-          className={`relative min-h-[28px] w-full h-full flex flex-col justify-center px-2.5 py-1 text-[11px] leading-normal text-slate-900 transition-all ${isMusicCell
+          className={`relative min-h-[24px] w-full h-full flex flex-col justify-center px-2 py-0.5 text-[11px] leading-normal text-slate-900 transition-all ${isMusicCell
               ? 'bg-slate-100/90 border-2 border-slate-400/80 text-slate-950 font-bold ring-1 ring-slate-300 shadow-xs pr-7'
               : readOnly
                 ? 'cursor-default'
@@ -1439,24 +1823,26 @@ export function RunsheetTableEditor({
           }
         >
           {isMusicCell && value ? (
-            <div className="flex items-center gap-1.5 font-semibold text-slate-950">
-              <a
-                href={
-                  songItemId
-                    ? // `0` is the "flagged, no song linked" sentinel — falsy, so it
-                    // correctly falls through to the title-based lookup below.
-                    `/api/song?id=${songItemId}`
-                    : `/api/song?title=${encodeURIComponent(cleanSongTitle(value))}`
-                }
-                target="_blank"
-                rel="noopener noreferrer"
+            <div className="flex items-center gap-1 font-semibold text-slate-950">
+              <button
+                type="button"
                 onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center rounded bg-slate-200/90 px-1.5 py-0.5 text-[10px] font-bold text-slate-900 uppercase tracking-wider hover:bg-slate-300 hover:text-slate-950 transition-colors cursor-pointer"
-                title="Click to view song JSON details in new tab"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSongModalState({
+                    isOpen: true,
+                    rowId,
+                    initialValue: value ?? '',
+                    initialSongItemId: songItemId,
+                    readOnly,
+                  });
+                }}
+                className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-slate-200/90 text-slate-800 hover:bg-slate-300 hover:text-slate-950 transition-colors cursor-pointer"
+                title="Click to view song details and charts"
+                aria-label="View song details"
               >
-                Song
-              </a>
+                <HiMusicalNote className="h-2.5 w-2.5" />
+              </button>
               <RichTextContent value={value ?? ''} />
             </div>
           ) : isPersonField && value ? (
@@ -1481,174 +1867,311 @@ export function RunsheetTableEditor({
     );
   };
 
-  function getColumnStyle(_key: string, _name: string): React.CSSProperties {
+  function getColumnNumericWidth(key: string, name?: string): number {
+    if (columnWidths[key]) return columnWidths[key];
+    const upperKey = (key || '').toUpperCase();
+    if (upperKey === 'START') {
+      return columnWidths['start'] || columnWidths['START'] || 88;
+    }
+    if (upperKey === 'DURATION') {
+      return columnWidths['duration'] || columnWidths['DURATION'] || 78;
+    }
+    if (key === 'title' || key === 'ACTIVITYTITLE') {
+      return columnWidths['title'] || columnWidths['ACTIVITYTITLE'] || 140;
+    }
+    const lowerName = (name || '').toLowerCase();
+    const isDescription =
+      upperKey === 'DESCRIPTION' ||
+      upperKey === 'DETIAL' ||
+      lowerName.includes('description') ||
+      lowerName.includes('detail');
+    const isMainInstrument =
+      upperKey === 'MAININSTRUMENT' ||
+      upperKey === 'MAIN_INSTRUMENT' ||
+      lowerName.includes('main instrument') ||
+      lowerName.includes('instrument');
+    const isProgramNotes =
+      upperKey === 'PROGRAMNOTES' ||
+      upperKey === 'PROGRAM_NOTES' ||
+      upperKey === 'PROGRAM NOTES' ||
+      upperKey === 'NOTES' ||
+      lowerName.includes('program note') ||
+      lowerName.includes('notes');
+    if (isDescription || isMainInstrument || isProgramNotes) return 150;
+    return 100;
+  }
+
+  function getColumnStyle(key: string, name?: string): React.CSSProperties {
+    if (columnWidths[key]) {
+      return { width: `${columnWidths[key]}px`, minWidth: `${Math.min(60, columnWidths[key])}px` };
+    }
+    const upperKey = (key || '').toUpperCase();
+    if (upperKey === 'START') {
+      const w = columnWidths['start'] || columnWidths['START'] || 88;
+      return { width: `${w}px`, minWidth: `${Math.min(60, w)}px` };
+    }
+    if (upperKey === 'DURATION') {
+      const w = columnWidths['duration'] || columnWidths['DURATION'] || 78;
+      return { width: `${w}px`, minWidth: `${Math.min(60, w)}px` };
+    }
+    if ((key === 'title' || key === 'ACTIVITYTITLE') && (columnWidths['title'] || columnWidths['ACTIVITYTITLE'])) {
+      const w = columnWidths['title'] || columnWidths['ACTIVITYTITLE'];
+      return { width: `${w}px`, minWidth: `${Math.min(60, w)}px` };
+    }
+
+    if (key === 'title' || key === 'ACTIVITYTITLE') {
+      return { width: '140px', minWidth: '110px' };
+    }
+
+    const lowerName = (name || '').toLowerCase();
+
+    const isDescription =
+      upperKey === 'DESCRIPTION' ||
+      upperKey === 'DETIAL' ||
+      lowerName.includes('description') ||
+      lowerName.includes('detail');
+
+    const isMainInstrument =
+      upperKey === 'MAININSTRUMENT' ||
+      upperKey === 'MAIN_INSTRUMENT' ||
+      lowerName.includes('main instrument') ||
+      lowerName.includes('instrument');
+
+    const isProgramNotes =
+      upperKey === 'PROGRAMNOTES' ||
+      upperKey === 'PROGRAM_NOTES' ||
+      upperKey === 'PROGRAM NOTES' ||
+      upperKey === 'NOTES' ||
+      lowerName.includes('program note') ||
+      lowerName.includes('notes');
+
+    if (isDescription || isMainInstrument || isProgramNotes) {
+      return { width: '150px', minWidth: '130px' };
+    }
+
     return { width: '100px', minWidth: '85px' };
   }
 
   return (
-    <div className="flex w-full max-w-full min-w-0 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-4">
-      {/* Sticky Locked Header & Toolbar Container — sits just below the app's own sticky nav header (stickyTopOffset), not also at top:0, or the two would overlap. */}
-      <div
-        style={{ top: stickyTopOffset }}
-        className="sticky z-40 bg-white/95 backdrop-blur border-b border-slate-300 p-2 sm:p-2.5 shadow-sm space-y-1.5 rounded-t-xl -mx-2.5 -mt-2.5 sm:-mx-4 sm:-mt-4"
-      >
-        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold leading-tight text-slate-900">{channelName}</h2>
-              {readOnly && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.2 text-[10px] font-bold text-amber-900 border border-amber-300">
-                  <HiLockClosed className="h-3 w-3 text-amber-700" />
-                  Read Only
-                </span>
-              )}
+    <div className="flex w-full max-w-full min-w-0 flex-col gap-2.5">
+      {/* Event Team Roster Card */}
+      <EventTeamRosterCard
+        items={items}
+        columns={dynamicAttrCols}
+        readOnly={readOnly}
+        editingRoleTitle={
+          editingCell
+            ? items.find((it) => it.id === editingCell.itemId)?.title?.startsWith('Roster:')
+              ? items.find((it) => it.id === editingCell.itemId)?.title || null
+              : null
+            : null
+        }
+        onOpenRolePicker={(roleTitle) => {
+          const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
+          const targetItem = items.find((item) => item.title === roleTitle);
+          if (targetItem) {
+            setEditingCell({ itemId: targetItem.id, key: personKey });
+          }
+        }}
+        renderPeoplePicker={(roleTitle) => {
+          const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
+          const targetItem = items.find((item) => item.title === roleTitle);
+          if (!targetItem) return null;
+          const currentVal = readRunsheetCellValue(targetItem, personKey);
+
+          return (
+            <PeopleSearchDropdown
+              initialValue={currentVal}
+              onSelectPerson={(selectedName) => handleAttrValueChange(targetItem.id, personKey, selectedName)}
+              onClose={() => closeCell(targetItem.id, personKey)}
+            />
+          );
+        }}
+      />
+
+      <div className="flex w-full max-w-full min-w-0 flex-col gap-2.5 rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:p-3">
+        {/* Sticky Locked Header & Toolbar Container — sits just below the app's own sticky nav header (stickyTopOffset), not also at top:0, or the two would overlap. */}
+        <div
+          style={{ top: stickyTopOffset }}
+          className="sticky z-40 bg-white/95 backdrop-blur border-b border-slate-300 p-1.5 sm:p-2 shadow-xs space-y-1 rounded-t-xl -mx-2 -mt-2 sm:-mx-3 sm:-mt-3"
+        >
+          <div className="flex flex-col justify-between gap-1.5 sm:flex-row sm:items-center">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-bold leading-tight text-slate-900">{channelName}</h2>
+                {readOnly && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.2 text-[10px] font-bold text-amber-900 border border-amber-300">
+                    <HiLockClosed className="h-3 w-3 text-amber-700" />
+                    Read Only
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 flex flex-col items-start gap-0.5">
+                <div className="inline-grid grid-cols-1 items-center rounded-md border border-slate-800 bg-slate-900 px-2 py-0.5 text-xs sm:text-sm font-medium text-white shadow-xs transition-all focus-within:border-slate-600 focus-within:ring-2 focus-within:ring-slate-700">
+                  <span className="col-start-1 row-start-1 text-xs sm:text-sm font-medium text-transparent select-none whitespace-pre pointer-events-none px-0.5">
+                    {subtitle || 'Sunday Service'}
+                  </span>
+                  <input
+                    type="text"
+                    disabled={readOnly}
+                    value={subtitle}
+                    onChange={(e) => {
+                      setSubtitle(e.target.value);
+                      setIsDirty(true);
+                    }}
+                    placeholder="Sunday Service"
+                    className="col-start-1 row-start-1 w-full bg-transparent text-xs sm:text-sm font-medium text-white placeholder:text-white focus:outline-none disabled:bg-transparent px-0.5"
+                  />
+                </div>
+                {!readOnly && (
+                  <span className="text-[9px] font-semibold text-slate-500 select-none">
+                    (Click to edit subtitle)
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="mt-1 flex flex-col items-start gap-0.5">
-              <div className="inline-grid grid-cols-1 items-center rounded-md border border-slate-800 bg-slate-900 px-2.5 py-1 text-xs sm:text-sm font-medium text-white shadow-xs transition-all focus-within:border-slate-600 focus-within:ring-2 focus-within:ring-slate-700">
-                <span className="col-start-1 row-start-1 text-xs sm:text-sm font-medium text-transparent select-none whitespace-pre pointer-events-none px-0.5">
-                  {subtitle || 'Sunday Service'}
-                </span>
+
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
+                <label className="whitespace-nowrap text-[11px] font-semibold text-slate-700" htmlFor="runsheet-start-time">
+                  Start:
+                </label>
                 <input
+                  id="runsheet-start-time"
                   type="text"
                   disabled={readOnly}
-                  value={subtitle}
-                  onChange={(e) => {
-                    setSubtitle(e.target.value);
+                  className="w-20 rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
+                  value={startTime}
+                  onChange={(event) => {
+                    setStartTime(event.target.value);
                     setIsDirty(true);
                   }}
-                  placeholder="Sunday Service"
-                  className="col-start-1 row-start-1 w-full bg-transparent text-xs sm:text-sm font-medium text-white placeholder:text-white focus:outline-none disabled:bg-transparent px-0.5"
+                  placeholder="08:00:00 AM"
                 />
               </div>
+
               {!readOnly && (
-                <span className="text-[9px] font-semibold text-slate-500 select-none">
-                  (Click to edit subtitle)
-                </span>
+                <>
+                  <button
+                    type="button"
+                    onClick={handleUndo}
+                    disabled={history.length === 0}
+                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Undo (⌘Z)"
+                  >
+                    <HiArrowUturnLeft className="h-3.5 w-3.5 text-slate-700" />
+                    <span>Undo</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleRedo}
+                    disabled={future.length === 0}
+                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Redo (⌘⇧Z)"
+                  >
+                    <HiArrowUturnRight className="h-3.5 w-3.5 text-slate-700" />
+                    <span>Redo</span>
+                  </button>
+
+                  <button
+                    onClick={handleResetFormClick}
+                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+                    title="Reset to the standard Favor Runsheet template"
+                  >
+                    <HiArrowPath className="h-3.5 w-3.5 text-blue-600" />
+                    <span>Reset Form</span>
+                  </button>
+
+                  <button
+                    onClick={handleAddRow}
+                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+                  >
+                    <HiPlus className="h-3.5 w-3.5 text-blue-600" />
+                    <span>Add Row</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDuplicateError('');
+                      setShowDuplicateModal(true);
+                    }}
+                    className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-slate-100 px-2.5 text-[11px] font-semibold text-slate-900 hover:bg-slate-200 active:bg-slate-300 transition-colors"
+                    title="Duplicate current runsheet as a different service time"
+                  >
+                    <HiDocumentDuplicate className="h-3.5 w-3.5 text-slate-700" />
+                    <span>Duplicate</span>
+                  </button>
+
+                  <button
+                    onClick={() => setShowDeleteModal(true)}
+                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-semibold text-rose-800 hover:bg-rose-100 focus:outline-none"
+                    title="Delete this Runsheet"
+                  >
+                    <HiTrash className="h-3.5 w-3.5 text-rose-600" />
+                    <span>Delete</span>
+                  </button>
+
+                  <button
+                    onClick={handleSave}
+                    disabled={status.type === 'saving' || !isDirty}
+                    className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-pink-700 px-3 text-[11px] font-semibold text-white hover:bg-pink-800 focus:outline-none active:bg-pink-900 disabled:opacity-40"
+                  >
+                    <HiCheck className="h-3.5 w-3.5" />
+                    <span>{status.type === 'saving' ? 'Saving...' : 'Save Runsheet'}</span>
+                  </button>
+                </>
               )}
-            </div>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
-              <label className="whitespace-nowrap text-[11px] font-semibold text-slate-700" htmlFor="runsheet-start-time">
-                Start:
-              </label>
-              <input
-                id="runsheet-start-time"
-                type="text"
-                disabled={readOnly}
-                className="w-20 rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
-                value={startTime}
-                onChange={(event) => {
-                  setStartTime(event.target.value);
-                  setIsDirty(true);
-                }}
-                placeholder="08:00:00 AM"
-              />
-            </div>
-
-            <div className="flex items-center rounded-md border border-slate-300 bg-slate-100 p-0.5">
               <button
                 type="button"
-                onClick={() => setMobileViewMode('cards')}
-                className={`px-2 py-0.5 text-[11px] font-semibold rounded transition-all cursor-pointer ${mobileViewMode === 'cards'
-                    ? 'bg-white text-slate-900 shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                onClick={() => setShowShareModal(true)}
+                className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+                title="Share the runsheet app"
               >
-                Cards
+                <HiShare className="h-3.5 w-3.5 text-blue-600" />
+                <span>Share</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setMobileViewMode('grid')}
-                className={`px-2 py-0.5 text-[11px] font-semibold rounded transition-all cursor-pointer ${mobileViewMode === 'grid'
-                    ? 'bg-white text-slate-900 shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                  }`}
-              >
-                Table
-              </button>
-            </div>
 
-            {!readOnly && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleUndo}
-                  disabled={history.length === 0}
-                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="Undo (⌘Z)"
-                >
-                  <HiArrowUturnLeft className="h-3.5 w-3.5 text-slate-700" />
-                  <span>Undo</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleRedo}
-                  disabled={future.length === 0}
-                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="Redo (⌘⇧Z)"
-                >
-                  <HiArrowUturnRight className="h-3.5 w-3.5 text-slate-700" />
-                  <span>Redo</span>
-                </button>
-
-                <button
-                  onClick={handleResetFormClick}
-                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
-                  title="Reset to the standard Favor Runsheet template"
-                >
-                  <HiArrowPath className="h-3.5 w-3.5 text-blue-600" />
-                  <span>Reset Form</span>
-                </button>
-
-                <button
-                  onClick={handleAddRow}
-                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
-                >
-                  <HiPlus className="h-3.5 w-3.5 text-blue-600" />
-                  <span>Add Row</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDuplicateError('');
-                    setShowDuplicateModal(true);
-                  }}
-                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-slate-100 px-2.5 text-[11px] font-semibold text-slate-900 hover:bg-slate-200 active:bg-slate-300 transition-colors"
-                  title="Duplicate current runsheet as a different service time"
-                >
-                  <HiDocumentDuplicate className="h-3.5 w-3.5 text-slate-700" />
-                  <span>Duplicate</span>
-                </button>
-
-                <button
-                  onClick={() => setShowDeleteModal(true)}
-                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-semibold text-rose-800 hover:bg-rose-100 focus:outline-none"
-                  title="Delete this Runsheet"
-                >
-                  <HiTrash className="h-3.5 w-3.5 text-rose-600" />
-                  <span>Delete</span>
-                </button>
-
-                <button
-                  onClick={handleSave}
-                  disabled={status.type === 'saving' || !isDirty}
-                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-pink-700 px-3 text-[11px] font-semibold text-white hover:bg-pink-800 focus:outline-none active:bg-pink-900 disabled:opacity-40"
-                >
-                  <HiCheck className="h-3.5 w-3.5" />
-                  <span>{status.type === 'saving' ? 'Saving...' : 'Save Runsheet'}</span>
-                </button>
-              </>
-            )}
+              {canEdit !== false && (
+                <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
+                  <button
+                    type="button"
+                    aria-label="View mode"
+                    title="View mode"
+                    aria-pressed={editorMode ? editorMode === 'view' : readOnly}
+                    onClick={() => onModeChange?.('view')}
+                    className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${(editorMode ? editorMode === 'view' : readOnly)
+                      ? 'bg-white text-slate-900 shadow-xs font-bold'
+                      : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <HiEye className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Edit mode"
+                    title="Edit mode"
+                    aria-pressed={editorMode ? editorMode === 'edit' : !readOnly}
+                    onClick={() => onModeChange?.('edit')}
+                    className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${(editorMode ? editorMode === 'edit' : !readOnly)
+                      ? 'bg-white text-slate-900 shadow-xs font-bold'
+                      : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <HiPencilSquare className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
           </div>
         </div>
 
         {/* Formatting bar for whichever cell is open (hidden in read-only mode) */}
         {!readOnly && <RichTextToolbar editor={activeEditor} />}
       </div>
+
+      <ShareRunsheetModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} />
 
       {/* Duplicate Runsheet Modal */}
       {showDuplicateModal && (
@@ -1915,83 +2438,144 @@ export function RunsheetTableEditor({
         />
       )}
 
-      {/* Event Team Roster Card */}
-      <EventTeamRosterCard
-        items={items}
-        columns={dynamicAttrCols}
-        readOnly={readOnly}
-        editingRoleTitle={
-          editingCell
-            ? items.find((it) => it.id === editingCell.itemId)?.title?.startsWith('Roster:')
-              ? items.find((it) => it.id === editingCell.itemId)?.title || null
-              : null
-            : null
-        }
-        onOpenRolePicker={(roleTitle) => {
-          const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
-          const targetItem = items.find((item) => item.title === roleTitle);
-          if (targetItem) {
-            setEditingCell({ itemId: targetItem.id, key: personKey });
-          }
-        }}
-        renderPeoplePicker={(roleTitle) => {
-          const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
-          const targetItem = items.find((item) => item.title === roleTitle);
-          if (!targetItem) return null;
-          const currentVal = readRunsheetCellValue(targetItem, personKey);
+      {/* Schedule Header & Layout View Toggle */}
+      <div className="flex items-center justify-between px-1">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-extrabold uppercase tracking-wider text-white shadow-xs">
+            <HiTableCells className="h-3.5 w-3.5 text-slate-300" />
+            Runsheet Schedule
+          </span>
+          <span className="text-xs font-semibold text-slate-600">
+            ({processedRows.length} segments)
+          </span>
+        </div>
 
-          return (
-            <PeopleSearchDropdown
-              initialValue={currentVal}
-              onSelectPerson={(selectedName) => handleAttrValueChange(targetItem.id, personKey, selectedName)}
-              onClose={() => closeCell(targetItem.id, personKey)}
-            />
-          );
-        }}
-      />
+        <div role="group" aria-label="Layout view mode" className="flex items-center gap-2 rounded-md border border-slate-300 bg-slate-100 p-0.5 sm:gap-0">
+          <button
+            type="button"
+            aria-label="Card view"
+            title="Card view"
+            aria-pressed={mobileViewMode === 'cards'}
+            onClick={() => {
+              setMobileViewMode('cards');
+              setViewModePreference('cards');
+            }}
+            className={`flex min-h-11 min-w-11 items-center justify-center rounded p-1 transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0 ${mobileViewMode === 'cards'
+                ? 'bg-white text-slate-900 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+              }`}
+          >
+            <HiRectangleStack className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="Table view"
+            title="Table view"
+            aria-pressed={mobileViewMode === 'grid'}
+            onClick={() => {
+              setMobileViewMode('grid');
+              setViewModePreference('grid');
+            }}
+            className={`flex min-h-11 min-w-11 items-center justify-center rounded p-1 transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0 ${mobileViewMode === 'grid'
+                ? 'bg-white text-slate-900 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+              }`}
+          >
+            <HiTableCells className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
+          </button>
+        </div>
+      </div>
 
       {/* Spreadsheet Table View */}
       <div className={`w-full max-w-full min-w-0 flex flex-col gap-1.5 ${mobileViewMode === 'cards' ? 'hidden' : 'block'}`}>
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-extrabold uppercase tracking-wider text-white shadow-xs">
-              <HiTableCells className="h-3.5 w-3.5 text-slate-300" />
-              Runsheet Schedule
-            </span>
-            <span className="text-xs font-semibold text-slate-600">
-              ({processedRows.length} segments)
-            </span>
-          </div>
-        </div>
-
         <div className="w-full max-w-full overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-xs">
           <table className="w-full min-w-full border-collapse bg-white text-[11px] text-slate-900" style={{ tableLayout: 'fixed' }}>
             <thead className="sticky top-0 z-30 bg-slate-900 text-white shadow-xs">
               <tr className="border-b-2 border-slate-950 text-left font-semibold text-white text-xs tracking-normal">
                 {!readOnly && <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center" style={{ width: '28px', minWidth: '28px' }} />}
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
-                  Start
+                <th
+                  className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100 relative group"
+                  style={getColumnStyle('START', 'Start')}
+                >
+                  <span>Start</span>
+                  {!readOnly && (
+                    <div
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label="Resize Start column"
+                      draggable={false}
+                      onMouseDown={(e) => handleResizeStart('start', getColumnNumericWidth('start', 'Start'), e)}
+                      className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-pink-500 active:bg-pink-600 transition-colors z-30"
+                    />
+                  )}
                 </th>
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
-                  End
+                <th
+                  className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100 relative group"
+                  style={getColumnStyle('DURATION', 'Duration')}
+                >
+                  <span>Duration</span>
+                  {!readOnly && (
+                    <div
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label="Resize Duration column"
+                      draggable={false}
+                      onMouseDown={(e) => handleResizeStart('duration', getColumnNumericWidth('duration', 'Duration'), e)}
+                      className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-pink-500 active:bg-pink-600 transition-colors z-30"
+                    />
+                  )}
                 </th>
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '64px', minWidth: '58px' }}>
-                  Duration
-                </th>
-                <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold whitespace-nowrap select-none text-slate-100" style={{ width: '140px', minWidth: '110px' }}>
-                  Activity Title
+                <th
+                  className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100 relative group"
+                  style={getColumnStyle('title', 'Activity Title')}
+                >
+                  <span>Activity Title</span>
+                  {!readOnly && (
+                    <div
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label="Resize Activity Title column"
+                      draggable={false}
+                      onMouseDown={(e) => handleResizeStart('title', getColumnNumericWidth('title', 'Activity Title'), e)}
+                      className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-pink-500 active:bg-pink-600 transition-colors z-30"
+                    />
+                  )}
                 </th>
 
-                {dynamicAttrCols.map((col) => (
-                  <th
-                    key={col.id}
-                    className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1.5 text-center font-semibold select-none overflow-hidden text-ellipsis text-slate-100"
-                    style={getColumnStyle(col.key, col.name)}
-                    title={col.name}
-                  >
-                    {col.name}
-                  </th>
-                ))}
+                {dynamicAttrCols.map((col) => {
+                  const isDraggingThis = draggedColumnKey === col.key;
+                  const isDragOverThis = dragOverColumnKey === col.key;
+
+                  return (
+                    <th
+                      key={col.id}
+                      draggable={!readOnly}
+                      onDragStart={(e) => handleColumnDragStart(col.key, e)}
+                      onDragOver={(e) => handleColumnDragOver(col.key, e)}
+                      onDrop={(e) => handleColumnDrop(col.key, e)}
+                      onDragEnd={handleColumnDragEnd}
+                      className={`sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold select-none overflow-hidden text-ellipsis text-slate-100 relative group ${
+                        !readOnly ? 'cursor-grab active:cursor-grabbing' : ''
+                      } ${isDragOverThis ? 'border-l-2 border-l-pink-400 bg-slate-800' : ''} ${
+                        isDraggingThis ? 'opacity-40' : ''
+                      }`}
+                      style={getColumnStyle(col.key, col.name)}
+                      title={col.name}
+                    >
+                      <span>{col.name}</span>
+                      {!readOnly && (
+                        <div
+                          role="separator"
+                          aria-orientation="vertical"
+                          aria-label={`Resize ${col.name} column`}
+                          draggable={false}
+                          onMouseDown={(e) => handleResizeStart(col.key, getColumnNumericWidth(col.key, col.name), e)}
+                          className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-pink-500 active:bg-pink-600 transition-colors z-30"
+                        />
+                      )}
+                    </th>
+                  );
+                })}
 
                 {!readOnly && <th className="sticky top-0 z-30 bg-slate-900 p-1 text-center" style={{ width: '48px', minWidth: '48px' }} />}
               </tr>
@@ -2026,18 +2610,10 @@ export function RunsheetTableEditor({
                     {spanInfo ? (
                       <td
                         rowSpan={spanInfo.count}
-                        className="select-none border-b border-r border-slate-300 bg-slate-50/90 p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px]"
+                        style={getColumnStyle('START', 'Start')}
+                        className="select-none border-b border-r border-slate-300 bg-slate-50/90 p-0.5 sm:p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px]"
                       >
                         {spanInfo.startStr}
-                      </td>
-                    ) : null}
-
-                    {spanInfo ? (
-                      <td
-                        rowSpan={spanInfo.count}
-                        className="select-none border-b border-r border-slate-300 bg-slate-50/90 p-1 text-center align-middle font-mono font-semibold text-slate-700 text-[11px]"
-                      >
-                        {spanInfo.endStr}
                       </td>
                     ) : null}
 
@@ -2045,6 +2621,7 @@ export function RunsheetTableEditor({
                       spanInfo ? (
                         <td
                           rowSpan={spanInfo.count}
+                          style={getColumnStyle('DURATION', 'Duration')}
                           onClick={() => {
                             if (readOnly) return;
                             // Seed from `processedRows`, not raw `items` — the two arrays
@@ -2058,7 +2635,7 @@ export function RunsheetTableEditor({
                             setDurationDrafts(drafts);
                             setEditingDurationBlockIndex(parentBlockIndex);
                           }}
-                          className={`select-none border-b border-r border-slate-300 bg-slate-50/90 p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px] ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-slate-200/60'
+                          className={`select-none border-b border-r border-slate-300 bg-slate-50/90 p-0.5 sm:p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px] ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-slate-200/60'
                             }`}
                           title={readOnly ? 'Duration' : 'Click to edit duration'}
                         >
@@ -2066,7 +2643,10 @@ export function RunsheetTableEditor({
                         </td>
                       ) : null
                     ) : (
-                      <td className="relative z-10 border-b border-r border-slate-200 bg-slate-100 p-0.5 text-center align-middle overflow-visible">
+                      <td
+                        style={getColumnStyle('DURATION', 'Duration')}
+                        className="relative z-10 border-b border-r border-slate-200 bg-slate-100 p-0.5 text-center align-middle overflow-visible"
+                      >
                         <input
                           type="text"
                           autoFocus={index === parentBlockIndex}
@@ -2106,7 +2686,7 @@ export function RunsheetTableEditor({
                           ? 'relative z-50 overflow-visible'
                           : 'overflow-hidden'
                       }`}
-                      style={{ width: '140px', minWidth: '110px' }}
+                      style={getColumnStyle('title', 'Activity Title')}
                     >
                       {renderCellContent(item.id, 'title', currentTitleVal, false, item.songItemId ?? null)}
                     </td>
@@ -2161,13 +2741,35 @@ export function RunsheetTableEditor({
                 );
               })}
             </tbody>
+            {processedRows.length > 0 && (
+              <tfoot className="border-t-2 border-slate-300 bg-slate-100/95 text-slate-800 text-[11px] font-semibold">
+                <tr>
+                  {!readOnly && <td className="p-0.5 border-r border-slate-200 bg-slate-100" />}
+                  <td
+                    style={getColumnStyle('START', 'Start')}
+                    className="border-r border-slate-300 p-1 text-center font-mono font-bold text-slate-900 bg-slate-200/80"
+                  >
+                    {processedRows[processedRows.length - 1]?.calculatedEnd}
+                  </td>
+                  <td
+                    style={getColumnStyle('DURATION', 'Duration')}
+                    className="border-r border-slate-300 p-1 text-center font-mono font-bold text-slate-700 bg-slate-200/50"
+                  >
+                    {totalDurationFormatted}
+                  </td>
+                  <td colSpan={1 + dynamicAttrCols.length + (readOnly ? 0 : 1)} className="p-1 px-3 text-left font-medium text-slate-700 bg-slate-100">
+                    <span className="font-bold text-slate-900">Service End:</span> {processedRows[processedRows.length - 1]?.calculatedEnd} &bull; <span className="text-slate-600">Total Duration: {totalDurationFormatted}</span>
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
 
       {/* Card Timeline View for phones and iPads/tablets (when mobileViewMode === 'cards') */}
       {mobileViewMode === 'cards' && (
-        <div className="flex flex-col gap-2.5">
+        <div className="flex flex-col gap-1.5">
           {processedRows.map((item, index) => {
             const currentTitleVal = item.attributeValues?.ACTIVITYTITLE || item.title || '';
             const isMusic = !!musicCellMap[String(item.id)];
@@ -2178,44 +2780,61 @@ export function RunsheetTableEditor({
                 id={`card_item_${item.id}`}
                 key={item.id}
                 onClick={() => !readOnly && setEditingCardIndex(index)}
-                className="rounded-xl border border-slate-200 bg-white p-3 shadow-xs flex flex-col gap-2 transition-all active:bg-slate-50 cursor-pointer scroll-mt-4"
+                className="rounded-xl border border-slate-200 bg-white p-2 sm:p-2.5 shadow-xs flex flex-col gap-1.5 transition-all active:bg-slate-50 cursor-pointer scroll-mt-4"
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                      {item.calculatedStart} - {item.calculatedEnd}
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-xs font-bold text-blue-900 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                      {item.calculatedStart}
                     </span>
-                    <span className="font-mono text-[11px] font-semibold text-slate-500">
-                      ({item.formattedDuration})
-                    </span>
+                    {item.formattedDuration ? (
+                      <span className="font-mono text-[11px] font-semibold text-slate-500">
+                        ({item.formattedDuration})
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                     {isMusic && (
-                      <span className="inline-flex items-center rounded bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-900 border border-slate-300">
-                        Song
-                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSongModalState({
+                            isOpen: true,
+                            rowId: item.id,
+                            initialValue: currentTitleVal,
+                            initialSongItemId: item.songItemId ?? null,
+                            readOnly,
+                          });
+                        }}
+                        className="inline-flex h-5 w-5 items-center justify-center rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 transition-colors cursor-pointer"
+                        title="Linked Song (Click to view details)"
+                        aria-label="Linked Song"
+                      >
+                        <HiMusicalNote className="h-3 w-3 text-slate-700" />
+                      </button>
                     )}
 
                     {!readOnly && (
-                      <div className="flex items-center overflow-hidden rounded border border-slate-300">
+                      <div className="flex items-center gap-2 sm:gap-0 sm:overflow-hidden sm:rounded sm:border sm:border-slate-300">
                         <button
                           type="button"
                           onClick={() => handleMoveCard(index, 'up')}
                           disabled={index === 0}
                           title="Move up"
-                          className="flex items-center justify-center bg-white p-1 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white cursor-pointer"
+                          className="flex min-h-11 min-w-11 items-center justify-center rounded border border-slate-300 bg-white p-1 text-slate-600 sm:rounded-none sm:border-0 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0"
                         >
-                          <HiChevronUp className="h-3.5 w-3.5" />
+                          <HiChevronUp className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
                         </button>
                         <button
                           type="button"
                           onClick={() => handleMoveCard(index, 'down')}
                           disabled={index === processedRows.length - 1}
                           title="Move down"
-                          className="flex items-center justify-center border-l border-slate-300 bg-white p-1 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white cursor-pointer"
+                          className="flex min-h-11 min-w-11 items-center justify-center rounded border border-slate-300 bg-white p-1 text-slate-600 sm:rounded-none sm:border-0 sm:border-l hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0"
                         >
-                          <HiChevronDown className="h-3.5 w-3.5" />
+                          <HiChevronDown className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
                         </button>
                       </div>
                     )}
@@ -2224,7 +2843,7 @@ export function RunsheetTableEditor({
                       <button
                         type="button"
                         onClick={() => setEditingCardIndex(index)}
-                        className="rounded bg-pink-700 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-pink-800 cursor-pointer shadow-xs"
+                        className="rounded bg-pink-700 px-2 py-0.5 text-[11px] font-bold text-white hover:bg-pink-800 cursor-pointer shadow-xs"
                       >
                         Edit Card
                       </button>
@@ -2232,16 +2851,16 @@ export function RunsheetTableEditor({
                   </div>
                 </div>
 
-                  <h4 className="font-bold text-slate-900 text-sm break-words whitespace-normal leading-snug">{plainTitle}</h4>
+                <h4 className="font-bold text-slate-900 text-xs sm:text-sm break-words whitespace-normal leading-tight my-0.5">{plainTitle}</h4>
 
                 {/* Populated attributes displayed fully with person cells topmost */}
-                <div className="flex flex-col gap-2 mt-1">
+                <div className="flex flex-col gap-1">
                   {sortedAttrCols.map((col) => {
                     const val = readRunsheetCellValue(item, col.key);
                     if (!val) return null;
                     return (
-                      <div key={col.id} className="rounded-lg bg-slate-50 border border-slate-200 p-2 text-xs">
-                        <span className="font-extrabold text-[10px] uppercase tracking-wider text-slate-500 block mb-0.5">
+                      <div key={col.id} className="rounded-md bg-slate-50 border border-slate-200 p-1.5 text-xs">
+                        <span className="font-extrabold text-[9px] uppercase tracking-wider text-slate-500 block mb-0.5">
                           {col.name}
                         </span>
                         <div className="break-words whitespace-normal text-slate-800 text-xs leading-normal">
@@ -2254,6 +2873,21 @@ export function RunsheetTableEditor({
               </div>
             );
           })}
+
+          {/* Card View Summary Card */}
+          {processedRows.length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-slate-100/90 p-2 sm:p-2.5 flex items-center justify-between text-xs text-slate-700">
+              <span className="font-bold text-slate-900">Estimated Service End</span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                  {processedRows[processedRows.length - 1]?.calculatedEnd}
+                </span>
+                <span className="font-mono text-[11px] text-slate-600 font-semibold">
+                  ({totalDurationFormatted})
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -2266,7 +2900,8 @@ export function RunsheetTableEditor({
               <div>
                 <h3 className="text-base font-bold text-slate-900">Edit Card #{editingCardIndex + 1}</h3>
                 <span className="font-mono text-xs font-semibold text-blue-700">
-                  {processedRows[editingCardIndex].calculatedStart} - {processedRows[editingCardIndex].calculatedEnd} ({processedRows[editingCardIndex].formattedDuration})
+                  {processedRows[editingCardIndex].calculatedStart} - {processedRows[editingCardIndex].calculatedEnd}
+                  {processedRows[editingCardIndex].formattedDuration ? ` (${processedRows[editingCardIndex].formattedDuration})` : ''}
                 </span>
               </div>
 
@@ -2348,14 +2983,29 @@ export function RunsheetTableEditor({
                 </div>
                 <div className="mt-0.5">
                   {musicCellMap[String(processedRows[editingCardIndex].id)] ? (
-                    <SongSearchDropdown
-                      initialValue={processedRows[editingCardIndex].attributeValues?.ACTIVITYTITLE || processedRows[editingCardIndex].title || ''}
-                      initialSongItemId={processedRows[editingCardIndex].songItemId ?? null}
-                      onSelectSong={(formattedSong, selectedSongId) =>
-                        handleSelectSong(processedRows[editingCardIndex].id, formattedSong, selectedSongId)
-                      }
-                      onClose={() => {}}
-                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSongModalState({
+                          isOpen: true,
+                          rowId: processedRows[editingCardIndex].id,
+                          initialValue: cardTitleDraft || processedRows[editingCardIndex].attributeValues?.ACTIVITYTITLE || processedRows[editingCardIndex].title || '',
+                          initialSongItemId: processedRows[editingCardIndex].songItemId ?? null,
+                          readOnly,
+                        });
+                      }}
+                      className="w-full flex items-center justify-between rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-100 hover:border-slate-400 transition-all shadow-2xs cursor-pointer touch-manipulation text-left"
+                    >
+                      <div className="flex items-center gap-2 truncate pr-2">
+                        <HiMusicalNote className="h-4 w-4 text-slate-700 shrink-0" />
+                        <span className="truncate">
+                          {htmlToPlainText(cardTitleDraft || processedRows[editingCardIndex].attributeValues?.ACTIVITYTITLE || processedRows[editingCardIndex].title || '') || 'Click to Select Song & Key...'}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded-lg shadow-2xs shrink-0">
+                        Select Song ↗
+                      </span>
+                    </button>
                   ) : (
                     <input
                       type="text"
@@ -2439,6 +3089,22 @@ export function RunsheetTableEditor({
         </div>,
         document.body
       )}
+      <SongDetailModal
+        isOpen={songModalState.isOpen}
+        initialValue={songModalState.initialValue}
+        initialSongItemId={songModalState.initialSongItemId}
+        readOnly={songModalState.readOnly}
+        onSelectSong={(formattedSong, songItemId) => {
+          if (songModalState.rowId != null) {
+            handleSelectSong(songModalState.rowId, formattedSong, songItemId);
+            if (editingCardIndex !== null && processedRows[editingCardIndex]?.id === songModalState.rowId) {
+              setCardTitleDraft(formattedSong);
+            }
+          }
+        }}
+        onClose={() => setSongModalState({ isOpen: false })}
+      />
+      </div>
     </div>
   );
 }

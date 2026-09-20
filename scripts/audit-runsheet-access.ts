@@ -26,6 +26,10 @@ const EVENTS_TEAM_NAME_PATTERN = /events team$/i;
 // Rock rejects filters over 100 OData nodes. Ten equality clauses leave ample
 // room for the ORs and the active-membership predicates in each request.
 const ROCK_FILTER_BATCH_SIZE = 10;
+const ROCK_GROUPS_FETCH_LIMIT = 2000;
+const ROCK_LEADER_ROLES_FETCH_LIMIT = 100;
+const ROCK_GROUP_MEMBERS_FETCH_LIMIT = 5000;
+const ROCK_PEOPLE_FETCH_LIMIT = ROCK_FILTER_BATCH_SIZE;
 
 function makeCampusRoots(
   roots: Record<number, string>,
@@ -286,14 +290,36 @@ function principalPolicy(
 
 function createFixtureReader(fixture: RunsheetAccessAuditFixture): RockReader {
   return {
-    async get(path) {
+    async get(path, params) {
       if (path === '/Groups') return fixture.groups;
       if (path === '/GroupMembers') return fixture.memberships;
-      if (path === '/People') return fixture.people;
+      if (path === '/People') {
+        const filter = String(params?.$filter || '');
+        if (filter) {
+          const personIds = Array.from(filter.matchAll(/Id eq (\d+)/g), (match) => Number(match[1]));
+          return fixture.people.filter((person) => personIds.includes(person.Id));
+        }
+        return fixture.people;
+      }
       if (path === '/GroupTypeRoles') return fixture.leaderRoles;
       return [];
     },
   };
+}
+
+async function getBounded<T>(
+  reader: RockReader,
+  path: string,
+  params: Record<string, string | number | boolean>,
+  limit: number,
+): Promise<T[]> {
+  const rows = asArray<T>(await reader.get(path, { ...params, $top: limit + 1 }));
+  if (rows.length > limit) {
+    throw new Error(
+      `Rock query for ${path} exceeded ${limit} rows; aborting audit to prevent silent truncation`,
+    );
+  }
+  return rows;
 }
 
 export function createReadOnlyRockReader(
@@ -327,10 +353,10 @@ export function createReadOnlyRockReader(
 
 export async function collectRunsheetAccessAudit(reader: RockReader): Promise<RunsheetAccessAuditReport> {
   const [securityRoleGroups, orgUnitGroups, ministryTeamGroups, rawLeaderRoles] = await Promise.all([
-    reader.get('/Groups', { $filter: 'GroupTypeId eq 1', $select: 'Id,GroupTypeId,Name,ParentGroupId', $top: 2000 }),
-    reader.get('/Groups', { $filter: 'GroupTypeId eq 28', $select: 'Id,GroupTypeId,Name,ParentGroupId', $top: 2000 }),
-    reader.get('/Groups', { $filter: 'GroupTypeId eq 23', $select: 'Id,GroupTypeId,Name,ParentGroupId', $top: 2000 }),
-    reader.get('/GroupTypeRoles', { $filter: 'GroupTypeId eq 23', $select: 'Id,Name,IsLeader', $top: 100 }),
+    getBounded<AuditGroup>(reader, '/Groups', { $filter: 'GroupTypeId eq 1', $select: 'Id,GroupTypeId,Name,ParentGroupId' }, ROCK_GROUPS_FETCH_LIMIT),
+    getBounded<AuditGroup>(reader, '/Groups', { $filter: 'GroupTypeId eq 28', $select: 'Id,GroupTypeId,Name,ParentGroupId' }, ROCK_GROUPS_FETCH_LIMIT),
+    getBounded<AuditGroup>(reader, '/Groups', { $filter: 'GroupTypeId eq 23', $select: 'Id,GroupTypeId,Name,ParentGroupId' }, ROCK_GROUPS_FETCH_LIMIT),
+    getBounded<AuditLeaderRole>(reader, '/GroupTypeRoles', { $filter: 'GroupTypeId eq 23', $select: 'Id,Name,IsLeader' }, ROCK_LEADER_ROLES_FETCH_LIMIT),
   ]);
 
   const groups = Array.from(
@@ -351,12 +377,14 @@ export async function collectRunsheetAccessAudit(reader: RockReader): Promise<Ru
     chunks(groupIds, ROCK_FILTER_BATCH_SIZE),
     ROCK_MAX_CONCURRENT_REQUESTS,
     async (batch) => {
-      const members = asArray<AuditMembership>(
-        await reader.get('/GroupMembers', {
+      const members = await getBounded<AuditMembership>(
+        reader,
+        '/GroupMembers',
+        {
           $filter: `${makeGroupFilter(batch)} and GroupMemberStatus eq '1' and IsArchived eq false`,
           $select: 'Id,PersonId,GroupId,GroupRoleId,GroupTypeId,GroupMemberStatus,IsArchived',
-          $top: 5000,
-        }),
+        },
+        ROCK_GROUP_MEMBERS_FETCH_LIMIT,
       );
       rawMemberships.push(...members);
     },
@@ -382,15 +410,16 @@ export async function collectRunsheetAccessAudit(reader: RockReader): Promise<Ru
     chunks(personIds, ROCK_FILTER_BATCH_SIZE),
     ROCK_MAX_CONCURRENT_REQUESTS,
     async (batch) => {
-      rawPeople.push(
-        ...asArray<AuditPerson>(
-          await reader.get('/People', {
-            $filter: makePeopleFilter(batch),
-            $select: 'Id,FirstName,LastName,Email',
-            $top: ROCK_FILTER_BATCH_SIZE,
-          }),
-        ),
+      const peopleBatch = await getBounded<AuditPerson>(
+        reader,
+        '/People',
+        {
+          $filter: makePeopleFilter(batch),
+          $select: 'Id,FirstName,LastName,Email',
+        },
+        ROCK_PEOPLE_FETCH_LIMIT,
       );
+      rawPeople.push(...peopleBatch);
     },
   );
 

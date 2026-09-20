@@ -6,8 +6,8 @@ import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
  * yet. Ids match the live Rock attributes so saves still land on the right rows.
  */
 export const FALLBACK_RUNSHEET_COLUMNS: DynamicAttributeColumn[] = [
-  { id: 10266, key: 'DESCRIPTION', name: 'Detail' },
   { id: 7626, key: 'PLATFORM', name: 'Anchor / Preacher', fieldTypeId: 18 },
+  { id: 10266, key: 'DESCRIPTION', name: 'Detail' },
   { id: 7878, key: 'MAININSTRUMENT', name: 'Main Instrument' },
   { id: 7616, key: 'LED WALL', name: 'LED / Live Screens' },
   { id: 7617, key: 'OVERLAYBROADCAST', name: 'Overlay / Broadcast' },

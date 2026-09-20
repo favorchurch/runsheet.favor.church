@@ -4,6 +4,7 @@
 import '@testing-library/jest-dom';
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from 'react-query';
 import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
 import { canUserEditRunsheet } from '@/lib/permissions';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
@@ -30,8 +31,41 @@ jest.mock('@/components/runsheet/RunsheetCompareView', () => ({
   ),
 }));
 jest.mock('@/components/runsheet/RunsheetTableEditor', () => ({
-  RunsheetTableEditor: ({ readOnly }: { readOnly?: boolean }) => (
-    <div data-testid="runsheet-editor" data-readonly={String(Boolean(readOnly))} />
+  RunsheetTableEditor: ({
+    readOnly,
+    canEdit,
+    editorMode,
+    onModeChange,
+  }: {
+    readOnly?: boolean;
+    canEdit?: boolean;
+    editorMode?: 'view' | 'edit';
+    onModeChange?: (mode: 'view' | 'edit') => void;
+  }) => (
+    <div data-testid="runsheet-editor" data-readonly={String(Boolean(readOnly))}>
+      {canEdit && (
+        <div role="group" aria-label="Runsheet mode">
+          <button
+            type="button"
+            aria-label="View mode"
+            title="View mode"
+            aria-pressed={editorMode === 'view'}
+            onClick={() => onModeChange?.('view')}
+          >
+            View
+          </button>
+          <button
+            type="button"
+            aria-label="Edit mode"
+            title="Edit mode"
+            aria-pressed={editorMode === 'edit'}
+            onClick={() => onModeChange?.('edit')}
+          >
+            Edit
+          </button>
+        </div>
+      )}
+    </div>
   ),
 }));
 
@@ -53,6 +87,16 @@ const viewerUser = {
   rolesMap: { viewer: ['viewer-1'] },
   access: { runsheetCampuses: ['MNL'] },
 } as any;
+
+function renderManager(ui: React.ReactElement) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const result = render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  return {
+    ...result,
+    rerender: (nextUi: React.ReactElement) =>
+      result.rerender(<QueryClientProvider client={queryClient}>{nextUi}</QueryClientProvider>),
+  };
+}
 
 function mockRunsheetReads() {
   mockGetAvailableRunsheetChannels.mockResolvedValue({
@@ -88,48 +132,53 @@ describe('RunsheetManager View/Edit toggle', () => {
     mockRockDelete.mockResolvedValue(null);
   });
 
-  it('defaults editors to View mode', () => {
-    render(<RunsheetManager user={editorUser} />);
+  it('defaults editors to View mode', async () => {
+    renderManager(<RunsheetManager user={editorUser} initialChannelId={1} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /view mode/i })).toBeInTheDocument());
 
-    expect(screen.getByRole('button', { name: 'View' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: /view mode/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /edit mode/i })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('lets an editor opt into Edit mode and return to View mode', async () => {
-    render(<RunsheetManager user={editorUser} initialChannelId={1} />);
+    renderManager(<RunsheetManager user={editorUser} initialChannelId={1} />);
     await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-readonly', 'true'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: /edit mode/i }));
     expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-readonly', 'false');
-    expect(screen.getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /edit mode/i })).toHaveAttribute('aria-pressed', 'true');
 
-    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+    fireEvent.click(screen.getByRole('button', { name: /view mode/i }));
     expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-readonly', 'true');
-    expect(screen.getByRole('button', { name: 'View' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /view mode/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('resets to View mode when an editor loads another channel', async () => {
-    render(<RunsheetManager user={editorUser} initialChannelId={1} />);
+    renderManager(<RunsheetManager user={editorUser} initialChannelId={1} />);
     await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-readonly', 'true'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: /edit mode/i }));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: '2' } });
     await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-readonly', 'true'));
-    expect(screen.getByRole('button', { name: 'View' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /view mode/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('resets to View mode when an editor opens Create', async () => {
-    render(<RunsheetManager user={editorUser} initialChannelId={1} />);
+    renderManager(<RunsheetManager user={editorUser} initialChannelId={1} />);
     await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-readonly', 'true'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: /edit mode/i }));
 
     fireEvent.click(screen.getByRole('button', { name: /create new runsheet/i }));
-    expect(screen.getByRole('button', { name: 'View' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByTestId('runsheet-editor')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '1' } });
+    await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-readonly', 'true'));
+    expect(screen.getByRole('button', { name: /view mode/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('does not render the toggle for viewers', async () => {
-    render(<RunsheetManager user={viewerUser} initialChannelId={1} />);
+    renderManager(<RunsheetManager user={viewerUser} initialChannelId={1} />);
 
     await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-readonly', 'true'));
     expect(screen.queryByRole('group', { name: 'Runsheet mode' })).not.toBeInTheDocument();
@@ -139,22 +188,22 @@ describe('RunsheetManager View/Edit toggle', () => {
     let editAllowed = true;
     mockCanUserEditRunsheet.mockImplementation(() => editAllowed);
 
-    render(<RunsheetManager user={editorUser} initialChannelId={1} />);
+    renderManager(<RunsheetManager user={editorUser} initialChannelId={1} />);
     await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-readonly', 'true'));
 
     editAllowed = false;
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: /edit mode/i }));
 
     expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-readonly', 'true');
     expect(mockCanUserEditRunsheet).toHaveBeenCalledWith(editorUser);
-    expect(screen.getByRole('button', { name: 'View' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /view mode/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('locks a mounted editor and hides the toggle when its user prop loses edit access', async () => {
-    const { rerender } = render(<RunsheetManager user={editorUser} initialChannelId={1} />);
+    const { rerender } = renderManager(<RunsheetManager user={editorUser} initialChannelId={1} />);
     await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-readonly', 'true'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: /edit mode/i }));
     expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-readonly', 'false');
 
     rerender(<RunsheetManager user={viewerUser} initialChannelId={1} />);
@@ -164,15 +213,13 @@ describe('RunsheetManager View/Edit toggle', () => {
 
     rerender(<RunsheetManager user={editorUser} initialChannelId={1} />);
     expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-readonly', 'true');
-    expect(screen.getByRole('button', { name: 'View' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /view mode/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('passes View mode through to the compare view as readOnly', async () => {
-    render(<RunsheetManager user={editorUser} />);
-    await waitFor(() => expect(screen.getAllByRole('checkbox', { name: /select for compare/i })).toHaveLength(2));
+    renderManager(<RunsheetManager user={editorUser} initialChannelId={1} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /compare/i })).toBeInTheDocument());
 
-    fireEvent.click(screen.getAllByRole('checkbox', { name: /select for compare/i })[0]);
-    fireEvent.click(screen.getAllByRole('checkbox', { name: /select for compare/i })[1]);
     fireEvent.click(screen.getByRole('button', { name: /compare/i }));
 
     expect(screen.getByTestId('compare-view')).toHaveAttribute('data-readonly', 'true');

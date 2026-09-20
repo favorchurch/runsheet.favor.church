@@ -1,4 +1,5 @@
 import { UserProvider } from '@auth0/nextjs-auth0/client';
+import { ReactQueryProvider } from '@/components/providers/ReactQueryProvider';
 import './globals.css';
 
 export const metadata = {
@@ -21,7 +22,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <UserProvider>
-          {children}
+          <ReactQueryProvider>{children}</ReactQueryProvider>
         </UserProvider>
       </body>
     </html>

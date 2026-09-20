@@ -11,8 +11,8 @@ export interface AuditFixtureMembership {
   GroupId: number;
   GroupRoleId?: number | null;
   GroupTypeId: number;
-  GroupMemberStatus: number;
-  IsArchived?: boolean;
+  GroupMemberStatus: number | string;
+  IsArchived?: boolean | string;
 }
 
 export interface AuditFixturePerson {
@@ -72,6 +72,8 @@ export const RUNSHEET_ACCESS_AUDIT_FIXTURE: RunsheetAccessAuditFixture = {
     { Id: 10, PersonId: 109, GroupId: 901, GroupTypeId: 28, GroupMemberStatus: 1 },
     { Id: 11, PersonId: 110, GroupId: 910, GroupRoleId: 19, GroupTypeId: 23, GroupMemberStatus: 2 },
     { Id: 12, PersonId: 111, GroupId: 910, GroupRoleId: 19, GroupTypeId: 23, GroupMemberStatus: 1, IsArchived: true },
+    { Id: 13, PersonId: 112, GroupId: 910, GroupRoleId: 19, GroupTypeId: 23, GroupMemberStatus: '1' },
+    { Id: 14, PersonId: 113, GroupId: 910, GroupRoleId: 19, GroupTypeId: 23, GroupMemberStatus: 1, IsArchived: 'True' },
   ],
   people: [
     { Id: 100, FirstName: 'Rock', LastName: 'Administrator', Email: 'rock@example.test' },
@@ -86,6 +88,8 @@ export const RUNSHEET_ACCESS_AUDIT_FIXTURE: RunsheetAccessAuditFixture = {
     { Id: 109, FirstName: 'BNE', LastName: 'Staff', Email: 'bne@example.test' },
     { Id: 110, FirstName: 'Inactive', LastName: 'Member', Email: 'inactive@example.test' },
     { Id: 111, FirstName: 'Archived', LastName: 'Member', Email: 'archived@example.test' },
+    { Id: 112, FirstName: 'String', LastName: 'Status Member', Email: 'stringstatus@example.test' },
+    { Id: 113, FirstName: 'String', LastName: 'Archived Member', Email: 'stringarchived@example.test' },
   ],
   leaderRoles: [
     { Id: 19, Name: 'Member', IsLeader: false },

@@ -2,7 +2,7 @@
 
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
-import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
+import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetColumnMetadata } from '@/types/Runsheet';
 import { isPersonColumn, HIDDEN_ATTRIBUTE_KEYS } from '@/constants/runsheetColumns';
 import { canAccessRunsheetChannel } from '@/lib/runsheetCampus';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
@@ -165,11 +165,12 @@ export async function rockGetRunsheetDetails(channelId: number) {
       return { success: false, error: access.error };
     }
 
-    const channel = (await rockGet(`/ContentChannels/${channelId}`, undefined, true)) as {
+    const channel = (await rockGet(`/ContentChannels/${channelId}`)) as {
       Id: number;
       Name: string;
       Description?: string;
       ForeignKey?: string;
+      ChannelUrl?: string;
       ContentChannelTypeId: number;
     } | null;
 
@@ -187,10 +188,25 @@ export async function rockGetRunsheetDetails(channelId: number) {
       return { success: false, error: 'You do not have access to this runsheet.' };
     }
 
+    let columnMetadata: RunsheetColumnMetadata | undefined = undefined;
+    if (channel.ChannelUrl) {
+      try {
+        const parsed = typeof channel.ChannelUrl === 'string' ? JSON.parse(channel.ChannelUrl) : channel.ChannelUrl;
+        if (parsed && typeof parsed === 'object') {
+          columnMetadata = {
+            order: Array.isArray(parsed.order) ? parsed.order : undefined,
+            widths: parsed.widths && typeof parsed.widths === 'object' ? parsed.widths : undefined,
+          };
+        }
+      } catch (err) {
+        console.warn('Failed to parse ChannelUrl as columnMetadata JSON:', err);
+      }
+    }
+
     const typeId = channel.ContentChannelTypeId;
 
     // Item attributes can be attached to the channel type or to this channel.
-    const rawAttrs = (await rockGet(
+    const rawAttrsPromise = rockGet(
       '/Attributes',
       {
         $filter:
@@ -199,8 +215,16 @@ export async function rockGetRunsheetDetails(channelId: number) {
           `(EntityTypeQualifierColumn eq 'ContentChannelId' and EntityTypeQualifierValue eq '${channelId}'))`,
         $orderby: 'Order asc,Id asc',
       },
-      true,
-    )) as any[];
+    );
+
+    const rawItemsPromise = rockGet('/ContentChannelItems', {
+      $filter: `ContentChannelId eq ${channelId}`,
+      $orderby: 'Order asc',
+      loadAttributes: 'simple',
+    });
+
+    const [resolvedAttrs, resolvedItems] = await Promise.all([rawAttrsPromise, rawItemsPromise]);
+    const rawAttrs = resolvedAttrs as any[];
 
     // DURATION drives the dedicated Start/End/Duration columns, SONGITEMID
     // is an internal reference to the linked Song, and SIBLINGKEY is the shared row key.
@@ -211,17 +235,23 @@ export async function rockGetRunsheetDetails(channelId: number) {
         key: attr.Key,
         name: attr.Name,
         fieldTypeId: attr.FieldTypeId,
+        width: columnMetadata?.widths?.[attr.Key],
       }));
 
-    const rawItems = (await rockGet(
-      '/ContentChannelItems',
-      {
-        $filter: `ContentChannelId eq ${channelId}`,
-        $orderby: 'Order asc',
-        loadAttributes: 'simple',
-      },
-      true,
-    )) as any[];
+    if (columnMetadata?.order && columnMetadata.order.length > 0) {
+      const orderMap = new Map<string, number>();
+      columnMetadata.order.forEach((key, idx) => {
+        orderMap.set(key, idx);
+      });
+      columns.sort((a, b) => {
+        const orderA = orderMap.has(a.key) ? orderMap.get(a.key)! : Number.MAX_SAFE_INTEGER;
+        const orderB = orderMap.has(b.key) ? orderMap.get(b.key)! : Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) return orderA - orderB;
+        return 0;
+      });
+    }
+
+    const rawItems = resolvedItems as any[];
 
     // Collect every person-column cell's raw value up front so all of them can
     // be resolved to display names in one or two batched Rock calls, instead
@@ -301,6 +331,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
         // touches the runsheet's title — Rock's `ForeignKey` is a free-text
         // field reserved for exactly this kind of external app bookkeeping.
         startTime: channel.ForeignKey || '',
+        columnMetadata,
         contentChannelTypeId: typeId,
         columns,
         items,
