@@ -44,7 +44,12 @@ const DEFAULT_COLUMN_WIDTH = 100;
  * Description / Notes / Main Instrument are the wide ones there; everything else
  * falls back to the default.
  */
-function diffColumnWidth(column: DynamicAttributeColumn): number {
+function diffColumnWidth(column: DynamicAttributeColumn, widths?: Record<string, number>): number {
+  // A user-resized column is persisted in initialColumnMetadata.widths and honoured
+  // first by getColumnStyle; honour it here too, or a 220px Notes column in the
+  // editor renders 150px in the diff beside it.
+  const persisted = widths?.[column.key];
+  if (persisted) return persisted;
   const upperKey = column.key.toUpperCase();
   const lowerName = (column.name || '').toLowerCase();
   const isWide =
@@ -58,9 +63,12 @@ function diffColumnWidth(column: DynamicAttributeColumn): number {
 }
 
 /** Total width the diff table needs before it is allowed to compress. */
-function diffTableMinWidth(columns: DynamicAttributeColumn[]): number {
-  return START_WIDTH + DURATION_WIDTH + TITLE_WIDTH +
-    columns.reduce((total, column) => total + diffColumnWidth(column), 0);
+function diffTableMinWidth(columns: DynamicAttributeColumn[], widths?: Record<string, number>): number {
+  const start = widths?.start || widths?.START || START_WIDTH;
+  const duration = widths?.duration || widths?.DURATION || DURATION_WIDTH;
+  const title = widths?.title || widths?.ACTIVITYTITLE || TITLE_WIDTH;
+  return start + duration + title +
+    columns.reduce((total, column) => total + diffColumnWidth(column, widths), 0);
 }
 
 function Cell({ cell, mono = false }: { cell: InlineDiffCell; mono?: boolean }) {
@@ -84,6 +92,7 @@ function Cell({ cell, mono = false }: { cell: InlineDiffCell; mono?: boolean }) 
 
 function DiffTable({ source, target, targetLabel }: { source: Props; target: RunsheetDetails; targetLabel: string }) {
   const columns = useMemo(() => visibleColumns(source.columns, source.initialColumnMetadata?.order), [source.columns, source.initialColumnMetadata?.order]);
+  const widths = source.initialColumnMetadata?.widths;
   const rows = useMemo(() => buildInlineDiffRows({
     sourceRows: source.initialItems,
     targetRows: target.items,
@@ -107,14 +116,14 @@ function DiffTable({ source, target, targetLabel }: { source: Props; target: Run
             instead. */}
         <table
           className="w-full table-fixed border-collapse text-[11px] text-slate-900"
-          style={{ minWidth: `${diffTableMinWidth(columns)}px` }}
+          style={{ minWidth: `${diffTableMinWidth(columns, widths)}px` }}
         >
           <thead className="bg-slate-900 text-white"><tr>
-            <th className="border-r border-slate-700 p-1" style={{ width: `${START_WIDTH}px` }}>Start</th>
-            <th className="border-r border-slate-700 p-1" style={{ width: `${DURATION_WIDTH}px` }}>Duration</th>
-            <th className="border-r border-slate-700 p-1" style={{ width: `${TITLE_WIDTH}px` }}>Activity Title</th>
+            <th className="border-r border-slate-700 p-1" style={{ width: `${widths?.start || widths?.START || START_WIDTH}px` }}>Start</th>
+            <th className="border-r border-slate-700 p-1" style={{ width: `${widths?.duration || widths?.DURATION || DURATION_WIDTH}px` }}>Duration</th>
+            <th className="border-r border-slate-700 p-1" style={{ width: `${widths?.title || widths?.ACTIVITYTITLE || TITLE_WIDTH}px` }}>Activity Title</th>
             {columns.map((column) => (
-              <th key={column.key} className="border-r border-slate-700 p-1" style={{ width: `${diffColumnWidth(column)}px` }}>{column.name}</th>
+              <th key={column.key} className="border-r border-slate-700 p-1" style={{ width: `${diffColumnWidth(column, widths)}px` }}>{column.name}</th>
             ))}
           </tr></thead>
           <tbody>
@@ -188,10 +197,10 @@ export function RunsheetTableEditor(props: Props) {
     <div className="flex w-full min-w-0 flex-col gap-2.5">
       {siblings.length > 0 || error ? (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 shadow-xs">
-          <div role="group" aria-label="Inline service diff" className="inline-flex overflow-hidden rounded-lg border border-slate-300">
-            <button type="button" aria-label="Clear inline diff" disabled={!targetId} onClick={clear} className="h-11 min-w-11 border-r border-slate-200 bg-rose-50 px-2 text-sm font-black text-rose-700 disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:h-7 sm:min-w-8">−</button>
-            <button type="button" disabled={dirty || siblings.length === 0} onClick={() => setPickerOpen((open) => !open)} className="h-11 bg-white px-4 text-[11px] font-extrabold text-slate-800 disabled:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:h-7 sm:px-3">Diff</button>
-            <button type="button" aria-label="Choose service to diff" disabled={dirty || siblings.length === 0} onClick={() => setPickerOpen((open) => !open)} className="h-11 min-w-11 border-l border-slate-200 bg-emerald-50 px-2 text-sm font-black text-emerald-700 disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:h-7 sm:min-w-8">+</button>
+          <div role="group" aria-label="Inline service diff" className="inline-flex gap-2 sm:gap-0 sm:overflow-hidden sm:rounded-lg sm:border sm:border-slate-300">
+            <button type="button" aria-label="Clear inline diff" disabled={!targetId} onClick={clear} className="h-11 min-w-11 rounded-lg border border-slate-300 bg-rose-50 px-2 sm:rounded-none sm:border-0 sm:border-r sm:border-slate-200 text-sm font-black text-rose-700 disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:h-7 sm:min-w-8">−</button>
+            <button type="button" disabled={dirty || siblings.length === 0} onClick={() => setPickerOpen((open) => !open)} className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-[11px] sm:rounded-none sm:border-0 font-extrabold text-slate-800 disabled:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:h-7 sm:px-3">Diff</button>
+            <button type="button" aria-label="Choose service to diff" disabled={dirty || siblings.length === 0} onClick={() => setPickerOpen((open) => !open)} className="h-11 min-w-11 rounded-lg border border-slate-300 bg-emerald-50 px-2 sm:rounded-none sm:border-0 sm:border-l sm:border-slate-200 text-sm font-black text-emerald-700 disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:h-7 sm:min-w-8">+</button>
           </div>
           {loading ? <span className="text-[10px] font-semibold text-slate-500">Loading Diff…</span> : targetId && targetLabel ? <span className="rounded border border-yellow-300 bg-yellow-50 px-2 py-0.5 text-[10px] font-bold">Diff vs {targetLabel}</span> : null}
           {dirty ? <span className="text-[10px] font-semibold text-slate-500">Save changes before diffing.</span> : null}
