@@ -243,9 +243,10 @@ export function EventTeamRosterCard({
                             e.stopPropagation();
                             onOpenRolePicker(`Roster: ${role}`);
                           }}
-                          className="p-1 -mr-1 -mt-1 text-slate-400 hover:text-slate-900 hover:bg-slate-200/60 rounded transition-colors shrink-0 touch-manipulation"
+                          aria-label="Edit role assignment"
+                          className="inline-flex min-h-11 min-w-11 items-center justify-center p-1 -mr-1 -mt-1 text-slate-400 hover:text-slate-900 hover:bg-slate-200/60 rounded transition-colors shrink-0 touch-manipulation focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0"
                         >
-                          <HiPencilSquare className="h-3.5 w-3.5" />
+                          <HiPencilSquare className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
                         </button>
                       )}
                     </div>

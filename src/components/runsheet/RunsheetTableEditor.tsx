@@ -2444,7 +2444,7 @@ export function RunsheetTableEditor({
           </span>
         </div>
 
-        <div role="group" aria-label="Layout view mode" className="flex items-center rounded-md border border-slate-300 bg-slate-100 p-0.5">
+        <div role="group" aria-label="Layout view mode" className="flex items-center gap-2 rounded-md border border-slate-300 bg-slate-100 p-0.5 sm:gap-0">
           <button
             type="button"
             aria-label="Card view"
@@ -2454,12 +2454,12 @@ export function RunsheetTableEditor({
               setMobileViewMode('cards');
               setViewModePreference('cards');
             }}
-            className={`flex items-center justify-center rounded p-1 transition-all cursor-pointer ${mobileViewMode === 'cards'
+            className={`flex min-h-11 min-w-11 items-center justify-center rounded p-1 transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0 ${mobileViewMode === 'cards'
                 ? 'bg-white text-slate-900 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
               }`}
           >
-            <HiRectangleStack className="h-3.5 w-3.5" />
+            <HiRectangleStack className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
           </button>
           <button
             type="button"
@@ -2470,12 +2470,12 @@ export function RunsheetTableEditor({
               setMobileViewMode('grid');
               setViewModePreference('grid');
             }}
-            className={`flex items-center justify-center rounded p-1 transition-all cursor-pointer ${mobileViewMode === 'grid'
+            className={`flex min-h-11 min-w-11 items-center justify-center rounded p-1 transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0 ${mobileViewMode === 'grid'
                 ? 'bg-white text-slate-900 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
               }`}
           >
-            <HiTableCells className="h-3.5 w-3.5" />
+            <HiTableCells className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
           </button>
         </div>
       </div>
@@ -2817,18 +2817,18 @@ export function RunsheetTableEditor({
                           onClick={() => handleMoveCard(index, 'up')}
                           disabled={index === 0}
                           title="Move up"
-                          className="flex items-center justify-center bg-white p-1 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white cursor-pointer"
+                          className="flex min-h-11 min-w-11 items-center justify-center bg-white p-1 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0"
                         >
-                          <HiChevronUp className="h-3.5 w-3.5" />
+                          <HiChevronUp className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
                         </button>
                         <button
                           type="button"
                           onClick={() => handleMoveCard(index, 'down')}
                           disabled={index === processedRows.length - 1}
                           title="Move down"
-                          className="flex items-center justify-center border-l border-slate-300 bg-white p-1 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white cursor-pointer"
+                          className="flex min-h-11 min-w-11 items-center justify-center border-l border-slate-300 bg-white p-1 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0"
                         >
-                          <HiChevronDown className="h-3.5 w-3.5" />
+                          <HiChevronDown className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
                         </button>
                       </div>
                     )}
