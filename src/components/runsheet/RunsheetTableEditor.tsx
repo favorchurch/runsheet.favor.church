@@ -1096,9 +1096,15 @@ export function RunsheetTableEditor({
   const handleDragStart = (index: number, event: React.DragEvent) => {
     if (readOnly) return;
     setDraggedIndex(index);
-    const rowElement = event.currentTarget.closest('tr');
-    if (rowElement && event.dataTransfer) {
-      event.dataTransfer.setDragImage(rowElement, 20, 20);
+    if (event.dataTransfer) {
+      // Chrome starts the drag with no payload at all, but Firefox and Safari can
+      // refuse to, so seed it the way the working column-drag path already does.
+      // `effectAllowed` also fixes the cursor: without it the drop reports a copy
+      // effect for what is really a move.
+      event.dataTransfer.setData('text/plain', String(index));
+      event.dataTransfer.effectAllowed = 'move';
+      const rowElement = event.currentTarget.closest('tr');
+      if (rowElement) event.dataTransfer.setDragImage(rowElement, 20, 20);
     }
   };
 
