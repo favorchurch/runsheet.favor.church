@@ -2811,13 +2811,13 @@ export function RunsheetTableEditor({
                     )}
 
                     {!readOnly && (
-                      <div className="flex items-center overflow-hidden rounded border border-slate-300">
+                      <div className="flex items-center gap-2 sm:gap-0 sm:overflow-hidden sm:rounded sm:border sm:border-slate-300">
                         <button
                           type="button"
                           onClick={() => handleMoveCard(index, 'up')}
                           disabled={index === 0}
                           title="Move up"
-                          className="flex min-h-11 min-w-11 items-center justify-center bg-white p-1 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0"
+                          className="flex min-h-11 min-w-11 items-center justify-center rounded border border-slate-300 bg-white p-1 text-slate-600 sm:rounded-none sm:border-0 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0"
                         >
                           <HiChevronUp className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
                         </button>
@@ -2826,7 +2826,7 @@ export function RunsheetTableEditor({
                           onClick={() => handleMoveCard(index, 'down')}
                           disabled={index === processedRows.length - 1}
                           title="Move down"
-                          className="flex min-h-11 min-w-11 items-center justify-center border-l border-slate-300 bg-white p-1 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0"
+                          className="flex min-h-11 min-w-11 items-center justify-center rounded border border-slate-300 bg-white p-1 text-slate-600 sm:rounded-none sm:border-0 sm:border-l hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0"
                         >
                           <HiChevronDown className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
                         </button>
