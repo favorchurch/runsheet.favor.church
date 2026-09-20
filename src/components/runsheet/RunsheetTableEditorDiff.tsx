@@ -32,6 +32,37 @@ function visibleColumns(columns: DynamicAttributeColumn[] | undefined, order: st
   return [...filtered].sort((a, b) => (rank.get(a.key) ?? 9999) - (rank.get(b.key) ?? 9999));
 }
 
+const START_WIDTH = 88;
+const DURATION_WIDTH = 78;
+const TITLE_WIDTH = 140;
+const WIDE_COLUMN_WIDTH = 150;
+const DEFAULT_COLUMN_WIDTH = 100;
+
+/**
+ * Width for one dynamic diff column, mirroring `getColumnStyle` in RunsheetTableEditor
+ * so a column is not one width in the editor and another in the diff beside it.
+ * Description / Notes / Main Instrument are the wide ones there; everything else
+ * falls back to the default.
+ */
+function diffColumnWidth(column: DynamicAttributeColumn): number {
+  const upperKey = column.key.toUpperCase();
+  const lowerName = (column.name || '').toLowerCase();
+  const isWide =
+    upperKey === 'DESCRIPTION' || upperKey === 'DETIAL' ||
+    lowerName.includes('description') || lowerName.includes('detail') ||
+    upperKey === 'MAININSTRUMENT' || upperKey === 'MAIN_INSTRUMENT' ||
+    lowerName.includes('main instrument') || lowerName.includes('instrument') ||
+    upperKey === 'PROGRAMNOTES' || upperKey === 'PROGRAM_NOTES' || upperKey === 'PROGRAM NOTES' ||
+    upperKey === 'NOTES' || lowerName.includes('program note') || lowerName.includes('notes');
+  return isWide ? WIDE_COLUMN_WIDTH : DEFAULT_COLUMN_WIDTH;
+}
+
+/** Total width the diff table needs before it is allowed to compress. */
+function diffTableMinWidth(columns: DynamicAttributeColumn[]): number {
+  return START_WIDTH + DURATION_WIDTH + TITLE_WIDTH +
+    columns.reduce((total, column) => total + diffColumnWidth(column), 0);
+}
+
 function Cell({ cell, mono = false }: { cell: InlineDiffCell; mono?: boolean }) {
   const render = (value: string) => mono ? <span className="font-mono font-semibold">{value}</span> : <RichTextContent value={value} />;
   if (cell.status === 'same') return <div data-diff-status="same" className="min-h-6 px-2 py-1">{render(cell.sourceValue)}</div>;
@@ -68,13 +99,23 @@ function DiffTable({ source, target, targetLabel }: { source: Props; target: Run
         <div className="font-bold text-slate-900">Diff: {label(source.channelName)} → {targetLabel}</div>
         <div className="mt-0.5 text-[10px] font-semibold text-slate-500">CURRENT is muted in parentheses · DIFF additions are yellow · comparison is read-only</div>
       </div>
-      <div className="w-full overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-xs">
-        <table className="w-full min-w-full table-fixed border-collapse text-[11px] text-slate-900">
+      <div className="w-full overflow-x-auto overscroll-x-contain rounded-xl border border-slate-300 bg-white shadow-xs">
+        {/* `table-fixed w-full` alone caps the table at the wrapper width, so the
+            overflow-x-auto above never engages and the per-column widths below are
+            ignored — on a phone the columns just compress. An explicit min-width
+            equal to the sum of the column widths makes the table overflow and scroll
+            instead. */}
+        <table
+          className="w-full table-fixed border-collapse text-[11px] text-slate-900"
+          style={{ minWidth: `${diffTableMinWidth(columns)}px` }}
+        >
           <thead className="bg-slate-900 text-white"><tr>
-            <th className="w-[88px] border-r border-slate-700 p-1">Start</th>
-            <th className="w-[78px] border-r border-slate-700 p-1">Duration</th>
-            <th className="w-[140px] border-r border-slate-700 p-1">Activity Title</th>
-            {columns.map((column) => <th key={column.key} className="min-w-[100px] border-r border-slate-700 p-1">{column.name}</th>)}
+            <th className="border-r border-slate-700 p-1" style={{ width: `${START_WIDTH}px` }}>Start</th>
+            <th className="border-r border-slate-700 p-1" style={{ width: `${DURATION_WIDTH}px` }}>Duration</th>
+            <th className="border-r border-slate-700 p-1" style={{ width: `${TITLE_WIDTH}px` }}>Activity Title</th>
+            {columns.map((column) => (
+              <th key={column.key} className="border-r border-slate-700 p-1" style={{ width: `${diffColumnWidth(column)}px` }}>{column.name}</th>
+            ))}
           </tr></thead>
           <tbody>
             {rows.map((row) => (
