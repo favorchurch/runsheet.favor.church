@@ -1113,10 +1113,21 @@ export function RunsheetTableEditor({
     setItems((previous) => {
       const updated = [...previous];
       const fromIndex = updated.findIndex((item) => item.id === draggedId);
+      const originalToIndex = updated.findIndex((item) => item.id === targetId);
       if (fromIndex === -1) return previous;
+      if (originalToIndex === -1) return updated;
+
       const [moved] = updated.splice(fromIndex, 1);
-      const toIndex = updated.findIndex((item) => item.id === targetId);
-      updated.splice(toIndex === -1 ? fromIndex : toIndex, 0, moved);
+
+      // Insert at the target's ORIGINAL index, captured before the removal above.
+      // Re-finding the target after the splice was the bug: removing the dragged row
+      // shifts everything after it back by one, so a re-found index lands the row
+      // BEFORE the target. That is right going up, but going down it puts the row
+      // back where it started (adjacent) or one slot short (non-adjacent).
+      // The original index needs no adjustment in either direction — going up the
+      // target has not moved, and going down the off-by-one from the removal is
+      // exactly the +1 needed to land after the target.
+      updated.splice(originalToIndex, 0, moved);
       return updated;
     });
     setIsDirty(true);

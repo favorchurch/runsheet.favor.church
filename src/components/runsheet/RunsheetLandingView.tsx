@@ -10,7 +10,6 @@ import {
   HiMagnifyingGlass,
   HiXMark,
   HiDocumentText,
-  HiSparkles,
 } from 'react-icons/hi2';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import type { RunsheetDetails } from '@/types/Runsheet';
@@ -126,16 +125,17 @@ function RunsheetCard({ channel, accessScope, onSelect, onPrefetch }: RunsheetCa
       </div>
 
       {/* Card Footer */}
-      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-        {itemCount !== undefined ? (
+      {/* `justify-end` when there is no segment count, so "Open" stays on the right
+          instead of sliding to the left edge of an otherwise empty footer row. */}
+      <div
+        className={`mt-4 pt-3 border-t border-slate-100 flex items-center text-xs ${
+          itemCount !== undefined ? 'justify-between' : 'justify-end'
+        }`}
+      >
+        {itemCount !== undefined && (
           <span className="inline-flex items-center gap-1 font-medium text-slate-500">
             <HiDocumentText className="h-3.5 w-3.5 text-blue-500" />
             <span>{itemCount} {itemCount === 1 ? 'segment' : 'segments'}</span>
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 font-medium text-slate-400 group-hover:text-slate-600 transition-colors">
-            <HiSparkles className="h-3.5 w-3.5 text-amber-500" />
-            <span>Instant load</span>
           </span>
         )}
 
