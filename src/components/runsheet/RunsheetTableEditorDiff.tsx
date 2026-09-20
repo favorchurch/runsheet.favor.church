@@ -189,14 +189,14 @@ export function RunsheetTableEditor(props: Props) {
       {siblings.length > 0 || error ? (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 shadow-xs">
           <div role="group" aria-label="Inline service diff" className="inline-flex overflow-hidden rounded-lg border border-slate-300">
-            <button type="button" aria-label="Clear inline diff" disabled={!targetId} onClick={clear} className="h-7 min-w-8 border-r border-slate-200 bg-rose-50 px-2 text-sm font-black text-rose-700 disabled:opacity-30">−</button>
-            <button type="button" disabled={dirty || siblings.length === 0} onClick={() => setPickerOpen((open) => !open)} className="h-7 bg-white px-3 text-[11px] font-extrabold text-slate-800 disabled:text-slate-400">Diff</button>
-            <button type="button" aria-label="Choose service to diff" disabled={dirty || siblings.length === 0} onClick={() => setPickerOpen((open) => !open)} className="h-7 min-w-8 border-l border-slate-200 bg-emerald-50 px-2 text-sm font-black text-emerald-700 disabled:opacity-30">+</button>
+            <button type="button" aria-label="Clear inline diff" disabled={!targetId} onClick={clear} className="h-11 min-w-11 border-r border-slate-200 bg-rose-50 px-2 text-sm font-black text-rose-700 disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:h-7 sm:min-w-8">−</button>
+            <button type="button" disabled={dirty || siblings.length === 0} onClick={() => setPickerOpen((open) => !open)} className="h-11 bg-white px-4 text-[11px] font-extrabold text-slate-800 disabled:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:h-7 sm:px-3">Diff</button>
+            <button type="button" aria-label="Choose service to diff" disabled={dirty || siblings.length === 0} onClick={() => setPickerOpen((open) => !open)} className="h-11 min-w-11 border-l border-slate-200 bg-emerald-50 px-2 text-sm font-black text-emerald-700 disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:h-7 sm:min-w-8">+</button>
           </div>
           {loading ? <span className="text-[10px] font-semibold text-slate-500">Loading Diff…</span> : targetId && targetLabel ? <span className="rounded border border-yellow-300 bg-yellow-50 px-2 py-0.5 text-[10px] font-bold">Diff vs {targetLabel}</span> : null}
           {dirty ? <span className="text-[10px] font-semibold text-slate-500">Save changes before diffing.</span> : null}
           {error ? <span className="text-[10px] font-semibold text-rose-700">{error}</span> : null}
-          {pickerOpen ? <select aria-label="Diff against service" defaultValue="" onChange={(event) => { const id = Number(event.target.value); if (id) void choose(id); }} className="h-7 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-bold"><option value="" disabled>Choose service…</option>{siblings.map((sibling) => <option key={sibling.channelId} value={sibling.channelId}>{label(sibling.name, sibling.time)}</option>)}</select> : null}
+          {pickerOpen ? <select aria-label="Diff against service" defaultValue="" onChange={(event) => { const id = Number(event.target.value); if (id) void choose(id); }} className="h-11 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-600 sm:h-7"><option value="" disabled>Choose service…</option>{siblings.map((sibling) => <option key={sibling.channelId} value={sibling.channelId}>{label(sibling.name, sibling.time)}</option>)}</select> : null}
         </div>
       ) : null}
 
