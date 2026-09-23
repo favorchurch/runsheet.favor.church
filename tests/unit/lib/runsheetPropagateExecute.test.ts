@@ -102,4 +102,26 @@ describe('executePropagationPlan', () => {
     expect(outcomes.find((o) => o.channelId === 3)?.ok).toBe(false);
     expect(outcomes.find((o) => o.channelId === 3)?.error).toContain('Rock timeout');
   });
+
+  it('inserts a selected new row as a fresh item in the target', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    const sourceRow: RunsheetItemRow = { id: 99, title: 'Favor News', order: 3, duration: 5, attributeValues: { NOTES: 'n' } };
+    const plan: PropagationPlan = {
+      targets: [{
+        channel: { channelId: 2, name: 'X // Aug 16, 2026 // 11:30AM', time: '11:30AM', preselected: true },
+        changes: [{
+          itemTitle: 'Favor News', columnKey: 'NEW_ROW', columnName: 'New Segment', newValue: 'Added segment',
+          sourcePreviousValue: '', targetCurrentValue: null, targetItemId: null, status: 'added', selected: true,
+          isNewRow: true, sourceRow,
+        }],
+      }],
+    };
+
+    const outcomes = await executePropagationPlan(plan, new Map([[2, []]]), []);
+    const saved = (rockBulkSaveRunsheetItems as jest.Mock).mock.calls[0][1] as RunsheetItemRow[];
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ title: 'Favor News', isNew: true, attributeValues: { NOTES: 'n' } });
+    expect(typeof saved[0].id).toBe('string');
+    expect(outcomes[0]).toMatchObject({ ok: true, appliedCount: 1 });
+  });
 });

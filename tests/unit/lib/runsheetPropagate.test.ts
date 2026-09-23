@@ -159,4 +159,36 @@ describe('buildPropagationPlan', () => {
     expect(changes.map((c) => c.columnKey).sort()).toEqual(['ACTIVITYTITLE', 'DESCRIPTION']);
     expect(changes.every((c) => c.status !== 'unmatched')).toBe(true);
   });
+
+  it('offers a newly added row (e.g. Favor News) as an insert when the target lacks it', () => {
+    const source = row(99, 'Favor News', { NOTES: 'Read the news' });
+    const matchResults = new Map<number, MatchResult>([[2, { matches: [{ sourceRow: source, targetRow: null, via: 'title' } as unknown as RowMatch], backfill: [] }]]);
+
+    const plan = buildPropagationPlan(
+      [{ itemId: 99, itemTitle: 'Favor News', columnKey: 'NEW_ROW', columnName: 'New Segment', newValue: 'Added segment', previousValue: '', isNewRow: true, sourceRow: source }],
+      matchResults,
+      [target],
+      columns,
+    );
+
+    const change = plan.targets[0].changes[0];
+    expect(change.status).toBe('added');
+    expect(change.selected).toBe(true);
+    expect(change.sourceRow).toBe(source);
+  });
+
+  it('skips inserting a new row into a target that already has a matching segment', () => {
+    const source = row(99, 'Favor News');
+    const matchResults = new Map<number, MatchResult>([[2, { matches: [{ sourceRow: source, targetRow: row(50, 'Favor News'), via: 'title' }], backfill: [] }]]);
+
+    const plan = buildPropagationPlan(
+      [{ itemId: 99, itemTitle: 'Favor News', columnKey: 'NEW_ROW', columnName: 'New Segment', newValue: 'Added segment', previousValue: '', isNewRow: true, sourceRow: source }],
+      matchResults,
+      [target],
+      columns,
+    );
+
+    expect(plan.targets[0].changes[0].status).toBe('exists');
+    expect(plan.targets[0].changes[0].selected).toBe(false);
+  });
 });

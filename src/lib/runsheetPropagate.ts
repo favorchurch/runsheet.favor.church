@@ -8,7 +8,7 @@
 import { SIBLINGKEY_ATTRIBUTE_KEY } from '@/constants/runsheetColumns';
 import type { MatchResult } from '@/lib/runsheetMatch';
 import type { SiblingChannel } from '@/lib/runsheetSiblings';
-import type { DynamicAttributeColumn } from '@/types/Runsheet';
+import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 
 export interface CandidateCellChange {
   /** The source row's own id — the stable identity used for matching, since `itemTitle` can itself be one of the edited columns. */
@@ -18,9 +18,18 @@ export interface CandidateCellChange {
   columnName: string;
   newValue: string;
   previousValue: string;
+  /** Present if this change represents an entirely new row to be inserted. */
+  isNewRow?: boolean;
+  /** The full row data, required if isNewRow is true */
+  sourceRow?: RunsheetItemRow;
 }
 
-export type CellStatus = 'clean' | 'diverged' | 'unmatched';
+export type CellStatus = 'clean' | 'diverged' | 'unmatched' | 'added' | 'exists';
+
+/** Statuses with nothing to apply — never selectable in the review. */
+export function isSkippedStatus(status: CellStatus): boolean {
+  return status === 'unmatched' || status === 'exists';
+}
 
 export interface CellChange {
   itemTitle: string;
@@ -33,6 +42,8 @@ export interface CellChange {
   targetItemId: number | null;
   status: CellStatus;
   selected: boolean;
+  isNewRow?: boolean;
+  sourceRow?: RunsheetItemRow;
 }
 
 export interface PropagationTarget {
@@ -63,6 +74,26 @@ export function buildPropagationPlan(
     const changes: CellChange[] = [];
 
     for (const candidate of eligibleChanges) {
+      if (candidate.isNewRow) {
+        // The new row is part of the matched source rows, so a target that
+        // already has the same segment pairs up here — don't insert it twice.
+        const existing = matchResult?.matches.find((m) => m.sourceRow.id === candidate.itemId)?.targetRow;
+        changes.push({
+          itemTitle: candidate.itemTitle,
+          columnKey: candidate.columnKey,
+          columnName: candidate.columnName,
+          newValue: candidate.newValue,
+          sourcePreviousValue: candidate.previousValue,
+          targetCurrentValue: null,
+          targetItemId: existing && typeof existing.id === 'number' ? existing.id : null,
+          status: existing ? 'exists' : 'added',
+          selected: !existing,
+          isNewRow: true,
+          sourceRow: candidate.sourceRow,
+        });
+        continue;
+      }
+
       // Matched by id, not title text — the title itself may be one of the
       // columns that just changed, so it can't double as the join key.
       const rowMatch = matchResult?.matches.find((m) => m.sourceRow.id === candidate.itemId);

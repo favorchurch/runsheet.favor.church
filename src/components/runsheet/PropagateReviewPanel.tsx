@@ -3,7 +3,7 @@
 import React from 'react';
 import { HiXMark } from 'react-icons/hi2';
 import { htmlToPlainText } from '@/lib/richText';
-import type { CellChange, PropagationPlan } from '@/lib/runsheetPropagate';
+import { isSkippedStatus, type CellChange, type PropagationPlan } from '@/lib/runsheetPropagate';
 import type { PropagationOutcome } from '@/lib/runsheetPropagateExecute';
 
 interface PropagateReviewPanelProps {
@@ -83,7 +83,7 @@ export function PropagateReviewPanel({ plan, onToggleGroup, onApply, onClose, ap
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
           {groups.map((group) => {
-            const selectableRows = group.rows.filter((r) => r.change.status !== 'unmatched');
+            const selectableRows = group.rows.filter((r) => !isSkippedStatus(r.change.status));
             const groupSelected = selectableRows.length > 0 && selectableRows.every((r) => r.change.selected);
             const groupKey = `${group.itemTitle}::${group.columnKey}`;
             // The segment name is itself a rich-text cell (ACTIVITYTITLE) — it
@@ -106,10 +106,10 @@ export function PropagateReviewPanel({ plan, onToggleGroup, onApply, onClose, ap
                     className="h-4 w-4 shrink-0 rounded border-slate-300 text-pink-700 focus:ring-pink-600 disabled:opacity-50"
                   />
                   <span className="text-xs font-bold text-slate-900">
-                    {plainItemTitle} · {group.columnName}
+                    {group.columnKey === 'NEW_ROW' ? `Added Segment: ${plainItemTitle}` : `${plainItemTitle} · ${group.columnName}`}
                   </span>
                   <span className="ml-auto max-w-[45%] truncate text-xs font-semibold text-slate-700">
-                    {htmlToPlainText(group.newValue) || '—'}
+                    {group.columnKey === 'NEW_ROW' ? 'entire segment' : (htmlToPlainText(group.newValue) || '—')}
                   </span>
                 </label>
 
@@ -122,6 +122,16 @@ export function PropagateReviewPanel({ plan, onToggleGroup, onApply, onClose, ap
                         {change.status === 'unmatched' && (
                           <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
                             no matching segment — skipped
+                          </span>
+                        )}
+                        {change.status === 'exists' && (
+                          <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                            already has this segment — skipped
+                          </span>
+                        )}
+                        {change.status === 'added' && (
+                          <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                            new segment — will insert
                           </span>
                         )}
                         {change.status === 'clean' && (

@@ -40,7 +40,7 @@ import { rockDuplicateServiceRunsheet } from '@/server-actions/rockDuplicateServ
 import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetDetails, RunsheetColumnMetadata } from '@/types/Runsheet';
 import { resolveSiblings, type SiblingChannel } from '@/lib/runsheetSiblings';
 import { matchRows, type MatchResult } from '@/lib/runsheetMatch';
-import { buildPropagationPlan, type PropagationPlan, type CandidateCellChange } from '@/lib/runsheetPropagate';
+import { buildPropagationPlan, isSkippedStatus, type PropagationPlan, type CandidateCellChange } from '@/lib/runsheetPropagate';
 import { executePropagationPlan, type PropagationOutcome } from '@/lib/runsheetPropagateExecute';
 import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDetailsBatch';
@@ -1441,18 +1441,36 @@ export function RunsheetTableEditor({
       const candidates: CandidateCellChange[] = [];
       const oldTitlesForMatching = new Map<number, string>();
       for (const item of itemsToSave) {
-        if (typeof item.id === 'string' || item.isNew) continue;
-        const baseline = baselineRef.current.get(item.id);
-        if (!baseline) continue;
+        const res = (result.results || []).find((r) => r.clientId === item.id);
+        if (!res || !res.ok || !res.rockId) continue;
+        const rockId = res.rockId;
+        const isNewItem = typeof item.id === 'string' || item.isNew;
         const newTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
+
+        if (isNewItem) {
+          candidates.push({
+            itemId: rockId,
+            itemTitle: newTitle,
+            columnKey: 'NEW_ROW',
+            columnName: 'New Segment',
+            newValue: 'Added segment',
+            previousValue: '',
+            isNewRow: true,
+            sourceRow: { ...item, id: rockId, isNew: false, changedKeys: [] },
+          });
+          continue;
+        }
+
+        const baseline = baselineRef.current.get(rockId);
+        if (!baseline) continue;
         if (newTitle !== baseline.title) {
-          oldTitlesForMatching.set(item.id, baseline.title);
+          oldTitlesForMatching.set(rockId, baseline.title);
         }
         for (const key of item.changedKeys || []) {
           if (key === 'title' || key === 'order' || key === 'startDateTime' || key === 'duration' || key === 'songItemId') continue;
           const column = columns.find((c) => c.key === key);
           candidates.push({
-            itemId: item.id,
+            itemId: rockId,
             itemTitle: newTitle,
             columnKey: key,
             columnName: column?.name || key,
@@ -1574,7 +1592,7 @@ export function RunsheetTableEditor({
         targets: prev.targets.map((t) => ({
           ...t,
           changes: t.changes.map((c) =>
-            c.itemTitle === itemTitle && c.columnKey === columnKey && c.status !== 'unmatched'
+            c.itemTitle === itemTitle && c.columnKey === columnKey && !isSkippedStatus(c.status)
               ? { ...c, selected: nextSelected }
               : c,
           ),
