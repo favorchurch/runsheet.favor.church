@@ -58,6 +58,7 @@ import { RichTextToolbar } from './RichTextToolbar';
 import { SongSearchDropdown } from './SongSearchDropdown';
 import { SongDetailModal } from './SongDetailModal';
 import { ShareRunsheetModal } from './ShareRunsheetModal';
+import { isMasterTemplateName } from '@/lib/runsheetTemplate';
 import { EventTeamRosterCard, ensureRosterItems } from './EventTeamRosterCard';
 
 function extractCategoryCampus(catName: string): RunsheetCampusCode | null {
@@ -218,6 +219,7 @@ export function RunsheetTableEditor({
   onOptimisticSave,
   onSaveSettled,
 }: RunsheetTableEditorProps) {
+  const isTemplate = isMasterTemplateName(channelName);
   /**
    * A brand-new (or emptied-out) runsheet has nothing to lose, so it starts
    * pre-filled with the template instead of an empty grid — no manual "Reset
@@ -2033,23 +2035,30 @@ export function RunsheetTableEditor({
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
-                <label className="whitespace-nowrap text-[11px] font-semibold text-slate-700" htmlFor="runsheet-start-time">
-                  Start:
-                </label>
-                <input
-                  id="runsheet-start-time"
-                  type="text"
-                  disabled={readOnly}
-                  className="w-20 rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
-                  value={startTime}
-                  onChange={(event) => {
-                    setStartTime(event.target.value);
-                    setIsDirty(true);
-                  }}
-                  placeholder="08:00:00 AM"
-                />
-              </div>
+              {isTemplate && (
+                <span className="rounded-md bg-pink-100 px-2 py-0.5 text-[11px] font-bold text-pink-800">
+                  Master Template
+                </span>
+              )}
+              {!isTemplate && (
+                <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
+                  <label className="whitespace-nowrap text-[11px] font-semibold text-slate-700" htmlFor="runsheet-start-time">
+                    Start:
+                  </label>
+                  <input
+                    id="runsheet-start-time"
+                    type="text"
+                    disabled={readOnly}
+                    className="w-20 rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
+                    value={startTime}
+                    onChange={(event) => {
+                      setStartTime(event.target.value);
+                      setIsDirty(true);
+                    }}
+                    placeholder="08:00:00 AM"
+                  />
+                </div>
+              )}
 
               {!readOnly && (
                 <>
