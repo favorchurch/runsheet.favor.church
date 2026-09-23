@@ -13,6 +13,7 @@ export interface RunsheetChannelOption {
 }
 
 import { extractChannelDate, extractChannelTime, sortRunsheetChannels } from '@/lib/runsheetDate';
+import { isMasterTemplateName } from '@/lib/runsheetTemplate';
 
 function getTimezoneForChannelName(name: string): string {
   switch (extractRunsheetCampus(name)) {
@@ -90,6 +91,10 @@ export async function rockGetAvailableRunsheetChannels(includeArchived = false):
     // only Global Staff / Rock Administration (runsheetCampuses: ['ALL'])
     // bypass it. See rockResolveAccess for how a user's scope is derived.
     available = available.filter((c) => canAccessRunsheetChannel(session?.access?.runsheetCampuses, c.Name));
+
+    // Master templates are opened via "Edit Master Template", never listed —
+    // this also keeps them out of sibling resolution for propagation.
+    available = available.filter((c) => !isMasterTemplateName(c.Name));
 
     const formattedChannels: RunsheetChannelOption[] = available.map((c) => ({
       id: c.Id,
