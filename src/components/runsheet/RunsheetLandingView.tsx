@@ -26,6 +26,8 @@ import {
   runsheetQueryKeys,
 } from './runsheetQueries';
 
+import type { RunsheetCampusCode } from '@/lib/runsheetCampus';
+
 export interface RunsheetLandingViewProps {
   channels: RunsheetChannelOption[];
   isLoading: boolean;
@@ -34,6 +36,9 @@ export interface RunsheetLandingViewProps {
   onToggleShowArchived?: (show: boolean) => void;
   onSelectChannel: (channelId: number) => void;
   onCreateNew?: () => void;
+  onEditTemplate?: (campus: RunsheetCampusCode) => void;
+  /** Campuses whose master template this user may edit. */
+  templateCampuses?: RunsheetCampusCode[];
   onPrefetchChannel?: (channelId: number) => void;
   accessScope?: string;
 }
@@ -179,12 +184,15 @@ export function RunsheetLandingView({
   onToggleShowArchived,
   onSelectChannel,
   onCreateNew,
+  onEditTemplate,
+  templateCampuses = [],
   onPrefetchChannel,
   accessScope = 'anonymous',
 }: RunsheetLandingViewProps) {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCampusFilter, setSelectedCampusFilter] = useState<string>('ALL');
+  const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
 
   // Preload top 5 active runsheets on mount in the background
   useEffect(() => {
@@ -239,17 +247,54 @@ export function RunsheetLandingView({
   return (
     <div className="w-full max-w-6xl mx-auto py-3 sm:py-5 px-1 space-y-3.5 sm:space-y-4">
       {/* Hero Header */}
-      <div>
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/60 text-xs font-semibold text-blue-700 mb-1.5">
-          <HiCalendarDays className="h-3.5 w-3.5" />
-          <span>Service Schedule</span>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/60 text-xs font-semibold text-blue-700 mb-1.5">
+            <HiCalendarDays className="h-3.5 w-3.5" />
+            <span>Service Schedule</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+            Select a Runsheet
+          </h1>
+          <p className="mt-1 text-sm text-slate-600 max-w-xl">
+            Choose an upcoming service schedule to view segment timings, audio/visual cues, and live details.
+          </p>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
-          Select a Runsheet
-        </h1>
-        <p className="mt-1 text-sm text-slate-600 max-w-xl">
-          Choose an upcoming service schedule to view segment timings, audio/visual cues, and live details.
-        </p>
+        {canEdit && onEditTemplate && templateCampuses.length > 0 && (
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              aria-haspopup={templateCampuses.length > 1 ? 'menu' : undefined}
+              aria-expanded={templateCampuses.length > 1 ? templateMenuOpen : undefined}
+              onClick={() => {
+                if (templateCampuses.length === 1) onEditTemplate(templateCampuses[0]);
+                else setTemplateMenuOpen((open) => !open);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-xs hover:bg-slate-50 cursor-pointer"
+            >
+              <HiDocumentText className="h-4 w-4 text-slate-400" />
+              <span>Edit Master Template</span>
+            </button>
+            {templateMenuOpen && templateCampuses.length > 1 && (
+              <div role="menu" className="absolute right-0 z-20 mt-1 w-32 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                {templateCampuses.map((campus) => (
+                  <button
+                    key={campus}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setTemplateMenuOpen(false);
+                      onEditTemplate(campus);
+                    }}
+                    className="block w-full px-3 py-1.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  >
+                    {campus}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Filter & Controls Bar */}

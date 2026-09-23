@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import React, { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from 'react-query';
 import { HiArrowsRightLeft } from 'react-icons/hi2';
+import toast from 'react-hot-toast';
+import { ALL_CAMPUSES, RUNSHEET_CAMPUS_CODES, type RunsheetCampusCode } from '@/lib/runsheetCampus';
 import { canUserEditRunsheet } from '@/lib/permissions';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
 import { extractChannelTime, sortRunsheetChannels } from '@/lib/runsheetDate';
@@ -85,6 +87,10 @@ export function RunsheetManager({
   const router = useRouter();
   const queryClient = useQueryClient();
   const accessScope = getRunsheetAccessScope(user);
+  const userCampuses = user?.access?.runsheetCampuses || [];
+  const templateCampuses: RunsheetCampusCode[] = userCampuses.includes(ALL_CAMPUSES)
+    ? RUNSHEET_CAMPUS_CODES
+    : RUNSHEET_CAMPUS_CODES.filter((code) => userCampuses.includes(code));
   const channelsQuery = useAvailableRunsheetChannels(showArchived, accessScope);
   const detailsQuery = useRunsheetDetails(selectedChannelId, accessScope);
 
@@ -253,19 +259,18 @@ export function RunsheetManager({
     }
   };
 
-  const handleEditTemplate = async () => {
+  const handleEditTemplate = async (campus: RunsheetCampusCode) => {
     try {
       const { rockEnsureRunsheetTemplate } = await import('@/server-actions/rockEnsureRunsheetTemplate');
-      // @ts-expect-error fixed in Task 3/5
-      const res = await rockEnsureRunsheetTemplate();
+      const res = await rockEnsureRunsheetTemplate(campus);
       if (res.success && res.id) {
         handleSelectChannel(res.id);
       } else {
-        alert('Failed to load Master Template: ' + res.error);
+        toast.error(res.error || 'Failed to load the master template.');
       }
     } catch (err) {
-      console.error('Error loading Master Template:', err);
-      alert('Failed to load Master Template.');
+      console.error('Error loading master template:', err);
+      toast.error('Failed to load the master template.');
     }
   };
 
@@ -420,6 +425,7 @@ export function RunsheetManager({
           onSelectChannel={handleSelectChannel}
           onCreateNew={canEdit ? handleToggleCreateForm : undefined}
           onEditTemplate={canEdit ? handleEditTemplate : undefined}
+          templateCampuses={templateCampuses}
           accessScope={accessScope}
         />
       ) : (

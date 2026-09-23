@@ -193,4 +193,30 @@ describe('RunsheetLandingView', () => {
     expect(screen.getByText('MNL')).toBeInTheDocument();
     expect(screen.getByText('MNL Crowne')).toBeInTheDocument();
   });
+
+  it('opens the only campus template directly for a single-campus editor', () => {
+    const onEditTemplate = jest.fn();
+    renderLandingView({ onEditTemplate, templateCampuses: ['BNE'] });
+
+    fireEvent.click(screen.getByRole('button', { name: /edit master template/i }));
+
+    expect(onEditTemplate).toHaveBeenCalledWith('BNE');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('offers a campus choice when the editor spans several campuses', () => {
+    const onEditTemplate = jest.fn();
+    renderLandingView({ onEditTemplate, templateCampuses: ['MNL', 'BNE', 'SEL'] });
+
+    fireEvent.click(screen.getByRole('button', { name: /edit master template/i }));
+    expect(onEditTemplate).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'SEL' }));
+    expect(onEditTemplate).toHaveBeenCalledWith('SEL');
+  });
+
+  it('hides the button when the user has no campus template to edit', () => {
+    renderLandingView({ onEditTemplate: jest.fn(), templateCampuses: [] });
+    expect(screen.queryByRole('button', { name: /edit master template/i })).not.toBeInTheDocument();
+  });
 });
