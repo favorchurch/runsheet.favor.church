@@ -3,12 +3,38 @@
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockPost } from '@/server-actions/internal/rockFetch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
-import { extractRunsheetCampuses } from '@/lib/runsheetCampus';
+import { extractRunsheetCampus, extractRunsheetCampuses } from '@/lib/runsheetCampus';
 import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
 import { rockEnsureRunsheetTemplate } from '@/server-actions/rockEnsureRunsheetTemplate';
+import { buildDefaultTemplateItems } from '@/lib/runsheetTemplate';
+import { SIBLINGKEY_ATTRIBUTE_KEY } from '@/constants/runsheetColumns';
+import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
 import type { RunsheetItemRow } from '@/types/Runsheet';
 
 const RUNSHEET_CONTENT_CHANNEL_TYPE_ID = 13;
+
+/** The campus template's rows as unsaved items, or [] if it can't be used. */
+async function loadCampusTemplateItems(title: string): Promise<RunsheetItemRow[]> {
+  const campus = extractRunsheetCampus(title);
+  if (!campus) return [];
+
+  const template = await rockEnsureRunsheetTemplate(campus);
+  if (!template.success || !template.id) return [];
+
+  const details = await rockGetRunsheetDetails(template.id);
+  if (!details.success || !details.data) return [];
+
+  const stamp = Date.now();
+  return details.data.items.map((row, idx) => ({
+    ...row,
+    id: `new_${idx}_${stamp}`,
+    isNew: true,
+    changedKeys: undefined,
+    order: idx + 1,
+    // A fresh runsheet must not inherit the template's cross-service keys.
+    attributeValues: { ...row.attributeValues, [SIBLINGKEY_ATTRIBUTE_KEY]: '' },
+  }));
+}
 
 export async function rockCreateServiceRunsheet(title: string, contentChannelTypeId: number, categoryId?: number) {
   try {
@@ -60,25 +86,18 @@ export async function rockCreateServiceRunsheet(title: string, contentChannelTyp
       }
     }
 
-    // 3. Automatically populate from the master template
+    // 3. Populate from the campus's master template, falling back to the
+    //    hardcoded default so a new runsheet is never left empty.
     let preparedItems: RunsheetItemRow[] = [];
     try {
-      // @ts-expect-error fixed in Task 3/5
-      const templateRes = await rockEnsureRunsheetTemplate();
-      if (templateRes.success && templateRes.id) {
-        const { rockGetRunsheetDetails } = await import('@/server-actions/rockGetRunsheetDetails');
-        const detailsRes = await rockGetRunsheetDetails(templateRes.id);
-        if (detailsRes.success && detailsRes.data) {
-          preparedItems = detailsRes.data.items.map((row, idx) => ({
-            ...row,
-            id: `new_${idx}_${Date.now()}`,
-            isNew: true,
-            changedKeys: undefined,
-            order: idx + 1,
-          }));
-          await rockBulkSaveRunsheetItems(channelId, preparedItems, []);
-        }
-      }
+      preparedItems = await loadCampusTemplateItems(title);
+    } catch (templateErr) {
+      console.warn('Could not load campus master template, using default:', templateErr);
+    }
+    if (preparedItems.length === 0) preparedItems = buildDefaultTemplateItems();
+
+    try {
+      await rockBulkSaveRunsheetItems(channelId, preparedItems, []);
     } catch (templateErr) {
       console.warn('Could not populate initial template items:', templateErr);
     }
