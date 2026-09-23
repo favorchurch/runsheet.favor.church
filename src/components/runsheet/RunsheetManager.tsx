@@ -253,6 +253,22 @@ export function RunsheetManager({
     }
   };
 
+  const handleEditTemplate = async () => {
+    try {
+      const { rockEnsureRunsheetTemplate } = await import('@/server-actions/rockEnsureRunsheetTemplate');
+      // @ts-expect-error fixed in Task 3/5
+      const res = await rockEnsureRunsheetTemplate();
+      if (res.success && res.id) {
+        handleSelectChannel(res.id);
+      } else {
+        alert('Failed to load Master Template: ' + res.error);
+      }
+    } catch (err) {
+      console.error('Error loading Master Template:', err);
+      alert('Failed to load Master Template.');
+    }
+  };
+
   const handleToggleCreateForm = () => {
     const action: PendingNavigationAction = { type: 'toggleCreateForm' };
     if (isEditorDirty) {
@@ -403,6 +419,7 @@ export function RunsheetManager({
           onToggleShowArchived={(show) => setShowArchived(show)}
           onSelectChannel={handleSelectChannel}
           onCreateNew={canEdit ? handleToggleCreateForm : undefined}
+          onEditTemplate={canEdit ? handleEditTemplate : undefined}
           accessScope={accessScope}
         />
       ) : (

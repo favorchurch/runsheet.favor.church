@@ -1,11 +1,11 @@
 'use server';
 
-import { DEFAULT_RUNSHEET_TEMPLATE } from '@/constants/defaultRunsheetTemplate';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockPost } from '@/server-actions/internal/rockFetch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import { extractRunsheetCampuses } from '@/lib/runsheetCampus';
 import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
+import { rockEnsureRunsheetTemplate } from '@/server-actions/rockEnsureRunsheetTemplate';
 import type { RunsheetItemRow } from '@/types/Runsheet';
 
 const RUNSHEET_CONTENT_CHANNEL_TYPE_ID = 13;
@@ -60,30 +60,25 @@ export async function rockCreateServiceRunsheet(title: string, contentChannelTyp
       }
     }
 
-    // 3. Automatically populate the default runsheet template items
+    // 3. Automatically populate from the master template
     let preparedItems: RunsheetItemRow[] = [];
     try {
-      preparedItems = DEFAULT_RUNSHEET_TEMPLATE.map((row, idx) => ({
-        id: `new_${idx}_${Date.now()}`,
-        isNew: true,
-        title: row.title,
-        duration: row.duration,
-        attributeValues: {
-          ACTIVITYTITLE: row.activityTitle || row.title,
-          DESCRIPTION: row.detail,
-          DETIAL: row.detail,
-        },
-        detail: row.detail,
-        order: idx + 1,
-        anchorPreacher: '',
-        mainInstrument: '',
-        ledLiveScreens: '',
-        overlayBroadcast: '',
-        lighting: '',
-        audio: '',
-      }));
-
-      await rockBulkSaveRunsheetItems(channelId, preparedItems, []);
+      // @ts-expect-error fixed in Task 3/5
+      const templateRes = await rockEnsureRunsheetTemplate();
+      if (templateRes.success && templateRes.id) {
+        const { rockGetRunsheetDetails } = await import('@/server-actions/rockGetRunsheetDetails');
+        const detailsRes = await rockGetRunsheetDetails(templateRes.id);
+        if (detailsRes.success && detailsRes.data) {
+          preparedItems = detailsRes.data.items.map((row, idx) => ({
+            ...row,
+            id: `new_${idx}_${Date.now()}`,
+            isNew: true,
+            changedKeys: undefined,
+            order: idx + 1,
+          }));
+          await rockBulkSaveRunsheetItems(channelId, preparedItems, []);
+        }
+      }
     } catch (templateErr) {
       console.warn('Could not populate initial template items:', templateErr);
     }
