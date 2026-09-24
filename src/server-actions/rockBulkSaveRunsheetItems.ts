@@ -46,6 +46,23 @@ async function fetchChannelItemIds(channelId: number): Promise<Set<number>> {
   );
 }
 
+/**
+ * Of ids missing from this channel, returns those that still exist in Rock
+ * (i.e. belong to another channel). The rest were deleted — by another editor,
+ * or by an earlier save the client is retrying — and are safe to treat as gone.
+ */
+async function fetchForeignItemIds(ids: number[]): Promise<Set<number>> {
+  if (ids.length === 0) return new Set();
+
+  const rawItems = (await rockGet(
+    '/ContentChannelItems',
+    { $filter: ids.map((id) => `Id eq ${id}`).join(' or '), $select: 'Id' },
+    true,
+  )) as Array<{ Id?: number }> | null;
+
+  return new Set((rawItems || []).map((item) => item?.Id).filter((id): id is number => typeof id === 'number'));
+}
+
 /** Reads a channel's type and item attributes straight from Rock. */
 async function resolveChannel(channelId: number): Promise<ResolvedChannel> {
   const channel = (await rockGet(`/ContentChannels/${channelId}`, undefined, true)) as {
@@ -163,19 +180,33 @@ export async function rockBulkSaveRunsheetItems(
         deletedId > 0,
     );
     const itemIdsToDelete = numericDeletedIds.filter((deletedId) => existingItemIds.has(deletedId));
-    const hasInvalidDeletedId = numericDeletedIds.length !== itemIdsToDelete.length;
-    const hasInvalidExistingItem = items.some((item) => {
+    const hasMalformedExistingItem = items.some((item) => {
       const isNewItem = typeof item.id === 'string' || item.isNew;
       // A numeric foreign id marked isNew skips ownership today only because the
       // isNew branch always POSTs with ContentChannelId and never PATCHes that id.
       // Preserve this invariant if the create/patch branch is refactored.
       if (isNewItem) return false;
-      return typeof item.id !== 'number' || !Number.isSafeInteger(item.id) || !existingItemIds.has(item.id);
+      return typeof item.id !== 'number' || !Number.isSafeInteger(item.id);
     });
-
-    if (hasInvalidDeletedId || hasInvalidExistingItem) {
+    if (hasMalformedExistingItem) {
       return { success: false, error: INVALID_ITEM_ERROR };
     }
+
+    // Ids the client still holds that are no longer in this channel. A stale
+    // client (retry after a partial save, undo past a save, or a concurrent
+    // editor's delete) sends these legitimately, so only ids that now live in
+    // another channel are rejected.
+    const missingDeletedIds = numericDeletedIds.filter((deletedId) => !existingItemIds.has(deletedId));
+    const missingItemIds = items
+      .filter((item) => !(typeof item.id === 'string' || item.isNew) && !existingItemIds.has(item.id as number))
+      .map((item) => item.id as number);
+    const foreignItemIds = await fetchForeignItemIds([...new Set([...missingDeletedIds, ...missingItemIds])]);
+    if (foreignItemIds.size > 0) {
+      return { success: false, error: INVALID_ITEM_ERROR };
+    }
+    // Rows deleted from Rock but still shown in the client are recreated in
+    // this channel, so the save matches what the editor sees.
+    const itemIdsToRecreate = new Set(missingItemIds);
 
     // Resolve metadata only after the payload has passed the ownership check.
     // This may self-heal ItemsManuallyOrdered, so it remains after the shared
@@ -216,8 +247,10 @@ export async function rockBulkSaveRunsheetItems(
     // 3. Process all items in parallel with Promise.allSettled to track individual results
     const itemSettledResults = await Promise.allSettled(
       items.map(async (item): Promise<ItemResult> => {
-        const isNewItem = typeof item.id === 'string' || item.isNew;
-        const changedKeys = item.changedKeys; // undefined means full write path
+        const isRecreatedItem = typeof item.id === 'number' && itemIdsToRecreate.has(item.id);
+        const isNewItem = typeof item.id === 'string' || item.isNew || isRecreatedItem;
+        // undefined means full write path; a recreated row has nothing stored yet
+        const changedKeys = isRecreatedItem ? undefined : item.changedKeys;
 
         const richTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
         const plainTitle = htmlToPlainText(richTitle) || 'New Segment';

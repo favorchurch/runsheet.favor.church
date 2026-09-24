@@ -50,12 +50,24 @@ const newItem = {
   attributeValues: {},
 };
 
-function channelReads(channelName: string, items: Array<{ Id: number }> = [{ Id: 7 }]) {
-  return async (url: string) => {
+/**
+ * `items` are the channel's own rows; `foreignItems` exist in Rock under
+ * another channel. Any other id is treated as deleted from Rock.
+ */
+function channelReads(
+  channelName: string,
+  items: Array<{ Id: number }> = [{ Id: 7 }],
+  foreignItems: Array<{ Id: number }> = [],
+) {
+  return async (url: string, params?: any) => {
     if (url.startsWith('/ContentChannels/')) {
       return { Name: channelName, ContentChannelTypeId: 13, ItemsManuallyOrdered: false };
     }
-    if (url === '/ContentChannelItems') return items;
+    if (url === '/ContentChannelItems') {
+      const filter = String(params?.$filter || '');
+      if (filter.startsWith('ContentChannelId eq')) return items;
+      return [...items, ...foreignItems].filter((item) => new RegExp(`\\bId eq ${item.Id}\\b`).test(filter));
+    }
     return [];
   };
 }
@@ -124,7 +136,7 @@ describe('rockBulkSaveRunsheetItems access ordering', () => {
 
   it('rejects item ids from another channel before any Rock write', async () => {
     mockGetRockSession.mockResolvedValue(session('MNL', true));
-    mockRockGet.mockImplementation(channelReads('MNL Service // August 16, 2026 // 10AM', [{ Id: 8 }]));
+    mockRockGet.mockImplementation(channelReads('MNL Service // August 16, 2026 // 10AM', [{ Id: 8 }], [{ Id: 7 }]));
 
     const result = await rockBulkSaveRunsheetItems(42, [existingItem], [8]);
 
@@ -134,13 +146,39 @@ describe('rockBulkSaveRunsheetItems access ordering', () => {
 
   it('rejects a foreign deleted item id without calling rockDelete', async () => {
     mockGetRockSession.mockResolvedValue(session('MNL', true));
-    mockRockGet.mockImplementation(channelReads('MNL Service // August 16, 2026 // 10AM', [{ Id: 7 }]));
+    mockRockGet.mockImplementation(channelReads('MNL Service // August 16, 2026 // 10AM', [{ Id: 7 }], [{ Id: 8 }]));
 
     const result = await rockBulkSaveRunsheetItems(42, [existingItem], [8]);
 
     expect(result.success).toBe(false);
     expect(mockRockDelete).not.toHaveBeenCalled();
     expectNoRockWrites();
+  });
+
+  it('skips a deleted item id that is already gone from Rock', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+    mockRockGet.mockImplementation(channelReads('MNL Service // August 16, 2026 // 10AM', [{ Id: 7 }]));
+
+    const result = await rockBulkSaveRunsheetItems(42, [existingItem], [8]);
+
+    expect(result.success).toBe(true);
+    expect(mockRockDelete).not.toHaveBeenCalled();
+  });
+
+  it('recreates a row that was deleted from Rock but is still in the client', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+    mockRockGet.mockImplementation(channelReads('MNL Service // August 16, 2026 // 10AM', []));
+
+    const result = await rockBulkSaveRunsheetItems(42, [{ ...existingItem, changedKeys: ['order'] }], []);
+
+    expect(result).toEqual({ success: true, results: [{ clientId: 7, rockId: 123, ok: true }] });
+    expect(mockRockPost).toHaveBeenCalledWith(
+      '/ContentChannelItems',
+      expect.objectContaining({ ContentChannelId: 42, Title: 'Existing segment' }),
+    );
+    expect(mockRockPatch).not.toHaveBeenCalledWith('/ContentChannelItems/7', expect.anything());
+    // Recreated rows take the full write path, not the partial changedKeys one.
+    expect(mockRockPost).toHaveBeenCalledWith('/AttributeValues', { AttributeId: 8432, EntityId: 123, Value: '1' });
   });
 
   it('rejects a forged string channel id before treating it as a title or reading Rock', async () => {
