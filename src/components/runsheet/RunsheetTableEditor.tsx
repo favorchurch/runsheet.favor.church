@@ -1470,7 +1470,7 @@ export function RunsheetTableEditor({
             const updatedItem: RunsheetItemRow = { ...item, id: res.rockId, isNew: false };
             baselineRef.current.set(res.rockId, createRowFingerprint(updatedItem));
 
-            if (typeof res.clientId === 'string') {
+            if (res.clientId !== res.rockId) {
               setItems((prev) =>
                 prev.map((it) => (it.id === res.clientId ? { ...it, id: res.rockId!, isNew: false } : it))
               );
@@ -1530,7 +1530,7 @@ export function RunsheetTableEditor({
             const updatedItem: RunsheetItemRow = { ...item, id: res.rockId, isNew: false };
             baselineRef.current.set(res.rockId, createRowFingerprint(updatedItem));
 
-            if (typeof res.clientId === 'string') {
+            if (res.clientId !== res.rockId) {
               setItems((prev) =>
                 prev.map((it) => (it.id === res.clientId ? { ...it, id: res.rockId!, isNew: false } : it))
               );
