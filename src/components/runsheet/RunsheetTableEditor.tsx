@@ -440,6 +440,10 @@ export function RunsheetTableEditor({
   const [propagateTargetRows, setPropagateTargetRows] = useState<Map<number, RunsheetItemRow[]>>(new Map());
   /** itemId -> pre-edit title, for rows renamed in the save that triggered propagation (see handleSave). */
   const propagateOldTitlesRef = React.useRef<Map<number, string>>(new Map());
+  /** Saved rows removed via the row delete button, kept so a save can offer the removal to siblings. */
+  const deletedRowsRef = React.useRef<Map<number, RunsheetItemRow>>(new Map());
+  /** Rows deleted in the save that triggered propagation — still needed to match their counterparts. */
+  const propagateDeletedRowsRef = React.useRef<RunsheetItemRow[]>([]);
 
   // Populate initial baseline for loaded items that exist in Rock
   useEffect(() => {
@@ -1089,6 +1093,8 @@ export function RunsheetTableEditor({
   const handleDeleteRow = (id: number | string) => {
     if (readOnly) return;
     saveSnapshot();
+    const deletedRow = items.find((item) => item.id === id);
+    if (deletedRow && typeof id === 'number') deletedRowsRef.current.set(id, deletedRow);
     setDeletedIds((previous) => [...previous, id]);
     setItems((previous) => previous.filter((item) => item.id !== id));
     setEditingCell(null);
@@ -1359,12 +1365,13 @@ export function RunsheetTableEditor({
       // against the old title so the row pairs up cleanly instead of falling
       // through to "unmatched" (or worse, colliding on a renamed empty slot).
       const oldTitles = propagateOldTitlesRef.current;
-      const matchingSourceRows = processedRows.map((row) => {
+      const matchingSourceRows: RunsheetItemRow[] = processedRows.map((row): RunsheetItemRow => {
         if (typeof row.id !== 'number') return row;
         const oldTitle = oldTitles.get(row.id);
         if (oldTitle === undefined) return row;
         return { ...row, title: oldTitle, attributeValues: { ...row.attributeValues, ACTIVITYTITLE: oldTitle } };
       });
+      matchingSourceRows.push(...propagateDeletedRowsRef.current);
 
       for (const result of batch) {
         if (!result.success || !result.data) continue;
@@ -1482,6 +1489,26 @@ export function RunsheetTableEditor({
         }
       }
       propagateOldTitlesRef.current = oldTitlesForMatching;
+
+      // Only rows removed with the row delete button — a template reset also
+      // fills deletedIds, and offering that would wipe every sibling.
+      const deletedRowsForMatching: RunsheetItemRow[] = [];
+      for (const id of deletedIds) {
+        const row = typeof id === 'number' ? deletedRowsRef.current.get(id) : undefined;
+        if (!row) continue;
+        deletedRowsForMatching.push(row);
+        candidates.push({
+          itemId: id as number,
+          itemTitle: row.attributeValues?.ACTIVITYTITLE || row.title || '',
+          columnKey: 'DELETED_ROW',
+          columnName: 'Removed Segment',
+          newValue: '',
+          previousValue: '',
+          isDeletedRow: true,
+        });
+      }
+      propagateDeletedRowsRef.current = deletedRowsForMatching;
+      deletedRowsRef.current.clear();
 
       (result.results || []).forEach((res) => {
         if (res.ok && res.rockId) {

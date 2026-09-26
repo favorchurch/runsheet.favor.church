@@ -191,4 +191,34 @@ describe('buildPropagationPlan', () => {
     expect(plan.targets[0].changes[0].status).toBe('exists');
     expect(plan.targets[0].changes[0].selected).toBe(false);
   });
+
+  it('offers a deleted row as a removal on a target that still has the matching segment', () => {
+    const source = row(77, 'Favor News');
+    const matchResults = new Map<number, MatchResult>([[2, { matches: [{ sourceRow: source, targetRow: row(40, 'Favor News'), via: 'title' }], backfill: [] }]]);
+
+    const plan = buildPropagationPlan(
+      [{ itemId: 77, itemTitle: 'Favor News', columnKey: 'DELETED_ROW', columnName: 'Removed Segment', newValue: '', previousValue: '', isDeletedRow: true }],
+      matchResults,
+      [target],
+      columns,
+    );
+
+    const change = plan.targets[0].changes[0];
+    expect(change.status).toBe('removed');
+    expect(change.selected).toBe(true);
+    expect(change.targetItemId).toBe(40);
+    expect(change.isDeletedRow).toBe(true);
+  });
+
+  it('skips a deleted row when the target has no matching segment', () => {
+    const plan = buildPropagationPlan(
+      [{ itemId: 77, itemTitle: 'Favor News', columnKey: 'DELETED_ROW', columnName: 'Removed Segment', newValue: '', previousValue: '', isDeletedRow: true }],
+      new Map<number, MatchResult>([[2, { matches: [], backfill: [] }]]),
+      [target],
+      columns,
+    );
+
+    expect(plan.targets[0].changes[0].status).toBe('unmatched');
+    expect(plan.targets[0].changes[0].selected).toBe(false);
+  });
 });

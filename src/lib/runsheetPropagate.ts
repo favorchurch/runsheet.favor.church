@@ -22,9 +22,11 @@ export interface CandidateCellChange {
   isNewRow?: boolean;
   /** The full row data, required if isNewRow is true */
   sourceRow?: RunsheetItemRow;
+  /** Present if this change represents a source row deleted in the save. */
+  isDeletedRow?: boolean;
 }
 
-export type CellStatus = 'clean' | 'diverged' | 'unmatched' | 'added' | 'exists';
+export type CellStatus = 'clean' | 'diverged' | 'unmatched' | 'added' | 'exists' | 'removed';
 
 /** Statuses with nothing to apply — never selectable in the review. */
 export function isSkippedStatus(status: CellStatus): boolean {
@@ -44,6 +46,7 @@ export interface CellChange {
   selected: boolean;
   isNewRow?: boolean;
   sourceRow?: RunsheetItemRow;
+  isDeletedRow?: boolean;
 }
 
 export interface PropagationTarget {
@@ -90,6 +93,26 @@ export function buildPropagationPlan(
           selected: !existing,
           isNewRow: true,
           sourceRow: candidate.sourceRow,
+        });
+        continue;
+      }
+
+      if (candidate.isDeletedRow) {
+        // The deleted row is fed to the matcher alongside the remaining rows,
+        // so its counterpart in each target pairs up by id like any edit.
+        const counterpart = matchResult?.matches.find((m) => m.sourceRow.id === candidate.itemId)?.targetRow;
+        const counterpartId = counterpart && typeof counterpart.id === 'number' ? counterpart.id : null;
+        changes.push({
+          itemTitle: candidate.itemTitle,
+          columnKey: candidate.columnKey,
+          columnName: candidate.columnName,
+          newValue: candidate.newValue,
+          sourcePreviousValue: candidate.previousValue,
+          targetCurrentValue: null,
+          targetItemId: counterpartId,
+          status: counterpartId === null ? 'unmatched' : 'removed',
+          selected: counterpartId !== null,
+          isDeletedRow: true,
         });
         continue;
       }

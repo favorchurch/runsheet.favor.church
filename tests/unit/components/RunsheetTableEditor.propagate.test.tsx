@@ -160,4 +160,53 @@ describe('RunsheetTableEditor propagate bar', () => {
       expect(onSaveSettledMock).toHaveBeenCalledWith(2);
     });
   });
+
+  it('offers a deleted row in review and deletes its counterpart in the sibling on apply', async () => {
+    (rockGetRunsheetDetailsBatch as jest.Mock).mockResolvedValue([
+      {
+        channelId: 2,
+        success: true,
+        data: {
+          channelId: 2,
+          name: 'MNL Crowne // August 16, 2026 // 11:30AM',
+          contentChannelTypeId: 13,
+          columns: [{ id: 1, key: 'NOTES', name: 'Notes' }],
+          items: [
+            { id: 20, title: 'Welcome', order: 1, duration: 5, attributeValues: {} },
+            { id: 21, title: 'Favor News', order: 2, duration: 3, attributeValues: {} },
+          ],
+        },
+      },
+    ]);
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="MNL Crowne // August 16, 2026 // 9AM"
+        initialSubtitle="Sunday Service"
+        contentChannelTypeId={13}
+        columns={[{ id: 1, key: 'NOTES', name: 'Notes' }]}
+        initialItems={[
+          { id: 1, title: 'Welcome', order: 1, duration: 5, attributeValues: {} },
+          { id: 2, title: 'Favor News', order: 2, duration: 3, attributeValues: {} },
+        ]}
+        readOnly={false}
+      />
+    );
+
+    fireEvent.click(screen.getAllByTitle('Delete Row')[1]);
+    fireEvent.click(screen.getByText('Delete Row', { selector: 'button:not([title])' }));
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => expect(screen.getByText(/Review/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByText(/Review/i));
+
+    await waitFor(() => expect(screen.getByText(/Removed Segment: Favor News/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /apply.*change/i }));
+
+    await waitFor(() => {
+      expect(rockBulkSaveRunsheetItems).toHaveBeenCalledWith(2, [], [21], expect.anything());
+    });
+  });
 });

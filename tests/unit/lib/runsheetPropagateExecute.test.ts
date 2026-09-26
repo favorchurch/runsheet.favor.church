@@ -124,4 +124,23 @@ describe('executePropagationPlan', () => {
     expect(typeof saved[0].id).toBe('string');
     expect(outcomes[0]).toMatchObject({ ok: true, appliedCount: 1 });
   });
+
+  it('deletes the matched target row for a selected removal', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    const plan: PropagationPlan = {
+      targets: [{
+        channel: { channelId: 2, name: 'X // Aug 16, 2026 // 11:30AM', time: '11:30AM', preselected: true },
+        changes: [{
+          itemTitle: 'Favor News', columnKey: 'DELETED_ROW', columnName: 'Removed Segment', newValue: '',
+          sourcePreviousValue: '', targetCurrentValue: null, targetItemId: 40, status: 'removed', selected: true,
+          isDeletedRow: true,
+        }],
+      }],
+    };
+
+    const outcomes = await executePropagationPlan(plan, new Map([[2, [targetRow(40, 'Favor News')]]]), []);
+
+    expect(rockBulkSaveRunsheetItems).toHaveBeenCalledWith(2, [], [40], []);
+    expect(outcomes[0]).toMatchObject({ ok: true, appliedCount: 1 });
+  });
 });

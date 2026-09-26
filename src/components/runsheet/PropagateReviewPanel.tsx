@@ -106,10 +106,16 @@ export function PropagateReviewPanel({ plan, onToggleGroup, onApply, onClose, ap
                     className="h-4 w-4 shrink-0 rounded border-slate-300 text-pink-700 focus:ring-pink-600 disabled:opacity-50"
                   />
                   <span className="text-xs font-bold text-slate-900">
-                    {group.columnKey === 'NEW_ROW' ? `Added Segment: ${plainItemTitle}` : `${plainItemTitle} · ${group.columnName}`}
+                    {group.columnKey === 'NEW_ROW'
+                      ? `Added Segment: ${plainItemTitle}`
+                      : group.columnKey === 'DELETED_ROW'
+                        ? `Removed Segment: ${plainItemTitle}`
+                        : `${plainItemTitle} · ${group.columnName}`}
                   </span>
                   <span className="ml-auto max-w-[45%] truncate text-xs font-semibold text-slate-700">
-                    {group.columnKey === 'NEW_ROW' ? 'entire segment' : (htmlToPlainText(group.newValue) || '—')}
+                    {group.columnKey === 'NEW_ROW' || group.columnKey === 'DELETED_ROW'
+                      ? 'entire segment'
+                      : (htmlToPlainText(group.newValue) || '—')}
                   </span>
                 </label>
 
@@ -127,6 +133,11 @@ export function PropagateReviewPanel({ plan, onToggleGroup, onApply, onClose, ap
                         {change.status === 'exists' && (
                           <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
                             already has this segment — skipped
+                          </span>
+                        )}
+                        {change.status === 'removed' && (
+                          <span className="shrink-0 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-800">
+                            will remove segment
                           </span>
                         )}
                         {change.status === 'added' && (
