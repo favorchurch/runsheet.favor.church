@@ -36,7 +36,7 @@ async function loadCampusTemplateItems(title: string): Promise<RunsheetItemRow[]
   }));
 }
 
-export async function rockCreateServiceRunsheet(title: string, contentChannelTypeId: number, categoryId?: number) {
+export async function rockCreateServiceRunsheet(title: string, contentChannelTypeId: number, _categoryId?: number) {
   try {
     const session = await getRockSession();
 
