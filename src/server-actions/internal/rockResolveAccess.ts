@@ -244,7 +244,7 @@ async function fetchRosteredOccurrences(personIds: number[]): Promise<{
   if (aliasIds.length === 0) return empty;
 
   const rawAttendances = ((await rawRockGet('/Attendances', {
-    $filter: `(${orFilter('PersonAliasId', aliasIds)}) and ScheduledToAttend eq true and StartDateTime ge datetime'${manilaDateDaysAgo(7)}T00:00:00'`,
+    $filter: `(${orFilter('PersonAliasId', aliasIds)}) and (ScheduledToAttend eq true or RequestedToAttend eq true) and RSVP ne '2' and StartDateTime ge datetime'${manilaDateDaysAgo(7)}T00:00:00'`,
     $select: 'OccurrenceId,CampusId,StartDateTime',
     $top: 500,
   })) || []) as any[];

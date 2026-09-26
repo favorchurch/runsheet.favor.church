@@ -453,5 +453,12 @@ describe('rockResolveAccess', () => {
     expect(result.rolesMap.rosteredViewer).toEqual(['MNL:2099-09-27:15:00:00']);
     expect(result.rolesMap.growViewer).toEqual(['752:2099-09-27']);
     expect(result.rolesMap.viewer).toBeUndefined();
+
+    const attendanceCalls = mockFetch.mock.calls
+      .map(([input]) => decodeURIComponent(String(input).replace(/\+/g, ' ')))
+      .filter((url) => url.includes('/Attendances'));
+    expect(attendanceCalls.length).toBe(1);
+    expect(attendanceCalls[0]).toContain('(ScheduledToAttend eq true or RequestedToAttend eq true)');
+    expect(attendanceCalls[0]).toContain("RSVP ne '2'");
   });
 });
