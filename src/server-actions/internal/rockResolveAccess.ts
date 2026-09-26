@@ -12,8 +12,9 @@ import { CAMPUS_MINISTRY_TEAM_ROOT_IDS, CAMPUS_ORG_UNIT_ROOT_IDS } from '@/lib/r
 import { readRockObjectCache, writeRockObjectCache } from '@/server-actions/internal/rockObjectCache';
 import { AuthAccess, AuthContact, AuthRolesMap } from '@/types/AuthUser';
 import { resolveGrowAccess } from '@/lib/growAccessPolicy';
-import { GROW_EDITOR_ROLE, GROW_VIEWER_ROLE } from '@/lib/permissions';
+import { GROW_EDITOR_ROLE, GROW_VIEWER_ROLE, ROSTERED_VIEWER_ROLE } from '@/lib/permissions';
 import { GROW_TEAM_GROUP_ID } from '@/lib/growRunsheets';
+import { buildRosteredViewerKeys, type RosteredAttendance } from '@/lib/rosterAccess';
 import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
 
 const ROCK_RECORD_STATUS_ACTIVE = 3;
@@ -224,32 +225,51 @@ function manilaDateDaysAgo(days: number): string {
 
 const orFilter = (field: string, ids: number[]) => ids.map((id) => `${field} eq ${id}`).join(' or ');
 
-/** Scheduler assignments (any rostering group) from 7 days ago onward. */
-async function fetchRosteredOccurrences(personIds: number[]): Promise<Array<{ scheduleId: number; occurrenceDate: string }>> {
+/**
+ * Scheduler assignments (any rostering group) from 7 days ago onward: the
+ * Grow occurrences for growViewer, and each attendance's campus/start time
+ * (with its schedule) for rosteredViewer.
+ */
+async function fetchRosteredOccurrences(personIds: number[]): Promise<{
+  grow: Array<{ scheduleId: number; occurrenceDate: string }>;
+  attendances: RosteredAttendance[];
+}> {
+  const empty = { grow: [], attendances: [] };
   const aliases = (await rawRockGet('/PersonAlias', {
     $filter: orFilter('PersonId', personIds),
     $select: 'Id',
     $top: 100,
   })) || [];
   const aliasIds = (aliases as any[]).map((a) => Number(a.Id)).filter((id) => id > 0);
-  if (aliasIds.length === 0) return [];
+  if (aliasIds.length === 0) return empty;
 
-  const attendances = (await rawRockGet('/Attendances', {
+  const rawAttendances = ((await rawRockGet('/Attendances', {
     $filter: `(${orFilter('PersonAliasId', aliasIds)}) and ScheduledToAttend eq true and StartDateTime ge datetime'${manilaDateDaysAgo(7)}T00:00:00'`,
-    $select: 'OccurrenceId',
+    $select: 'OccurrenceId,CampusId,StartDateTime',
     $top: 500,
-  })) || [];
-  const occurrenceIds = [...new Set((attendances as any[]).map((a) => Number(a.OccurrenceId)).filter((id) => id > 0))];
-  if (occurrenceIds.length === 0) return [];
+  })) || []) as any[];
+  const occurrenceIds = [...new Set(rawAttendances.map((a) => Number(a.OccurrenceId)).filter((id) => id > 0))];
+  if (occurrenceIds.length === 0) return empty;
 
-  const occurrences = (await rawRockGet('/AttendanceOccurrences', {
+  const occurrences = ((await rawRockGet('/AttendanceOccurrences', {
     $filter: orFilter('Id', occurrenceIds),
     $select: 'Id,ScheduleId,OccurrenceDate',
     $top: 500,
-  })) || [];
-  return (occurrences as any[])
-    .filter((o) => o.ScheduleId != null && o.OccurrenceDate)
-    .map((o) => ({ scheduleId: Number(o.ScheduleId), occurrenceDate: String(o.OccurrenceDate) }));
+  })) || []) as any[];
+  const scheduleByOccurrence = new Map<number, number>(
+    occurrences.filter((o) => o.ScheduleId != null).map((o) => [Number(o.Id), Number(o.ScheduleId)]),
+  );
+
+  return {
+    grow: occurrences
+      .filter((o) => o.ScheduleId != null && o.OccurrenceDate)
+      .map((o) => ({ scheduleId: Number(o.ScheduleId), occurrenceDate: String(o.OccurrenceDate) })),
+    attendances: rawAttendances.map((a) => ({
+      campusId: a.CampusId != null ? Number(a.CampusId) : null,
+      startDateTime: String(a.StartDateTime || ''),
+      scheduleId: scheduleByOccurrence.get(Number(a.OccurrenceId)) ?? null,
+    })),
+  };
 }
 
 export interface ResolveResult {
@@ -440,28 +460,33 @@ export async function rockResolveAccess(personIds: number[], fallbackEmail?: str
     if (policy.viewerGroupIds.length > 0) rolesMap.viewer = policy.viewerGroupIds;
     for (const campus of policy.runsheetCampuses) runsheetCampuses.add(campus);
 
-    // Grow Course access only ever adds to the roles above. Any Rock
-    // failure here grants no Grow access rather than failing the session.
+    // Grow Course and rostered-only access only ever add to the roles
+    // above. Any Rock failure here grants neither, rather than failing the
+    // session.
     try {
       const inGrowTeam = memberships.some((m: any) => Number(m.GroupId) === GROW_TEAM_GROUP_ID);
-      const [roleNamesById, rostered, growSchedules] = await Promise.all([
+      const [roleNamesById, roster, growSchedules] = await Promise.all([
         inGrowTeam ? fetchGroupType23RoleNames() : Promise.resolve(new Map<number, string>()),
         fetchRosteredOccurrences(membershipPersonIds),
         fetchGrowSchedules(),
       ]);
+      const growScheduleIds = new Set(growSchedules.map((s) => s.id));
       const grow = resolveGrowAccess({
         memberships: memberships.map((m: any) => ({
           groupId: Number(m.GroupId ?? m.groupId),
           groupRoleId: Number(m.GroupRoleId ?? m.groupRoleId),
         })),
         roleNamesById,
-        rostered,
-        growScheduleIds: new Set(growSchedules.map((s) => s.id)),
+        rostered: roster.grow,
+        growScheduleIds,
       });
       if (grow.growEditor) rolesMap[GROW_EDITOR_ROLE] = [String(GROW_TEAM_GROUP_ID)];
       if (grow.growViewer.length > 0) rolesMap[GROW_VIEWER_ROLE] = grow.growViewer;
+
+      const rosteredKeys = buildRosteredViewerKeys(roster.attendances, growScheduleIds);
+      if (rosteredKeys.length > 0) rolesMap[ROSTERED_VIEWER_ROLE] = rosteredKeys;
     } catch (error) {
-      console.warn('[runsheet-access] Grow access lookup failed; granting no Grow access', error);
+      console.warn('[runsheet-access] roster/Grow access lookup failed; granting no roster or Grow access', error);
     }
   }
 
