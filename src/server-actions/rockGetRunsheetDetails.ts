@@ -4,7 +4,9 @@ import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetColumnMetadata } from '@/types/Runsheet';
 import { isPersonColumn, HIDDEN_ATTRIBUTE_KEYS } from '@/constants/runsheetColumns';
-import { canAccessRunsheetChannel } from '@/lib/runsheetCampus';
+import { hasGrowRole } from '@/lib/permissions';
+import { canViewRunsheetChannel } from '@/lib/runsheetChannelAccess';
+import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 
 /** Rock's `ContentChannelItem` entity type, used to find item attributes. */
@@ -184,7 +186,8 @@ export async function rockGetRunsheetDetails(channelId: number) {
 
     // Defense in depth: the channel list already scopes by campus, but this
     // blocks a direct/shared link to a channel outside the user's campus too.
-    if (!canAccessRunsheetChannel(session.access?.runsheetCampuses, channel.Name)) {
+    const growSchedules = hasGrowRole(session) ? await fetchGrowSchedules() : [];
+    if (!canViewRunsheetChannel(session, channel.Name, growSchedules)) {
       return { success: false, error: 'You do not have access to this runsheet.' };
     }
 

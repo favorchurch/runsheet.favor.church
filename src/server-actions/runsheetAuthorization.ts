@@ -1,7 +1,8 @@
 import 'server-only';
 
-import { canUserAccessRunsheet, canUserEditRunsheet } from '@/lib/permissions';
-import { canAccessRunsheetChannel } from '@/lib/runsheetCampus';
+import { canUserAccessRunsheet, canUserEditRunsheet, hasGrowRole } from '@/lib/permissions';
+import { canEditRunsheetChannel } from '@/lib/runsheetChannelAccess';
+import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import type { AuthAccess, AuthRolesMap } from '@/types/AuthUser';
 
@@ -58,11 +59,20 @@ export async function assertRunsheetEditAccess(
     const channelName =
       typeof channelIdOrTitle === 'number' ? await resolveChannelName(channelIdOrTitle) : channelIdOrTitle.trim();
 
-    if (!channelName || !canAccessRunsheetChannel(session?.access?.runsheetCampuses, channelName)) {
-      return { allowed: false, error: CAMPUS_DENIAL };
+    if (!channelName) return { allowed: false, error: CAMPUS_DENIAL };
+
+    // Campus editors pass without the Grow schedule lookup.
+    if (canEditRunsheetChannel(session, channelName, [])) {
+      return { allowed: true, channelName };
     }
 
-    return { allowed: true, channelName };
+    // Grow editors are checked against the Grow Courses schedules only when
+    // they hold a Grow role, so ordinary sessions make no extra Rock call.
+    if (hasGrowRole(session) && canEditRunsheetChannel(session, channelName, await fetchGrowSchedules())) {
+      return { allowed: true, channelName };
+    }
+
+    return { allowed: false, error: CAMPUS_DENIAL };
   } catch {
     return { allowed: false, error: CAMPUS_DENIAL };
   }

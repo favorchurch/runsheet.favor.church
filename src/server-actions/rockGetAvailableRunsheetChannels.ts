@@ -2,8 +2,10 @@
 
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
-import { canUserEditRunsheet } from '@/lib/permissions';
-import { canAccessRunsheetChannel, extractRunsheetCampus } from '@/lib/runsheetCampus';
+import { canUserEditRunsheet, hasGrowRole } from '@/lib/permissions';
+import { extractRunsheetCampus } from '@/lib/runsheetCampus';
+import { canViewRunsheetChannel } from '@/lib/runsheetChannelAccess';
+import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 
 export interface RunsheetChannelOption {
@@ -87,10 +89,10 @@ export async function rockGetAvailableRunsheetChannels(includeArchived = false):
       available = available.filter((c) => !isChannelPast(c.Name));
     }
 
-    // Campus isolation applies to everyone (editors and viewers alike) —
-    // only Global Staff / Rock Administration (runsheetCampuses: ['ALL'])
-    // bypass it. See rockResolveAccess for how a user's scope is derived.
-    available = available.filter((c) => canAccessRunsheetChannel(session?.access?.runsheetCampuses, c.Name));
+    // Campus isolation applies to everyone; Grow roles add Grow Course
+    // channels on top (see lib/runsheetChannelAccess).
+    const growSchedules = hasGrowRole(session) ? await fetchGrowSchedules() : [];
+    available = available.filter((c) => canViewRunsheetChannel(session, c.Name, growSchedules));
 
     // Master templates are opened via "Edit Master Template", never listed —
     // this also keeps them out of sibling resolution for propagation.
