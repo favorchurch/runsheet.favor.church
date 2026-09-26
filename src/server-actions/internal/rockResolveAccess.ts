@@ -11,6 +11,10 @@ import {
 import { CAMPUS_MINISTRY_TEAM_ROOT_IDS, CAMPUS_ORG_UNIT_ROOT_IDS } from '@/lib/runsheetAccessRoots';
 import { readRockObjectCache, writeRockObjectCache } from '@/server-actions/internal/rockObjectCache';
 import { AuthAccess, AuthContact, AuthRolesMap } from '@/types/AuthUser';
+import { resolveGrowAccess } from '@/lib/growAccessPolicy';
+import { GROW_EDITOR_ROLE, GROW_VIEWER_ROLE } from '@/lib/permissions';
+import { GROW_TEAM_GROUP_ID } from '@/lib/growRunsheets';
+import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
 
 const ROCK_RECORD_STATUS_ACTIVE = 3;
 
@@ -202,6 +206,52 @@ async function fetchGroupType23LeaderRoleIds(): Promise<{ roleIds: Set<number>; 
   }
 }
 
+async function fetchGroupType23RoleNames(): Promise<Map<number, string>> {
+  const roles = (await rawRockGet('/GroupTypeRoles', {
+    $filter: 'GroupTypeId eq 23',
+    $select: 'Id,Name',
+    $top: 100,
+  })) || [];
+  return new Map((roles as any[]).map((r) => [Number(r.Id), String(r.Name || '')]));
+}
+
+function manilaDateDaysAgo(days: number): string {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
+  const d = new Date(`${today}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+const orFilter = (field: string, ids: number[]) => ids.map((id) => `${field} eq ${id}`).join(' or ');
+
+/** Scheduler assignments (any rostering group) from 7 days ago onward. */
+async function fetchRosteredOccurrences(personIds: number[]): Promise<Array<{ scheduleId: number; occurrenceDate: string }>> {
+  const aliases = (await rawRockGet('/PersonAlias', {
+    $filter: orFilter('PersonId', personIds),
+    $select: 'Id',
+    $top: 100,
+  })) || [];
+  const aliasIds = (aliases as any[]).map((a) => Number(a.Id)).filter((id) => id > 0);
+  if (aliasIds.length === 0) return [];
+
+  const attendances = (await rawRockGet('/Attendances', {
+    $filter: `(${orFilter('PersonAliasId', aliasIds)}) and ScheduledToAttend eq true and StartDateTime ge datetime'${manilaDateDaysAgo(7)}T00:00:00'`,
+    $select: 'OccurrenceId',
+    $top: 500,
+  })) || [];
+  const occurrenceIds = [...new Set((attendances as any[]).map((a) => Number(a.OccurrenceId)).filter((id) => id > 0))];
+  if (occurrenceIds.length === 0) return [];
+
+  const occurrences = (await rawRockGet('/AttendanceOccurrences', {
+    $filter: orFilter('Id', occurrenceIds),
+    $select: 'Id,ScheduleId,OccurrenceDate',
+    $top: 500,
+  })) || [];
+  return (occurrences as any[])
+    .filter((o) => o.ScheduleId != null && o.OccurrenceDate)
+    .map((o) => ({ scheduleId: Number(o.ScheduleId), occurrenceDate: String(o.OccurrenceDate) }));
+}
+
 export interface ResolveResult {
   contact: AuthContact;
   rolesMap: AuthRolesMap;
@@ -389,6 +439,30 @@ export async function rockResolveAccess(personIds: number[], fallbackEmail?: str
     if (policy.editorGroupIds.length > 0) rolesMap.editor = policy.editorGroupIds;
     if (policy.viewerGroupIds.length > 0) rolesMap.viewer = policy.viewerGroupIds;
     for (const campus of policy.runsheetCampuses) runsheetCampuses.add(campus);
+
+    // Grow Course access only ever adds to the roles above. Any Rock
+    // failure here grants no Grow access rather than failing the session.
+    try {
+      const inGrowTeam = memberships.some((m: any) => Number(m.GroupId) === GROW_TEAM_GROUP_ID);
+      const [roleNamesById, rostered, growSchedules] = await Promise.all([
+        inGrowTeam ? fetchGroupType23RoleNames() : Promise.resolve(new Map<number, string>()),
+        fetchRosteredOccurrences(membershipPersonIds),
+        fetchGrowSchedules(),
+      ]);
+      const grow = resolveGrowAccess({
+        memberships: memberships.map((m: any) => ({
+          groupId: Number(m.GroupId ?? m.groupId),
+          groupRoleId: Number(m.GroupRoleId ?? m.groupRoleId),
+        })),
+        roleNamesById,
+        rostered,
+        growScheduleIds: new Set(growSchedules.map((s) => s.id)),
+      });
+      if (grow.growEditor) rolesMap[GROW_EDITOR_ROLE] = [String(GROW_TEAM_GROUP_ID)];
+      if (grow.growViewer.length > 0) rolesMap[GROW_VIEWER_ROLE] = grow.growViewer;
+    } catch (error) {
+      console.warn('[runsheet-access] Grow access lookup failed; granting no Grow access', error);
+    }
   }
 
   // Deduplicate group IDs

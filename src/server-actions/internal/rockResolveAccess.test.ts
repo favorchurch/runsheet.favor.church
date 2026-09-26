@@ -6,6 +6,9 @@ jest.mock('./rockObjectCache', () => ({
   readRockObjectCache: jest.fn(async () => ({ hit: false })),
   writeRockObjectCache: jest.fn(async () => undefined),
 }));
+jest.mock('@/auth0-hooks/server/assertAuthenticated', () => ({
+  assertAuthenticated: jest.fn(async () => undefined),
+}));
 
 const mockReadRockObjectCache = jest.mocked(readRockObjectCache);
 const mockWriteRockObjectCache = jest.mocked(writeRockObjectCache);
