@@ -111,7 +111,7 @@ export function expandIcalOccurrences(
 
   const byDate = new Map<string, ScheduleOccurrence>();
   for (const occ of all) {
-    if (occ.date < fromDate || occ.date > lastDate) continue;
+    if (occ.date < fromDate || (endFromEffective && occ.date > endFromEffective)) continue;
     if (!byDate.has(occ.date)) byDate.set(occ.date, occ);
   }
   return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(0, limit);
