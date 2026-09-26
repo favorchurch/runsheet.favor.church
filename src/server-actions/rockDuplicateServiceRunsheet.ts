@@ -58,17 +58,9 @@ export async function rockDuplicateServiceRunsheet(
       throw new Error('Failed to retrieve new ContentChannel ID from Rock RMS response');
     }
 
-    // 3. Associate category if specified
-    if (categoryId) {
-      try {
-        await rockPost('/Categories/CategoryItem', {
-          CategoryId: categoryId,
-          EntityId: newChannelId,
-        });
-      } catch (catErr) {
-        console.warn('Could not attach category to duplicated ContentChannel:', catErr);
-      }
-    }
+    // 3. Category note: Rock RMS does not support attaching categories to
+    //    ContentChannels via REST API (runsheets are grouped by title convention).
+    //    We retain the categoryId parameter for caller signature compatibility.
 
     // 4. Clone all items into the new runsheet channel
     const preparedItems: RunsheetItemRow[] = itemsToDuplicate.map((row, idx) => ({

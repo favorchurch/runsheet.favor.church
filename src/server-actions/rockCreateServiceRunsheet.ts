@@ -74,17 +74,9 @@ export async function rockCreateServiceRunsheet(title: string, contentChannelTyp
       throw new Error('Failed to retrieve new ContentChannel ID from Rock RMS response');
     }
 
-    // 2. If a category was selected, associate it with the created ContentChannel
-    if (categoryId) {
-      try {
-        await rockPost(`/Categories/CategoryItem`, {
-          CategoryId: categoryId,
-          EntityId: channelId,
-        });
-      } catch (catErr) {
-        console.warn('Could not attach category to ContentChannel:', catErr);
-      }
-    }
+    // 2. Category note: Rock RMS does not support attaching categories to
+    //    ContentChannels via REST API (runsheets are grouped by title convention).
+    //    We retain the categoryId parameter for caller signature compatibility.
 
     // 3. Populate from the campus's master template, falling back to the
     //    hardcoded default so a new runsheet is never left empty.
