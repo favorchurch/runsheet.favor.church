@@ -26,10 +26,7 @@ Example topic: Schedule 337, "MNL Grow - Spiritual Discipline".
 
 Existing rules are unchanged. This includes the blanket view access every MNL Ministry Team member already has to MNL runsheets, which 19108 members keep. Grow rules only add access, and only for Grow runsheets.
 
-A **Grow runsheet** is a content channel that meets both conditions:
-
-- It is attached to category 338.
-- Its title matches `<Grow schedule name> // <Month D, YYYY> // <time>`, where `<Grow schedule name>` is the name of an active schedule in category 483.
+A **Grow runsheet** is a content channel whose title matches `<Grow schedule name> // <Month D, YYYY> // <time>`, where `<Grow schedule name>` is the name of an active schedule in category 483. The title is the only check. Rock returns no categories for existing runsheet channels, so category 338 membership is not checked, although new Grow runsheets are still attached to 338.
 
 The access resolver adds a `growAccess` block to the session:
 
@@ -41,7 +38,9 @@ growAccess: {
 ```
 
 - **Grow editor**: an active member of 19108 whose GroupTypeRole name is `Overall Head` or `Unit Head`, matched case-insensitively by name rather than by hard-coded ID. A Grow editor can create, edit, duplicate and delete Grow runsheets. This grant covers no other runsheets.
-- **Grow viewer**: a person with a Group Scheduler attendance (`ScheduledToAttend` or confirmed) on a schedule in category 483. The window runs from 7 days ago onward. A Grow viewer can view only the Grow runsheets whose schedule and date match one of their `rosteredOccurrences`.
+- **Grow viewer**: a person with an `Attendance` where `ScheduledToAttend eq true` and `StartDateTime` is 7 days ago or later, whose `AttendanceOccurrence.ScheduleId` is a category 483 schedule. The rostering group does not matter: MNL Worship Team (19095) and other teams roster onto Grow schedules too. A Grow viewer can view only the Grow runsheets whose schedule and date match one of their `rosteredOccurrences`.
+- Rock role IDs for reference (group type 23): Overall Head = 20, Unit Head = 55. Matching is still by name.
+- The session carries these as `rolesMap.growEditor = ['19108']` and `rolesMap.growViewer = ['<scheduleId>:<YYYY-MM-DD>', ...]`, so the existing session cache and access-scope key pick them up with no type changes.
 - A person who has Grow access and no other access sees only the Grow runsheets that access allows. The login gate treats `growAccess.canEdit || rosteredOccurrences.length > 0` as having access.
 - The server enforces every rule:
   - `runsheetAuthorization`: edit, create, delete and duplicate.
@@ -78,16 +77,14 @@ Every Grow title must contain the `MNL` campus marker. If a 483 schedule's name 
 
 ## 4. List filter
 
-A pill filter sits above the runsheet list: **All · Sunday · Youth · Grow · Other**.
+A pill filter sits above the runsheet list: **All · Sunday · Youth · Grow · Other**. Existing runsheet channels have no Rock categories, so each runsheet's group comes from its title (`lib/runsheetKind.ts`):
 
-- The grouping comes from each channel's content channel category:
-  - 336, 337, 339, 340, 342 and 343: Sunday
-  - 341 and 344: Youth
-  - 338: Grow
-  - Anything else: Other
-- The mapping lives in a small constants module.
-- Only groups that contain at least one visible runsheet are shown.
-- The selected pill is stored with `userPreferences`.
+- **Grow**: the title contains the word `Grow`.
+- **Youth**: the title contains `Youth` or the word `FY`.
+- **Sunday**: the title's date falls on a Sunday.
+- **Other**: anything else.
+
+Only groups that contain at least one visible runsheet are shown. The selected pill is stored in `localStorage` through `userPreferences`.
 
 ## 5. Error handling
 
