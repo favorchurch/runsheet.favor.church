@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { getRockContentChannelOptions, ContentChannelCategoryOption } from '@/server-actions/getRockContentChannelOptions';
 import { rockGetScheduleOptions, ScheduleOption } from '@/server-actions/rockGetScheduleOptions';
 import { rockCreateServiceRunsheet } from '@/server-actions/rockCreateServiceRunsheet';
+import { buildGrowRunsheetTitle, GROW_CONTENT_CHANNEL_CATEGORY_ID } from '@/lib/growRunsheets';
 import toast from 'react-hot-toast';
 
 function getNextSunday() {
@@ -68,11 +69,12 @@ function extractCategoryCampus(catName: string): RunsheetCampusCode | null {
 
 interface CreateRunsheetFormProps {
   runsheetCampuses?: string[];
+  growOnly?: boolean;
   onCreated?: (channelId: number, title: string, createdData?: RunsheetDetails) => void;
   onCancel?: () => void;
 }
 
-export function CreateRunsheetForm({ runsheetCampuses, onCreated, onCancel }: CreateRunsheetFormProps) {
+export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCancel }: CreateRunsheetFormProps) {
   const [categories, setCategories] = useState<ContentChannelCategoryOption[]>([]);
   const [schedules, setSchedules] = useState<ScheduleOption[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(true);
@@ -113,6 +115,11 @@ export function CreateRunsheetForm({ runsheetCampuses, onCreated, onCancel }: Cr
               const catCampus = extractCategoryCampus(cat.name);
               return catCampus === null || allowed.includes(catCampus);
             });
+          }
+
+          // A Grow-only editor may create Grow Class runsheets only.
+          if (growOnly) {
+            filteredCats = filteredCats.filter((cat) => cat.id === GROW_CONTENT_CHANNEL_CATEGORY_ID);
           }
 
           setCategories(filteredCats);
@@ -173,9 +180,21 @@ export function CreateRunsheetForm({ runsheetCampuses, onCreated, onCancel }: Cr
     };
   }, [selectedCategoryId, date]);
 
+  // Grow topics carry their next occurrence; jump the date to it.
+  useEffect(() => {
+    if (selectedCategoryId !== GROW_CONTENT_CHANNEL_CATEGORY_ID) return;
+    const next = schedules.find((s) => s.name === session)?.nextDate;
+    if (next && next !== date) setDate(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, schedules, selectedCategoryId]);
+
   useEffect(() => {
     const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
     const selectedSchedule = schedules.find((s) => s.name === session);
+    if (selectedCategoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID && selectedSchedule) {
+      setTitle(buildGrowRunsheetTitle(selectedSchedule.name, date, selectedSchedule.timeLabel));
+      return;
+    }
     const autoTitle = generateRunsheetTitle(
       session,
       date,

@@ -8,7 +8,7 @@ import { useQueryClient } from 'react-query';
 import { HiArrowsRightLeft } from 'react-icons/hi2';
 import toast from 'react-hot-toast';
 import { ALL_CAMPUSES, RUNSHEET_CAMPUS_CODES, type RunsheetCampusCode } from '@/lib/runsheetCampus';
-import { canUserEditRunsheet } from '@/lib/permissions';
+import { canUserEditRunsheet, hasFullEditorRole } from '@/lib/permissions';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
 import { extractChannelTime, sortRunsheetChannels } from '@/lib/runsheetDate';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
@@ -510,6 +510,7 @@ export function RunsheetManager({
             <div className="mx-auto max-w-lg">
               <CreateRunsheetForm
                 runsheetCampuses={user?.access?.runsheetCampuses}
+                growOnly={!hasFullEditorRole(user)}
                 onCreated={handleRunsheetCreated}
                 onCancel={handleToggleCreateForm}
               />
