@@ -22,4 +22,10 @@ describe('runsheet access permissions', () => {
     expect(canUserAccessRunsheet(user)).toBe(true);
     expect(canUserEditRunsheet(user)).toBe(false);
   });
+
+  it('lets a rostered volunteer access runsheets without editing', () => {
+    const user = { rolesMap: { rosteredViewer: ['MNL:2026-09-27:15:00:00'] } };
+    expect(canUserAccessRunsheet(user)).toBe(true);
+    expect(canUserEditRunsheet(user)).toBe(false);
+  });
 });

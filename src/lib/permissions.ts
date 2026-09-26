@@ -8,6 +8,8 @@ interface HasRolesMap {
 export const GROW_EDITOR_ROLE = 'growEditor';
 /** Rostered Grow volunteers: values are `scheduleId:YYYY-MM-DD` occurrence keys. */
 export const GROW_VIEWER_ROLE = 'growViewer';
+/** Rostered volunteers: values are `<campus>:<YYYY-MM-DD>:<HH:MM:SS>` roster keys. */
+export const ROSTERED_VIEWER_ROLE = 'rosteredViewer';
 
 function hasRole(user: HasRolesMap | AuthUser | null | undefined, role: string): boolean {
   return Boolean(user?.rolesMap?.[role]?.length);
@@ -35,5 +37,10 @@ export function canUserEditRunsheet(user?: HasRolesMap | AuthUser | null): boole
  * If user has no assigned roles/permissions, returns false so they can be gated.
  */
 export function canUserAccessRunsheet(user?: HasRolesMap | AuthUser | null): boolean {
-  return canUserEditRunsheet(user) || hasRole(user, 'viewer') || hasRole(user, GROW_VIEWER_ROLE);
+  return (
+    canUserEditRunsheet(user) ||
+    hasRole(user, 'viewer') ||
+    hasRole(user, GROW_VIEWER_ROLE) ||
+    hasRole(user, ROSTERED_VIEWER_ROLE)
+  );
 }
