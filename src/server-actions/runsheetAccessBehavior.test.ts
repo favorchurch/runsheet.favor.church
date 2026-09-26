@@ -397,4 +397,55 @@ describe('server-action access enforcement', () => {
       expectNoRockWrites();
     });
   });
+
+  describe('rostered-only access', () => {
+    const channels = [
+      { Id: 931, Name: 'MNL Crowne // December 26, 2099 // 3PM' },
+      { Id: 932, Name: 'MNL Crowne // December 26, 2099 // 5PM' },
+      { Id: 933, Name: 'MNL Grow - Build x FDNA // December 26, 2099 // 3PM' },
+    ];
+
+    function routeRockGet() {
+      mockRockGet.mockImplementation((async (url: string) => {
+        if (url === '/ContentChannels') return channels;
+        const byId = channels.find((c) => url === `/ContentChannels/${c.Id}`);
+        if (byId) return { ...byId, ContentChannelTypeId: 13 };
+        return [];
+      }) as any);
+    }
+
+    const rostered = {
+      rolesMap: { rosteredViewer: ['MNL:2099-12-26:15:00:00'] },
+      access: { runsheetCampuses: [] },
+    } as any;
+
+    it('lists only the rostered service', async () => {
+      routeRockGet();
+      mockGetRockSession.mockResolvedValue(rostered);
+      const res = await rockGetAvailableRunsheetChannels();
+      expect(res.channels.map((c) => c.id)).toEqual([931]);
+    });
+
+    it('opens the rostered runsheet and refuses the next service', async () => {
+      routeRockGet();
+      mockGetRockSession.mockResolvedValue(rostered);
+      expect((await rockGetRunsheetDetails(932)).success).toBe(false);
+    });
+
+    it('refuses edits from a rostered volunteer', async () => {
+      routeRockGet();
+      mockGetRockSession.mockResolvedValue(rostered);
+      const res = await rockDeleteServiceRunsheet(931);
+      expect(res.success).toBe(false);
+      expectNoRockWrites();
+    });
+
+    it('refuses edits from an Events Team viewer', async () => {
+      routeRockGet();
+      mockGetRockSession.mockResolvedValue({ rolesMap: { viewer: ['19109'] }, access: { runsheetCampuses: ['MNL'] } } as any);
+      const res = await rockDeleteServiceRunsheet(931);
+      expect(res.success).toBe(false);
+      expectNoRockWrites();
+    });
+  });
 });
