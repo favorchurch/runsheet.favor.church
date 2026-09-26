@@ -3,37 +3,23 @@
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
+import { extractRunsheetCampus } from '@/lib/runsheetCampus';
+import { GROW_CONTENT_CHANNEL_CATEGORY_ID, nextGrowOccurrence } from '@/lib/growRunsheets';
+import { expandIcalOccurrences } from '@/lib/scheduleOccurrences';
+import {
+  descendantCategoryIds,
+  scheduleRootForCampus,
+  SCHEDULE_CATEGORY_ENTITY_TYPE_ID,
+} from '@/lib/scheduleCategoryTree';
+import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
 
 export interface ScheduleOption {
   id: number;
   name: string;
   categoryId: number;
   timeLabel: string;
+  nextDate?: string;
 }
-
-/**
- * Category mappings for schedule lookup in Rock RMS:
- * Category 302: Manila (Children: 311 Shang, 416 Podium, 417 Crowne, 418 Metrotent)
- * Category 303: Brisbane
- * Category 304: Seoul
- */
-const CATEGORY_SCHEDULE_MAP: Record<number, number[]> = {
-  // Category IDs from ContentChannels Category (e.g. 336 MNL Sunday Service -> 302/311/416/417)
-  302: [302, 311, 416, 417, 418],
-  336: [302, 311, 416, 417, 418],
-  337: [302, 311, 416, 417, 418],
-  338: [302, 311, 416, 417, 418],
-  339: [302, 311, 416, 417, 418],
-  340: [302, 311, 416, 417, 418],
-  341: [302, 311, 416, 417, 418],
-  // Brisbane categories
-  303: [303],
-  342: [303],
-  344: [303],
-  // Seoul categories
-  304: [304],
-  343: [304],
-};
 
 function formatScheduleTime(name: string): string {
   // Extract time pattern like 10AM, 11:30AM, 3PM, 4PM, 5:30PM, 9AM, 10:00 AM
@@ -42,6 +28,10 @@ function formatScheduleTime(name: string): string {
     return timeMatch[1].toUpperCase();
   }
   return name;
+}
+
+function manilaToday(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
 }
 
 export async function rockGetScheduleOptions(
@@ -57,14 +47,39 @@ export async function rockGetScheduleOptions(
     const access = assertRunsheetViewAccess(session);
     if (!access.allowed) return { success: false, schedules: [], error: access.error };
 
-    const targetCategoryIds = categoryId && CATEGORY_SCHEDULE_MAP[categoryId]
-      ? CATEGORY_SCHEDULE_MAP[categoryId]
-      : [302, 311, 416, 417, 418, 303, 304];
+    // Grow Class runsheets are one per Grow Courses topic occurrence; the
+    // form autofills the topic's next date from `nextDate`.
+    if (categoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID) {
+      const today = manilaToday();
+      const schedules: ScheduleOption[] = [];
+      for (const s of await fetchGrowSchedules()) {
+        const next = nextGrowOccurrence(s, today);
+        if (!next) continue;
+        schedules.push({ id: s.id, name: s.name, categoryId: 483, timeLabel: next.time, nextDate: next.date });
+      }
+      schedules.sort((a, b) => (a.nextDate || '').localeCompare(b.nextDate || ''));
+      return { success: true, schedules };
+    }
 
-    const filterClause = targetCategoryIds.map((id) => `CategoryId eq ${id}`).join(' or ');
+    const [categoryRows, contentCategory] = await Promise.all([
+      rockGet('/Categories', {
+        $filter: `EntityTypeId eq ${SCHEDULE_CATEGORY_ENTITY_TYPE_ID}`,
+        $select: 'Id,ParentCategoryId',
+        $top: 1000,
+      }) as Promise<Array<{ Id: number; ParentCategoryId: number | null }> | null>,
+      categoryId
+        ? (rockGet(`/Categories/${categoryId}`) as Promise<{ Name?: string } | null>)
+        : Promise.resolve(null),
+    ]);
+
+    const campus = contentCategory?.Name ? extractRunsheetCampus(contentCategory.Name.replace(/\|/g, ' ')) : null;
+    const targetCategoryIds = descendantCategoryIds(
+      (categoryRows || []).map((c) => ({ id: Number(c.Id), parentId: c.ParentCategoryId ?? null })),
+      scheduleRootForCampus(campus),
+    );
 
     const rawSchedules = (await rockGet('/Schedules', {
-      $filter: filterClause,
+      $filter: `IsActive eq true and (${targetCategoryIds.map((id) => `CategoryId eq ${id}`).join(' or ')})`,
       $select: 'Id,Name,CategoryId,iCalendarContent,WeeklyDayOfWeek,EffectiveStartDate,EffectiveEndDate',
       $orderby: 'Name asc',
     })) as Array<{
@@ -84,7 +99,7 @@ export async function rockGetScheduleOptions(
 
     // 2. Youth Category vs Non-Youth Category filtering
     // Youth categories: 341 (MNL Youth), 344 (BNE Youth), or any categoryId mapped to youth
-    const isYouthCategory = categoryId === 341 || categoryId === 344;
+    const isYouthCategory = /youth/i.test(contentCategory?.Name || '');
 
     list = list.filter((s) => {
       const nameLower = s.Name.toLowerCase();
@@ -95,6 +110,12 @@ export async function rockGetScheduleOptions(
         return !isYouthSchedule;
       }
     });
+
+    // Only schedules that still have an occurrence from today onward.
+    const today = manilaToday();
+    list = list.filter(
+      (s) => !s.iCalendarContent || expandIcalOccurrences(s.iCalendarContent, today, s.EffectiveEndDate, 1).length > 0,
+    );
 
     // 3. Active Schedule Filtering by chosen Date range & recurrence rules
     if (dateStr) {
