@@ -21,3 +21,7 @@ export function getRunsheetKind(name: string): RunsheetKind {
   if (extractChannelDate(name)?.getDay() === 0) return 'sunday';
   return 'other';
 }
+
+export function isGrowRunsheetTitle(name: string): boolean {
+  return getRunsheetKind(name) === 'grow';
+}

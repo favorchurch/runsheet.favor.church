@@ -39,4 +39,30 @@ describe('resolveSiblings', () => {
     const result = resolveSiblings(2, all[1].name, all);
     expect(result.some((s) => s.channelId === 2)).toBe(false);
   });
+
+  describe('Grow course siblings', () => {
+    const growChannels: RunsheetChannelOption[] = [
+      channel(10, 'MNL Grow - Build x FDNA // October 4, 2026 // 3PM'),
+      channel(11, 'MNL Grow - Build x FDNA // October 11, 2026 // 3PM'),
+      channel(12, 'MNL Grow - Build x FDNA // October 18, 2026 // 3PM'),
+      channel(13, 'MNL Grow - Bible Essentials // October 4, 2026 // 7PM'),
+      channel(14, 'MNL Crowne // October 4, 2026 // 3PM'),
+    ];
+
+    it('matches other runsheets of the same Grow course across different dates', () => {
+      const result = resolveSiblings(10, growChannels[0].name, growChannels);
+      expect(result.map((s) => s.channelId)).toEqual([11, 12]);
+      expect(result.every((s) => s.preselected)).toBe(true);
+    });
+
+    it('excludes runsheets of a different Grow course on the same date', () => {
+      const result = resolveSiblings(10, growChannels[0].name, growChannels);
+      expect(result.some((s) => s.channelId === 13)).toBe(false);
+    });
+
+    it('excludes Sunday runsheets on the same date', () => {
+      const result = resolveSiblings(10, growChannels[0].name, growChannels);
+      expect(result.some((s) => s.channelId === 14)).toBe(false);
+    });
+  });
 });
