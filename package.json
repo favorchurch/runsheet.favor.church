@@ -1,6 +1,6 @@
 {
   "name": "runsheet-favor-church",
-  "version": "1.16.0",
+  "version": "1.16.1",
   "private": true,
   "ts-node": {
     "esm": true,
@@ -13,9 +13,9 @@
   },
   "packageManager": "pnpm@10.33.0",
   "scripts": {
-    "dev": "rm -rf .next && next dev --turbopack",
+    "dev": "rm -rf .next && next dev --turbopack -p 8000",
     "build": "rm -rf .next && next build",
-    "start": "next start",
+    "start": "next start -p 8000",
     "lint": "next lint --fix && tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "jest",
