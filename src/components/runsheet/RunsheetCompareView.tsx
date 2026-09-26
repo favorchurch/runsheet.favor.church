@@ -11,6 +11,8 @@ import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDet
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
+import { isGrowRunsheetTitle } from '@/lib/runsheetKind';
+import { extractCourseTitle } from '@/lib/runsheetSiblings';
 import toast from 'react-hot-toast';
 
 interface RunsheetCompareViewProps {
@@ -164,6 +166,24 @@ export function RunsheetCompareView({
     setMatrixSaveStatus(null);
     setShowUnsavedModal(false);
   }, [readOnly]);
+
+  const isGrowCompare = useMemo(() => {
+    return sheets.some((s) => isGrowRunsheetTitle(s.name));
+  }, [sheets]);
+
+  const courseTitle = useMemo(() => {
+    const growSheet = sheets.find((s) => isGrowRunsheetTitle(s.name));
+    return growSheet ? extractCourseTitle(growSheet.name) : null;
+  }, [sheets]);
+
+  const displayedChannels = useMemo(() => {
+    if (!availableChannels) return [];
+    if (courseTitle) {
+      const sameCourse = availableChannels.filter((c) => extractCourseTitle(c.name) === courseTitle);
+      if (sameCourse.length > 0) return sameCourse;
+    }
+    return availableChannels;
+  }, [availableChannels, courseTitle]);
 
   const allColumns = useMemo(() => {
     const seen = new Map<string, DynamicAttributeColumn>();
@@ -511,11 +531,19 @@ export function RunsheetCompareView({
         </div>
 
         {/* Runsheet Selection Bar */}
-        {availableChannels && availableChannels.length > 0 && (
+        {displayedChannels && displayedChannels.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 bg-slate-100/90 px-3 sm:px-6 py-2 text-xs">
             <span className="font-bold text-slate-700 mr-1">Select to Compare:</span>
-            {availableChannels.map((c) => {
+            {courseTitle && (
+              <span className="inline-flex items-center px-2 py-0.5 mr-1 rounded-md text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                Course: {courseTitle}
+              </span>
+            )}
+            {displayedChannels.map((c) => {
               const isSelected = selectedChannelIds.includes(c.id);
+              const label = isGrowCompare
+                ? c.name.split('//').slice(1).map((s) => s.trim()).join(' // ') || c.name
+                : c.name.split('//').pop()?.trim() || c.name;
               return (
                 <button
                   key={c.id}
@@ -540,7 +568,7 @@ export function RunsheetCompareView({
                   title={isSelected ? 'Click to remove from comparison' : 'Click to add to comparison'}
                 >
                   <span className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-slate-400'}`} />
-                  <span>{c.name.split('//').pop()?.trim() || c.name}</span>
+                  <span>{label}</span>
                 </button>
               );
             })}

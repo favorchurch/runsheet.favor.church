@@ -11,6 +11,8 @@ import { ALL_CAMPUSES, RUNSHEET_CAMPUS_CODES, type RunsheetCampusCode } from '@/
 import { canUserEditRunsheet, hasFullEditorRole } from '@/lib/permissions';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
 import { extractChannelTime, sortRunsheetChannels } from '@/lib/runsheetDate';
+import { isGrowRunsheetTitle } from '@/lib/runsheetKind';
+import { extractCourseTitle } from '@/lib/runsheetSiblings';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import type { AuthUser } from '@/types/AuthUser';
 import type { RunsheetDetails } from '@/types/Runsheet';
@@ -477,11 +479,24 @@ export function RunsheetManager({
                   type="button"
                   onClick={() => {
                     if (compareSelection.size === 0 && selectedChannelId) {
-                      const other = availableChannels.find((c) => c.id !== selectedChannelId);
-                      if (other) {
-                        setCompareSelection(new Set([selectedChannelId, other.id]));
+                      const current = availableChannels.find((c) => c.id === selectedChannelId);
+                      if (current && isGrowRunsheetTitle(current.name)) {
+                        const course = extractCourseTitle(current.name);
+                        const courseOther = availableChannels.find(
+                          (c) => c.id !== selectedChannelId && extractCourseTitle(c.name) === course,
+                        );
+                        if (courseOther) {
+                          setCompareSelection(new Set([selectedChannelId, courseOther.id]));
+                        } else {
+                          setCompareSelection(new Set([selectedChannelId]));
+                        }
                       } else {
-                        setCompareSelection(new Set(availableChannels.slice(0, 2).map((c) => c.id)));
+                        const other = availableChannels.find((c) => c.id !== selectedChannelId);
+                        if (other) {
+                          setCompareSelection(new Set([selectedChannelId, other.id]));
+                        } else {
+                          setCompareSelection(new Set(availableChannels.slice(0, 2).map((c) => c.id)));
+                        }
                       }
                     } else if (compareSelection.size === 0 && availableChannels.length >= 2) {
                       setCompareSelection(new Set(availableChannels.slice(0, 2).map((c) => c.id)));

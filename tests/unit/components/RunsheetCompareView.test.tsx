@@ -319,4 +319,38 @@ describe('RunsheetCompareView', () => {
     fireEvent.click(notesCell!);
     expect(screen.getByRole('textbox')).toHaveValue('Editable Note');
   });
+
+  it('displays Course badge and scopes channels when comparing a Grow course', async () => {
+    (rockGetRunsheetDetailsBatch as jest.Mock).mockResolvedValue([
+      {
+        channelId: 10,
+        success: true,
+        data: {
+          channelId: 10,
+          name: 'MNL Grow - Build x FDNA // October 4, 2026 // 3PM',
+          columns: [{ id: 1, key: 'NOTES', name: 'Notes' }],
+          items: [{ id: 100, title: 'Session 1', order: 1, duration: 60, attributeValues: { NOTES: 'Intro' } }],
+        },
+      },
+    ]);
+
+    const available = [
+      { id: 10, name: 'MNL Grow - Build x FDNA // October 4, 2026 // 3PM', time: '3PM' },
+      { id: 11, name: 'MNL Grow - Build x FDNA // October 11, 2026 // 3PM', time: '3PM' },
+      { id: 12, name: 'MNL Crowne // October 4, 2026 // 10AM', time: '10AM' },
+    ];
+
+    render(
+      <RunsheetCompareView
+        channelIds={[10]}
+        availableChannels={available}
+        onClose={jest.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText(/Course: MNL Grow - Build x FDNA/i)).toBeInTheDocument());
+    expect(screen.getByText('October 4, 2026 // 3PM')).toBeInTheDocument();
+    expect(screen.getByText('October 11, 2026 // 3PM')).toBeInTheDocument();
+    expect(screen.queryByText('10AM')).not.toBeInTheDocument();
+  });
 });
