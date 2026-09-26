@@ -37,7 +37,7 @@ describe('runsheet access policy', () => {
     expect(result.runsheetCampuses).toEqual(['MNL']);
   });
 
-  it('promotes a YTH Events Team leader to edit its MNL campus', () => {
+  it('keeps a YTH Events Team leader view-only for its MNL campus', () => {
     const result = resolveRunsheetAccessPolicy(
       [{ groupId: 32929, groupTypeId: 23, groupRoleId: 69 }],
       new Map([
@@ -50,12 +50,12 @@ describe('runsheet access policy', () => {
       new Set([69]),
     );
 
-    expect(result.editorGroupIds).toEqual(['32929']);
+    expect(result.editorGroupIds).toEqual([]);
     expect(result.viewerGroupIds).toEqual(['32929']);
     expect(result.runsheetCampuses).toEqual(['MNL']);
   });
 
-  it('keeps a non-Events Ministry Team leader view-only', () => {
+  it('gives a non-Events Ministry Team leader no blanket access', () => {
     const result = resolveRunsheetAccessPolicy(
       [{ groupId: 19110, groupTypeId: 23, groupRoleId: 69 }],
       new Map([[19110, { groupId: 19110, groupTypeId: 23, name: 'MNL Worship Team', parentGroupId: 57 }]]),
@@ -64,8 +64,19 @@ describe('runsheet access policy', () => {
     );
 
     expect(result.editorGroupIds).toEqual([]);
-    expect(result.viewerGroupIds).toEqual(['19110']);
-    expect(result.runsheetCampuses).toEqual(['MNL']);
+    expect(result.viewerGroupIds).toEqual([]);
+    expect(result.runsheetCampuses).toEqual([]);
+  });
+
+  it('gives the Grow Team no blanket Sunday access', () => {
+    const result = resolveRunsheetAccessPolicy(
+      [{ groupId: 19108, groupTypeId: 23, groupRoleId: 20 }],
+      new Map([[19108, { groupId: 19108, groupTypeId: 23, name: 'MNL Grow Team', parentGroupId: 57 }]]),
+      new Map([[57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' }]]),
+      new Set([20]),
+    );
+
+    expect(result).toMatchObject({ editorGroupIds: [], viewerGroupIds: [], runsheetCampuses: [] });
   });
 
   it('grants an unlisted GroupType 1 group by its Web Developer name', () => {
@@ -89,8 +100,8 @@ describe('runsheet access policy', () => {
     );
 
     expect(result.editorGroupIds).toEqual([]);
-    expect(result.viewerGroupIds).toEqual(['9001']);
-    expect(result.runsheetCampuses).toEqual(['MNL']);
+    expect(result.viewerGroupIds).toEqual([]);
+    expect(result.runsheetCampuses).toEqual([]);
   });
 
   it('uses the supplied campus-root map when resolving a campus', () => {
@@ -136,7 +147,7 @@ describe('runsheet access policy', () => {
       true,
     );
 
-    expect(result.editorGroupIds).toEqual(['19109']);
+    expect(result.editorGroupIds).toEqual([]);
     expect(result.usedLeaderRoleFallback).toBe(true);
   });
 
