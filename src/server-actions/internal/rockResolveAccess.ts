@@ -103,7 +103,7 @@ async function rawRockGet(path: string, params?: Record<string, string | number 
 
 async function fetchPersonById(personId: number) {
   const people = await rawRockGet('/People', {
-    $filter: `Id eq ${personId} and RecordStatusValueId eq ${ROCK_RECORD_STATUS_ACTIVE} and IsDeceased eq false`,
+    $filter: `Id eq ${personId} and (RecordStatusValueId eq ${ROCK_RECORD_STATUS_ACTIVE} or RecordStatusValueId eq null) and IsDeceased eq false`,
     $select: 'Id,FirstName,LastName,NickName,Email,PrimaryCampusId,PrimaryAliasId,RecordStatusValueId',
     $top: 1,
   });
@@ -115,7 +115,7 @@ async function fetchPersonByEmail(email: string) {
   if (!email || !email.trim()) return null;
   const escaped = email.trim().replace(/'/g, "''");
   const people = await rawRockGet('/People', {
-    $filter: `Email eq '${escaped}' and RecordStatusValueId eq ${ROCK_RECORD_STATUS_ACTIVE} and IsDeceased eq false`,
+    $filter: `Email eq '${escaped}' and (RecordStatusValueId eq ${ROCK_RECORD_STATUS_ACTIVE} or RecordStatusValueId eq null) and IsDeceased eq false`,
     $select: 'Id,FirstName,LastName,NickName,Email,PrimaryCampusId,PrimaryAliasId,RecordStatusValueId',
     $top: 1,
   });

@@ -106,3 +106,8 @@ export async function clearSessionCache(primaryId: number, unionIds: number[]): 
     console.warn('[session-cache] delete failed', error);
   }
 }
+
+/** Clear all in-memory cached sessions. */
+export function flushLocalSessionCache(): void {
+  localCache.flushAll();
+}
