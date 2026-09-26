@@ -77,3 +77,28 @@ export function setRosterCollapsedPreference(collapsed: boolean): void {
     // Gracefully ignore storage exceptions (e.g. private browsing, quota)
   }
 }
+
+export const STORAGE_KEY_RUNSHEET_KIND = 'runsheet_pref_kind';
+
+const RUNSHEET_KIND_VALUES = ['all', 'sunday', 'youth', 'grow', 'other'] as const;
+export type RunsheetKindPreference = (typeof RUNSHEET_KIND_VALUES)[number];
+
+/** The last runsheet list kind filter; defaults to 'all'. */
+export function getRunsheetKindPreference(): RunsheetKindPreference {
+  if (typeof window === 'undefined') return 'all';
+  try {
+    const stored = window.localStorage?.getItem(STORAGE_KEY_RUNSHEET_KIND);
+    return (RUNSHEET_KIND_VALUES as readonly string[]).includes(stored || '') ? (stored as RunsheetKindPreference) : 'all';
+  } catch {
+    return 'all';
+  }
+}
+
+export function setRunsheetKindPreference(kind: RunsheetKindPreference): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage?.setItem(STORAGE_KEY_RUNSHEET_KIND, kind);
+  } catch {
+    // Gracefully ignore storage exceptions (e.g. private browsing, quota)
+  }
+}

@@ -25,6 +25,12 @@ import {
   prefetchRunsheetDetails,
   runsheetQueryKeys,
 } from './runsheetQueries';
+import { getRunsheetKind, RUNSHEET_KIND_LABELS, RUNSHEET_KIND_ORDER } from '@/lib/runsheetKind';
+import {
+  getRunsheetKindPreference,
+  setRunsheetKindPreference,
+  type RunsheetKindPreference,
+} from '@/lib/userPreferences';
 
 import type { RunsheetCampusCode } from '@/lib/runsheetCampus';
 
@@ -193,6 +199,15 @@ export function RunsheetLandingView({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCampusFilter, setSelectedCampusFilter] = useState<string>('ALL');
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+  const [selectedKind, setSelectedKind] = useState<RunsheetKindPreference>('all');
+  useEffect(() => setSelectedKind(getRunsheetKindPreference()), []);
+
+  const distinctKinds = useMemo(() => {
+    const present = new Set(channels.map((c) => getRunsheetKind(c.name)));
+    return RUNSHEET_KIND_ORDER.filter((k) => present.has(k));
+  }, [channels]);
+
+  const effectiveKind = selectedKind !== 'all' && !distinctKinds.includes(selectedKind) ? 'all' : selectedKind;
 
   // Preload top 5 active runsheets on mount in the background
   useEffect(() => {
@@ -235,6 +250,9 @@ export function RunsheetLandingView({
       if (selectedCampusFilter !== 'ALL' && campus !== selectedCampusFilter) {
         return false;
       }
+      if (effectiveKind !== 'all' && getRunsheetKind(c.name) !== effectiveKind) {
+        return false;
+      }
       if (!q) return true;
       const rawName = c.name.toLowerCase();
       const time = (c.time || '').toLowerCase();
@@ -242,7 +260,7 @@ export function RunsheetLandingView({
       return rawName.includes(q) || time.includes(q) || dateStr.includes(q);
     });
     return sortRunsheetChannels(matches);
-  }, [channels, searchQuery, selectedCampusFilter]);
+  }, [channels, searchQuery, selectedCampusFilter, effectiveKind]);
 
   return (
     <div className="w-full max-w-6xl mx-auto py-3 sm:py-5 px-1 space-y-3.5 sm:space-y-4">
@@ -346,6 +364,29 @@ export function RunsheetLandingView({
                 }`}
               >
                 {c}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Kind Filter Pills (if more than 1 kind) */}
+        {distinctKinds.length > 1 && (
+          <div className="flex items-center gap-1 overflow-x-auto py-0.5">
+            {(['all', ...distinctKinds] as RunsheetKindPreference[]).map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => {
+                  setSelectedKind(kind);
+                  setRunsheetKindPreference(kind);
+                }}
+                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
+                  effectiveKind === kind
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                }`}
+              >
+                {kind === 'all' ? 'All' : RUNSHEET_KIND_LABELS[kind]}
               </button>
             ))}
           </div>
