@@ -4,7 +4,7 @@ import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 import { extractRunsheetCampus } from '@/lib/runsheetCampus';
-import { GROW_CONTENT_CHANNEL_CATEGORY_ID, nextGrowOccurrence } from '@/lib/growRunsheets';
+import { GROW_CONTENT_CHANNEL_CATEGORY_ID } from '@/lib/growRunsheets';
 import { expandIcalOccurrences } from '@/lib/scheduleOccurrences';
 import {
   descendantCategoryIds,
@@ -13,12 +13,18 @@ import {
 } from '@/lib/scheduleCategoryTree';
 import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
 
+export interface ScheduleOccurrenceOption {
+  date: string;
+  time: string;
+}
+
 export interface ScheduleOption {
   id: number;
   name: string;
   categoryId: number;
   timeLabel: string;
   nextDate?: string;
+  upcomingOccurrences?: ScheduleOccurrenceOption[];
 }
 
 function formatScheduleTime(name: string): string {
@@ -53,9 +59,17 @@ export async function rockGetScheduleOptions(
       const today = manilaToday();
       const schedules: ScheduleOption[] = [];
       for (const s of await fetchGrowSchedules()) {
-        const next = nextGrowOccurrence(s, today);
+        const occurrences = expandIcalOccurrences(s.iCalendarContent, today, s.effectiveEndDate);
+        const next = occurrences[0];
         if (!next) continue;
-        schedules.push({ id: s.id, name: s.name, categoryId: 483, timeLabel: next.time, nextDate: next.date });
+        schedules.push({
+          id: s.id,
+          name: s.name,
+          categoryId: 483,
+          timeLabel: next.time,
+          nextDate: next.date,
+          upcomingOccurrences: occurrences.map((o) => ({ date: o.date, time: o.time })),
+        });
       }
       schedules.sort((a, b) => (a.nextDate || '').localeCompare(b.nextDate || ''));
       return { success: true, schedules };

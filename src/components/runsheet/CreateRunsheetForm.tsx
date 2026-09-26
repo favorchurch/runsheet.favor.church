@@ -85,7 +85,13 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
   const [date, setDate] = useState(getNextSunday());
   const [session, setSession] = useState('');
   const [title, setTitle] = useState('');
+  const [batchCreateCourse, setBatchCreateCourse] = useState(false);
   const [status, setStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message?: string }>({ type: 'idle' });
+
+  const selectedSchedule = React.useMemo(
+    () => schedules.find((s) => s.name === session),
+    [schedules, session]
+  );
 
   const isGlobalStaffOrAdmin = React.useMemo(
     () => !runsheetCampuses || runsheetCampuses.includes(ALL_CAMPUSES),
@@ -202,7 +208,11 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
       selectedCategory?.name
     );
     setTitle(autoTitle);
-  }, [session, date, selectedCategoryId, categories, schedules]);
+  }, [session, date, selectedCategoryId, categories, schedules, selectedSchedule]);
+
+  useEffect(() => {
+    setBatchCreateCourse(false);
+  }, [session, selectedCategoryId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -229,6 +239,54 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
     }
 
     setStatus({ type: 'loading' });
+
+    if (batchCreateCourse && selectedSchedule && (selectedSchedule.upcomingOccurrences?.length ?? 0) > 1) {
+      const occurrences = selectedSchedule.upcomingOccurrences!;
+      let firstId: number | null = null;
+      let firstTitle = '';
+      let firstData: RunsheetDetails | undefined = undefined;
+      let createdCount = 0;
+
+      for (const occ of occurrences) {
+        const occTitle = buildGrowRunsheetTitle(selectedSchedule.name, occ.date, occ.time);
+        try {
+          const res = await rockCreateServiceRunsheet(
+            occTitle,
+            Number(selectedTypeId || 13),
+            Number(selectedCategoryId)
+          );
+          if (res.success && res.id) {
+            createdCount++;
+            if (!firstId) {
+              firstId = res.id;
+              firstTitle = occTitle;
+              firstData = res.data;
+            }
+          }
+        } catch (err) {
+          console.warn(`Could not create runsheet "${occTitle}":`, err);
+        }
+      }
+
+      if (firstId) {
+        const successMsg = `Successfully created ${createdCount} runsheets for "${selectedSchedule.name}"!`;
+        setStatus({
+          type: 'success',
+          message: successMsg,
+        });
+        toast.success(successMsg);
+
+        if (onCreated) {
+          onCreated(firstId, firstTitle, firstData);
+        }
+        return;
+      } else {
+        const errorMsg = 'Failed to create runsheets.';
+        setStatus({ type: 'error', message: errorMsg });
+        toast.error(errorMsg);
+        return;
+      }
+    }
 
     const res = await rockCreateServiceRunsheet(
       finalTitle,
@@ -338,6 +396,30 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
             </select>
           </div>
 
+          {selectedSchedule && (selectedSchedule.upcomingOccurrences?.length ?? 0) > 1 && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={batchCreateCourse}
+                  onChange={(e) => setBatchCreateCourse(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <div className="text-xs">
+                  <span className="font-semibold text-slate-800">
+                    Also create runsheets for all upcoming sessions of this course
+                  </span>
+                  <span className="ml-1 font-medium text-slate-500">
+                    ({selectedSchedule.upcomingOccurrences?.length} sessions)
+                  </span>
+                  <p className="mt-0.5 text-slate-500">
+                    Creates runsheets for each scheduled date of &quot;{selectedSchedule.name}&quot;.
+                  </p>
+                </div>
+              </label>
+            </div>
+          )}
+
           <div>
             <label className="mb-1 block text-sm font-semibold text-slate-700">
               Runsheet Title
@@ -368,7 +450,11 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
               disabled={status.type === 'loading'}
               className="flex flex-1 items-center justify-center rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none cursor-pointer disabled:opacity-50"
             >
-              {status.type === 'loading' ? 'Saving...' : 'Save Runsheet'}
+              {status.type === 'loading'
+                ? 'Saving...'
+                : batchCreateCourse
+                  ? `Create All (${selectedSchedule?.upcomingOccurrences?.length || 0}) Runsheets`
+                  : 'Save Runsheet'}
             </button>
           </div>
         </form>
