@@ -11,7 +11,6 @@ import { ALL_CAMPUSES, RUNSHEET_CAMPUS_CODES, type RunsheetCampusCode } from '@/
 import { canUserEditRunsheet, hasFullEditorRole } from '@/lib/permissions';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
 import { extractChannelTime, sortRunsheetChannels } from '@/lib/runsheetDate';
-import { rockSyncGrowRunsheets } from '@/server-actions/rockSyncGrowRunsheets';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import type { AuthUser } from '@/types/AuthUser';
 import type { RunsheetDetails } from '@/types/Runsheet';
@@ -95,21 +94,6 @@ export function RunsheetManager({
   const channelsQuery = useAvailableRunsheetChannels(showArchived, accessScope);
   const detailsQuery = useRunsheetDetails(selectedChannelId, accessScope);
 
-  // Auto-create upcoming Grow Course runsheets once per page load. Never
-  // blocks the list; refresh it only when something was actually created.
-  useEffect(() => {
-    if (!canEdit) return;
-    let cancelled = false;
-    rockSyncGrowRunsheets()
-      .then((res) => {
-        if (!cancelled && res.created > 0) queryClient.invalidateQueries(runsheetQueryKeys.channelsRoot);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canEdit]);
 
   const availableChannels: RunsheetChannelOption[] = sortRunsheetChannels(
     (channelsQuery.data?.channels || []).filter(
