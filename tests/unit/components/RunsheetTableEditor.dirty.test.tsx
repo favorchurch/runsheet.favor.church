@@ -45,6 +45,22 @@ import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheet
 import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 
+/**
+ * Simulates a pointer drag (mouse, touch or pen) from a drag handle onto a row.
+ * jsdom has no layout, so `elementFromPoint` is stubbed to report `target`.
+ */
+function dragRowTo(handle: Element, target: Element) {
+  const original = document.elementFromPoint;
+  document.elementFromPoint = () => target;
+  try {
+    fireEvent.pointerDown(handle, { pointerId: 1, pointerType: 'touch', button: 0 });
+    fireEvent.pointerMove(handle, { pointerId: 1, pointerType: 'touch' });
+    fireEvent.pointerUp(handle, { pointerId: 1, pointerType: 'touch' });
+  } finally {
+    document.elementFromPoint = original;
+  }
+}
+
 describe('RunsheetTableEditor dirty state', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -241,8 +257,7 @@ describe('RunsheetTableEditor dirty state', () => {
     const rows = container.querySelectorAll('tbody tr');
     expect(rows).toHaveLength(3);
 
-    fireEvent.dragStart(dragHandles[2]);
-    fireEvent.drop(rows[0]);
+    dragRowTo(dragHandles[2], rows[0]);
 
     await saveFn?.();
 
@@ -251,6 +266,37 @@ describe('RunsheetTableEditor dirty state', () => {
       (item: RunsheetItemRow) => (item.attributeValues?.ACTIVITYTITLE || item.title) === 'New Segment'
     );
     expect(newRowEntry?.order).toBe(1);
+  });
+
+  test('dragging a row down lands it after the drop target', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    const { container } = render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="10:00:00 AM"
+        onSaveRef={(fn) => (saveFn = fn)}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Add Row'));
+    const dragHandles = screen.getAllByTitle('Drag handle cell to move whole row');
+    const rows = container.querySelectorAll('tbody tr');
+
+    dragRowTo(dragHandles[0], rows[1]);
+
+    await saveFn?.();
+
+    const [, itemsToSave] = (rockBulkSaveRunsheetItems as jest.Mock).mock.calls[0];
+    const firstTitle = (initialItems[0].attributeValues?.ACTIVITYTITLE || initialItems[0].title) as string;
+    const movedEntry = itemsToSave.find(
+      (item: RunsheetItemRow) => (item.attributeValues?.ACTIVITYTITLE || item.title) === firstTitle
+    );
+    expect(movedEntry?.order).toBe(2);
   });
 
   test('a card can be reordered with the Move Up button in Card view', async () => {
