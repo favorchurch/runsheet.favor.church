@@ -123,7 +123,7 @@ export async function getRockSession(): Promise<RockSession> {
   // Check cache first if valid personId
   if (personId > 0) {
     const cached = await getSessionCache(personId, unionPersonIds);
-    if (cached) {
+    if (cached && (cached.contact?.id ?? 0) > 0) {
       // Mirror the cache-miss path's precedence (`resolved.contact.id || personId`).
       // Returning the bare claim scalar here made `session.personId` flip between
       // hit and miss whenever the primary id failed Rock's validity filter and the
@@ -157,7 +157,8 @@ export async function getRockSession(): Promise<RockSession> {
   // Never cache a degraded result either: a `partial` resolve dropped a
   // secondary id after a real fetch failure, so caching it would keep serving
   // an incomplete union for the rest of the TTL.
-  if (personId > 0 && resolved.partial !== true) {
+  // Never cache a failed person resolution (contact.id <= 0).
+  if (personId > 0 && resolved.partial !== true && (resolved.contact?.id ?? 0) > 0) {
     await setSessionCache(personId, unionPersonIds, resolved);
   }
 

@@ -15,7 +15,10 @@ jest.mock('@auth0/nextjs-auth0', () => ({ getSession: jest.fn().mockResolvedValu
 jest.mock('@/auth0-hooks/server/getRockSession', () => ({ getRockSession: jest.fn().mockResolvedValue({}) }));
 jest.mock('@/auth0-hooks/server/assertAuthenticated', () => ({ assertAuthenticated: jest.fn() }));
 jest.mock('@/server-actions/internal/rockFetch', () => ({ rockGet: jest.fn() }));
-jest.mock('@/lib/permissions', () => ({ canUserEditRunsheet: jest.fn().mockReturnValue(false) }));
+jest.mock('@/lib/permissions', () => ({
+  canUserEditRunsheet: jest.fn().mockReturnValue(false),
+  hasFullEditorRole: jest.fn().mockReturnValue(false),
+}));
 jest.mock('@/server-actions/rockGetAvailableRunsheetChannels');
 jest.mock('@/server-actions/rockGetRunsheetDetails');
 jest.mock('@/components/runsheet/CreateRunsheetForm', () => ({ CreateRunsheetForm: () => null }));

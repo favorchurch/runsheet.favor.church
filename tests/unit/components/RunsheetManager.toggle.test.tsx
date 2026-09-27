@@ -14,7 +14,10 @@ import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvaila
 import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
 
 jest.mock('next/navigation', () => ({ useRouter: () => ({ push: jest.fn() }) }));
-jest.mock('@/lib/permissions', () => ({ canUserEditRunsheet: jest.fn() }));
+jest.mock('@/lib/permissions', () => ({
+  canUserEditRunsheet: jest.fn(),
+  hasFullEditorRole: jest.fn().mockReturnValue(true),
+}));
 jest.mock('@/auth0-hooks/server/getRockSession', () => ({ getRockSession: jest.fn() }));
 jest.mock('@/server-actions/internal/rockFetch', () => ({
   rockDelete: jest.fn(),

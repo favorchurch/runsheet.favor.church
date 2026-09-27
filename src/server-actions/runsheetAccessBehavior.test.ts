@@ -345,4 +345,107 @@ describe('server-action access enforcement', () => {
     expect(await searchRockPeople('Al')).toEqual([]);
     expect(mockRockGet).not.toHaveBeenCalled();
   });
+
+  describe('Grow Course access', () => {
+    const growSchedulesResponse = [
+      { Id: 477, Name: 'MNL Grow - Bible Essentials', iCalendarContent: '', EffectiveEndDate: null },
+    ];
+    const channels = [
+      { Id: 901, Name: 'MNL Grow - Bible Essentials // December 29, 2099 // 7PM' },
+      { Id: 902, Name: 'MNL Grow - Bible Essentials // December 22, 2099 // 7PM' },
+      { Id: 903, Name: 'MNL Crowne // December 27, 2099 // 3PM' },
+    ];
+
+    function routeRockGet() {
+      mockRockGet.mockImplementation((async (url: string) => {
+        if (url === '/Schedules') return growSchedulesResponse;
+        if (url === '/ContentChannels') return channels;
+        if (url === '/ContentChannels/903') return { Id: 903, Name: channels[2].Name, ContentChannelTypeId: 13 };
+        if (url === '/ContentChannels/901') return { Id: 901, Name: channels[0].Name, ContentChannelTypeId: 13 };
+        return [];
+      }) as any);
+    }
+
+    it('lists only the rostered occurrence for a Grow viewer', async () => {
+      routeRockGet();
+      mockGetRockSession.mockResolvedValue({
+        rolesMap: { growViewer: ['477:2099-12-29'] },
+        access: { runsheetCampuses: [] },
+      } as any);
+      const res = await rockGetAvailableRunsheetChannels();
+      expect(res.channels.map((c) => c.id)).toEqual([901]);
+    });
+
+    it('lets a Grow editor list every Grow runsheet but not Sunday ones', async () => {
+      routeRockGet();
+      mockGetRockSession.mockResolvedValue({
+        rolesMap: { growEditor: ['19108'] },
+        access: { runsheetCampuses: [] },
+      } as any);
+      const res = await rockGetAvailableRunsheetChannels();
+      expect(res.channels.map((c) => c.id).sort()).toEqual([901, 902]);
+    });
+
+    it('denies a Grow editor writing to a Sunday runsheet', async () => {
+      routeRockGet();
+      mockGetRockSession.mockResolvedValue({
+        rolesMap: { growEditor: ['19108'] },
+        access: { runsheetCampuses: [] },
+      } as any);
+      const res = await rockDeleteServiceRunsheet(903);
+      expect(res.success).toBe(false);
+      expectNoRockWrites();
+    });
+  });
+
+  describe('rostered-only access', () => {
+    const channels = [
+      { Id: 931, Name: 'MNL Crowne // December 26, 2099 // 3PM' },
+      { Id: 932, Name: 'MNL Crowne // December 26, 2099 // 5PM' },
+      { Id: 933, Name: 'MNL Grow - Build x FDNA // December 26, 2099 // 3PM' },
+    ];
+
+    function routeRockGet() {
+      mockRockGet.mockImplementation((async (url: string) => {
+        if (url === '/ContentChannels') return channels;
+        const byId = channels.find((c) => url === `/ContentChannels/${c.Id}`);
+        if (byId) return { ...byId, ContentChannelTypeId: 13 };
+        return [];
+      }) as any);
+    }
+
+    const rostered = {
+      rolesMap: { rosteredViewer: ['MNL:2099-12-26:15:00:00'] },
+      access: { runsheetCampuses: [] },
+    } as any;
+
+    it('lists only the rostered service', async () => {
+      routeRockGet();
+      mockGetRockSession.mockResolvedValue(rostered);
+      const res = await rockGetAvailableRunsheetChannels();
+      expect(res.channels.map((c) => c.id)).toEqual([931]);
+    });
+
+    it('opens the rostered runsheet and refuses the next service', async () => {
+      routeRockGet();
+      mockGetRockSession.mockResolvedValue(rostered);
+      expect((await rockGetRunsheetDetails(932)).success).toBe(false);
+    });
+
+    it('refuses edits from a rostered volunteer', async () => {
+      routeRockGet();
+      mockGetRockSession.mockResolvedValue(rostered);
+      const res = await rockDeleteServiceRunsheet(931);
+      expect(res.success).toBe(false);
+      expectNoRockWrites();
+    });
+
+    it('refuses edits from an Events Team viewer', async () => {
+      routeRockGet();
+      mockGetRockSession.mockResolvedValue({ rolesMap: { viewer: ['19109'] }, access: { runsheetCampuses: ['MNL'] } } as any);
+      const res = await rockDeleteServiceRunsheet(931);
+      expect(res.success).toBe(false);
+      expectNoRockWrites();
+    });
+  });
 });

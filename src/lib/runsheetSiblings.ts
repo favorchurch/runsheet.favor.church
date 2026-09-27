@@ -6,6 +6,7 @@
  */
 import { extractRunsheetCampus } from '@/lib/runsheetCampus';
 import { extractChannelDate } from '@/lib/runsheetDate';
+import { isGrowRunsheetTitle } from '@/lib/runsheetKind';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 
 export interface SiblingChannel {
@@ -15,11 +16,32 @@ export interface SiblingChannel {
   preselected: boolean;
 }
 
+export function extractCourseTitle(title: string): string {
+  return title.split('//')[0]?.trim() || title;
+}
+
 export function resolveSiblings(
   sourceChannelId: number,
   sourceName: string,
   allChannels: RunsheetChannelOption[],
 ): SiblingChannel[] {
+  if (isGrowRunsheetTitle(sourceName)) {
+    const sourceCourse = extractCourseTitle(sourceName);
+    return allChannels
+      .filter((c) => c.id !== sourceChannelId && extractCourseTitle(c.name) === sourceCourse)
+      .sort((a, b) => {
+        const da = extractChannelDate(a.name)?.getTime() ?? 0;
+        const db = extractChannelDate(b.name)?.getTime() ?? 0;
+        return da - db;
+      })
+      .map((c) => ({
+        channelId: c.id,
+        name: c.name,
+        time: c.time,
+        preselected: true,
+      }));
+  }
+
   const sourceCampus = extractRunsheetCampus(sourceName);
   const sourceDate = extractChannelDate(sourceName);
   if (!sourceCampus || !sourceDate) return [];

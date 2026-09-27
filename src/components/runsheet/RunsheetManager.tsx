@@ -6,9 +6,13 @@ import { useRouter } from 'next/navigation';
 import React, { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from 'react-query';
 import { HiArrowsRightLeft } from 'react-icons/hi2';
-import { canUserEditRunsheet } from '@/lib/permissions';
+import toast from 'react-hot-toast';
+import { ALL_CAMPUSES, RUNSHEET_CAMPUS_CODES, type RunsheetCampusCode } from '@/lib/runsheetCampus';
+import { canUserEditRunsheet, hasFullEditorRole } from '@/lib/permissions';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
 import { extractChannelTime, sortRunsheetChannels } from '@/lib/runsheetDate';
+import { isGrowRunsheetTitle } from '@/lib/runsheetKind';
+import { extractCourseTitle } from '@/lib/runsheetSiblings';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import type { AuthUser } from '@/types/AuthUser';
 import type { RunsheetDetails } from '@/types/Runsheet';
@@ -85,8 +89,13 @@ export function RunsheetManager({
   const router = useRouter();
   const queryClient = useQueryClient();
   const accessScope = getRunsheetAccessScope(user);
+  const userCampuses = user?.access?.runsheetCampuses || [];
+  const templateCampuses: RunsheetCampusCode[] = userCampuses.includes(ALL_CAMPUSES)
+    ? RUNSHEET_CAMPUS_CODES
+    : RUNSHEET_CAMPUS_CODES.filter((code) => userCampuses.includes(code));
   const channelsQuery = useAvailableRunsheetChannels(showArchived, accessScope);
   const detailsQuery = useRunsheetDetails(selectedChannelId, accessScope);
+
 
   const availableChannels: RunsheetChannelOption[] = sortRunsheetChannels(
     (channelsQuery.data?.channels || []).filter(
@@ -253,6 +262,21 @@ export function RunsheetManager({
     }
   };
 
+  const handleEditTemplate = async (campus: RunsheetCampusCode) => {
+    try {
+      const { rockEnsureRunsheetTemplate } = await import('@/server-actions/rockEnsureRunsheetTemplate');
+      const res = await rockEnsureRunsheetTemplate(campus);
+      if (res.success && res.id) {
+        handleSelectChannel(res.id);
+      } else {
+        toast.error(res.error || 'Failed to load the master template.');
+      }
+    } catch (err) {
+      console.error('Error loading master template:', err);
+      toast.error('Failed to load the master template.');
+    }
+  };
+
   const handleToggleCreateForm = () => {
     const action: PendingNavigationAction = { type: 'toggleCreateForm' };
     if (isEditorDirty) {
@@ -403,6 +427,8 @@ export function RunsheetManager({
           onToggleShowArchived={(show) => setShowArchived(show)}
           onSelectChannel={handleSelectChannel}
           onCreateNew={canEdit ? handleToggleCreateForm : undefined}
+          onEditTemplate={canEdit ? handleEditTemplate : undefined}
+          templateCampuses={templateCampuses}
           accessScope={accessScope}
         />
       ) : (
@@ -453,11 +479,24 @@ export function RunsheetManager({
                   type="button"
                   onClick={() => {
                     if (compareSelection.size === 0 && selectedChannelId) {
-                      const other = availableChannels.find((c) => c.id !== selectedChannelId);
-                      if (other) {
-                        setCompareSelection(new Set([selectedChannelId, other.id]));
+                      const current = availableChannels.find((c) => c.id === selectedChannelId);
+                      if (current && isGrowRunsheetTitle(current.name)) {
+                        const course = extractCourseTitle(current.name);
+                        const courseOther = availableChannels.find(
+                          (c) => c.id !== selectedChannelId && extractCourseTitle(c.name) === course,
+                        );
+                        if (courseOther) {
+                          setCompareSelection(new Set([selectedChannelId, courseOther.id]));
+                        } else {
+                          setCompareSelection(new Set([selectedChannelId]));
+                        }
                       } else {
-                        setCompareSelection(new Set(availableChannels.slice(0, 2).map((c) => c.id)));
+                        const other = availableChannels.find((c) => c.id !== selectedChannelId);
+                        if (other) {
+                          setCompareSelection(new Set([selectedChannelId, other.id]));
+                        } else {
+                          setCompareSelection(new Set(availableChannels.slice(0, 2).map((c) => c.id)));
+                        }
                       }
                     } else if (compareSelection.size === 0 && availableChannels.length >= 2) {
                       setCompareSelection(new Set(availableChannels.slice(0, 2).map((c) => c.id)));
@@ -487,6 +526,7 @@ export function RunsheetManager({
             <div className="mx-auto max-w-lg">
               <CreateRunsheetForm
                 runsheetCampuses={user?.access?.runsheetCampuses}
+                growOnly={!hasFullEditorRole(user)}
                 onCreated={handleRunsheetCreated}
                 onCancel={handleToggleCreateForm}
               />

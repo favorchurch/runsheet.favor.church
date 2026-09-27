@@ -55,7 +55,8 @@ describe('runsheet access audit', () => {
 
     expect(byName.get('Dashboard Creator')?.rolesMap.editor).toContain('32879');
     expect(byName.get('Dashboard Creator')?.runsheetCampuses).toEqual(['ALL']);
-    expect(byName.get('YTH Events Leader')?.rolesMap.editor).toContain('911');
+    expect(byName.get('YTH Events Leader')?.rolesMap.editor).toBeUndefined();
+    expect(byName.get('YTH Events Leader')?.rolesMap.viewer).toContain('911');
     expect(byName.get('YTH Events Leader')?.runsheetCampuses).toEqual(['MNL']);
     expect(byName.get('Events Member')?.rolesMap.editor).toBeUndefined();
     expect(byName.get('Events Captain')?.rolesMap.editor).toBeUndefined();
@@ -64,7 +65,7 @@ describe('runsheet access audit', () => {
     expect(byName.get('Orphan Leader')?.runsheetCampuses).toEqual([]);
     expect(report.leaderRoles.find((role) => role.id === 69)?.isLeader).toBe(false);
     expect(report.eventsTeamGroupsWithoutCampus).toEqual([{ groupId: 912, name: 'Orphan Events Team' }]);
-    expect(report.summary.editorCount).toBe(7);
+    expect(report.summary.editorCount).toBe(5);
     expect(report.summary.allCampusEditorCount).toBe(3);
   });
 

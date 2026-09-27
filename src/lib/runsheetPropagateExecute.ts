@@ -33,12 +33,27 @@ export async function executePropagationPlan(
       // Grouped by the target row's own id, not title text — a title edit
       // riding along in the same save must not break finding its row here.
       const changesByTargetItemId = new Map<number, typeof selected>();
+      const itemsToSave: RunsheetItemRow[] = [];
+      const deletedIds: number[] = [];
+
       for (const change of selected) {
+        if (change.isDeletedRow) {
+          if (change.targetItemId !== null) deletedIds.push(change.targetItemId);
+          continue;
+        }
+        if (change.isNewRow && change.sourceRow) {
+          itemsToSave.push({
+            ...change.sourceRow,
+            id: 'new-' + Math.random().toString(36).substring(2, 11),
+            isNew: true,
+            changedKeys: undefined,
+          });
+          continue;
+        }
         if (change.targetItemId === null) continue;
         changesByTargetItemId.set(change.targetItemId, [...(changesByTargetItemId.get(change.targetItemId) || []), change]);
       }
 
-      const itemsToSave: RunsheetItemRow[] = [];
       for (const [targetItemId, itemChanges] of changesByTargetItemId) {
         const targetRow = targetRows.find((r) => r.id === targetItemId);
         if (!targetRow || typeof targetRow.id !== 'number') continue;
@@ -53,14 +68,14 @@ export async function executePropagationPlan(
         itemsToSave.push({ ...targetRow, attributeValues, changedKeys });
       }
 
-      if (itemsToSave.length === 0) {
+      if (itemsToSave.length === 0 && deletedIds.length === 0) {
         return { channelId: channel.channelId, channelName: channel.name, ok: true, appliedCount: 0 };
       }
 
-      const res = await rockBulkSaveRunsheetItems(channel.channelId, itemsToSave, [], columns);
+      const res = await rockBulkSaveRunsheetItems(channel.channelId, itemsToSave, deletedIds, columns);
       if (!res.success) throw new Error(res.error || 'Save failed');
 
-      return { channelId: channel.channelId, channelName: channel.name, ok: true, appliedCount: itemsToSave.length };
+      return { channelId: channel.channelId, channelName: channel.name, ok: true, appliedCount: itemsToSave.length + deletedIds.length };
     }),
   );
 

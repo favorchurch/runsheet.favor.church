@@ -286,6 +286,36 @@ describe('getRockSession rock_person_ids claim', () => {
     expect(mockSetSessionCache).not.toHaveBeenCalled();
   });
 
+  it('does not cache when resolved contact id is 0', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        'https://auth.favor.church/rock_person_found': true,
+        'https://auth.favor.church/rock_person_id': 101,
+      }),
+    );
+    mockRockResolveAccess.mockResolvedValue(resolvedResult(0));
+
+    await getRockSession();
+
+    expect(mockSetSessionCache).not.toHaveBeenCalled();
+  });
+
+  it('bypasses a cached entry if its contact id is 0', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        'https://auth.favor.church/rock_person_found': true,
+        'https://auth.favor.church/rock_person_id': 101,
+      }),
+    );
+    mockGetSessionCache.mockResolvedValueOnce(resolvedResult(0));
+    mockRockResolveAccess.mockResolvedValue(resolvedResult(101));
+
+    const result = await getRockSession();
+
+    expect(mockRockResolveAccess).toHaveBeenCalled();
+    expect(result.personId).toBe(101);
+  });
+
   it('caches a non-partial resolve result normally, for contrast with the partial case above', async () => {
     mockGetServerSession.mockResolvedValue(
       sessionFor({

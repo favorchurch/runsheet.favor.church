@@ -40,7 +40,7 @@ import { rockDuplicateServiceRunsheet } from '@/server-actions/rockDuplicateServ
 import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetDetails, RunsheetColumnMetadata } from '@/types/Runsheet';
 import { resolveSiblings, type SiblingChannel } from '@/lib/runsheetSiblings';
 import { matchRows, type MatchResult } from '@/lib/runsheetMatch';
-import { buildPropagationPlan, type PropagationPlan, type CandidateCellChange } from '@/lib/runsheetPropagate';
+import { buildPropagationPlan, isSkippedStatus, type PropagationPlan, type CandidateCellChange } from '@/lib/runsheetPropagate';
 import { executePropagationPlan, type PropagationOutcome } from '@/lib/runsheetPropagateExecute';
 import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDetailsBatch';
@@ -58,6 +58,7 @@ import { RichTextToolbar } from './RichTextToolbar';
 import { SongSearchDropdown } from './SongSearchDropdown';
 import { SongDetailModal } from './SongDetailModal';
 import { ShareRunsheetModal } from './ShareRunsheetModal';
+import { isMasterTemplateName } from '@/lib/runsheetTemplate';
 import { EventTeamRosterCard, ensureRosterItems } from './EventTeamRosterCard';
 import { REORDER_INDEX_ATTR, usePointerReorder } from './usePointerReorder';
 
@@ -219,6 +220,7 @@ export function RunsheetTableEditor({
   onOptimisticSave,
   onSaveSettled,
 }: RunsheetTableEditorProps) {
+  const isTemplate = isMasterTemplateName(channelName);
   /**
    * A brand-new (or emptied-out) runsheet has nothing to lose, so it starts
    * pre-filled with the template instead of an empty grid — no manual "Reset
@@ -442,6 +444,10 @@ export function RunsheetTableEditor({
   const [propagateTargetRows, setPropagateTargetRows] = useState<Map<number, RunsheetItemRow[]>>(new Map());
   /** itemId -> pre-edit title, for rows renamed in the save that triggered propagation (see handleSave). */
   const propagateOldTitlesRef = React.useRef<Map<number, string>>(new Map());
+  /** Saved rows removed via the row delete button, kept so a save can offer the removal to siblings. */
+  const deletedRowsRef = React.useRef<Map<number, RunsheetItemRow>>(new Map());
+  /** Rows deleted in the save that triggered propagation — still needed to match their counterparts. */
+  const propagateDeletedRowsRef = React.useRef<RunsheetItemRow[]>([]);
 
   // Populate initial baseline for loaded items that exist in Rock
   useEffect(() => {
@@ -1091,6 +1097,8 @@ export function RunsheetTableEditor({
   const handleDeleteRow = (id: number | string) => {
     if (readOnly) return;
     saveSnapshot();
+    const deletedRow = items.find((item) => item.id === id);
+    if (deletedRow && typeof id === 'number') deletedRowsRef.current.set(id, deletedRow);
     setDeletedIds((previous) => [...previous, id]);
     setItems((previous) => previous.filter((item) => item.id !== id));
     setEditingCell(null);
@@ -1341,12 +1349,13 @@ export function RunsheetTableEditor({
       // against the old title so the row pairs up cleanly instead of falling
       // through to "unmatched" (or worse, colliding on a renamed empty slot).
       const oldTitles = propagateOldTitlesRef.current;
-      const matchingSourceRows = processedRows.map((row) => {
+      const matchingSourceRows: RunsheetItemRow[] = processedRows.map((row): RunsheetItemRow => {
         if (typeof row.id !== 'number') return row;
         const oldTitle = oldTitles.get(row.id);
         if (oldTitle === undefined) return row;
         return { ...row, title: oldTitle, attributeValues: { ...row.attributeValues, ACTIVITYTITLE: oldTitle } };
       });
+      matchingSourceRows.push(...propagateDeletedRowsRef.current);
 
       for (const result of batch) {
         if (!result.success || !result.data) continue;
@@ -1425,18 +1434,36 @@ export function RunsheetTableEditor({
       const candidates: CandidateCellChange[] = [];
       const oldTitlesForMatching = new Map<number, string>();
       for (const item of itemsToSave) {
-        if (typeof item.id === 'string' || item.isNew) continue;
-        const baseline = baselineRef.current.get(item.id);
-        if (!baseline) continue;
+        const res = (result.results || []).find((r) => r.clientId === item.id);
+        if (!res || !res.ok || !res.rockId) continue;
+        const rockId = res.rockId;
+        const isNewItem = typeof item.id === 'string' || item.isNew;
         const newTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
+
+        if (isNewItem) {
+          candidates.push({
+            itemId: rockId,
+            itemTitle: newTitle,
+            columnKey: 'NEW_ROW',
+            columnName: 'New Segment',
+            newValue: 'Added segment',
+            previousValue: '',
+            isNewRow: true,
+            sourceRow: { ...item, id: rockId, isNew: false, changedKeys: [] },
+          });
+          continue;
+        }
+
+        const baseline = baselineRef.current.get(rockId);
+        if (!baseline) continue;
         if (newTitle !== baseline.title) {
-          oldTitlesForMatching.set(item.id, baseline.title);
+          oldTitlesForMatching.set(rockId, baseline.title);
         }
         for (const key of item.changedKeys || []) {
           if (key === 'title' || key === 'order' || key === 'startDateTime' || key === 'duration' || key === 'songItemId') continue;
           const column = columns.find((c) => c.key === key);
           candidates.push({
-            itemId: item.id,
+            itemId: rockId,
             itemTitle: newTitle,
             columnKey: key,
             columnName: column?.name || key,
@@ -1446,6 +1473,26 @@ export function RunsheetTableEditor({
         }
       }
       propagateOldTitlesRef.current = oldTitlesForMatching;
+
+      // Only rows removed with the row delete button — a template reset also
+      // fills deletedIds, and offering that would wipe every sibling.
+      const deletedRowsForMatching: RunsheetItemRow[] = [];
+      for (const id of deletedIds) {
+        const row = typeof id === 'number' ? deletedRowsRef.current.get(id) : undefined;
+        if (!row) continue;
+        deletedRowsForMatching.push(row);
+        candidates.push({
+          itemId: id as number,
+          itemTitle: row.attributeValues?.ACTIVITYTITLE || row.title || '',
+          columnKey: 'DELETED_ROW',
+          columnName: 'Removed Segment',
+          newValue: '',
+          previousValue: '',
+          isDeletedRow: true,
+        });
+      }
+      propagateDeletedRowsRef.current = deletedRowsForMatching;
+      deletedRowsRef.current.clear();
 
       (result.results || []).forEach((res) => {
         if (res.ok && res.rockId) {
@@ -1558,7 +1605,7 @@ export function RunsheetTableEditor({
         targets: prev.targets.map((t) => ({
           ...t,
           changes: t.changes.map((c) =>
-            c.itemTitle === itemTitle && c.columnKey === columnKey && c.status !== 'unmatched'
+            c.itemTitle === itemTitle && c.columnKey === columnKey && !isSkippedStatus(c.status)
               ? { ...c, selected: nextSelected }
               : c,
           ),
@@ -1999,23 +2046,30 @@ export function RunsheetTableEditor({
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
-                <label className="whitespace-nowrap text-[11px] font-semibold text-slate-700" htmlFor="runsheet-start-time">
-                  Start:
-                </label>
-                <input
-                  id="runsheet-start-time"
-                  type="text"
-                  disabled={readOnly}
-                  className="w-20 rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
-                  value={startTime}
-                  onChange={(event) => {
-                    setStartTime(event.target.value);
-                    setIsDirty(true);
-                  }}
-                  placeholder="08:00:00 AM"
-                />
-              </div>
+              {isTemplate && (
+                <span className="rounded-md bg-pink-100 px-2 py-0.5 text-[11px] font-bold text-pink-800">
+                  Master Template
+                </span>
+              )}
+              {!isTemplate && (
+                <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
+                  <label className="whitespace-nowrap text-[11px] font-semibold text-slate-700" htmlFor="runsheet-start-time">
+                    Start:
+                  </label>
+                  <input
+                    id="runsheet-start-time"
+                    type="text"
+                    disabled={readOnly}
+                    className="w-20 rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
+                    value={startTime}
+                    onChange={(event) => {
+                      setStartTime(event.target.value);
+                      setIsDirty(true);
+                    }}
+                    placeholder="08:00:00 AM"
+                  />
+                </div>
+              )}
 
               {!readOnly && (
                 <>

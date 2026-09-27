@@ -9,7 +9,7 @@ export const CAMPUS_EDIT_GROUP_TYPE_IDS = [28] as const;
 /** Rock group types that grant campus-scoped runsheet view access. */
 export const CAMPUS_VIEW_GROUP_TYPE_IDS = [23] as const;
 
-/** Group names ending this way are Events Teams; only their leaders may edit. */
+/** Group names ending this way are Events Teams; they get a campus-wide view (never edit). */
 export const EVENTS_TEAM_NAME_PATTERN = /events team$/i;
 
 /** Fallback only: Rock's GroupTypeRole.IsLeader lookup is authoritative. */
@@ -83,7 +83,7 @@ export function resolveRunsheetAccessPolicy(
   memberships: readonly RunsheetPolicyMembership[],
   groups: PolicyGroupMap,
   campusRoots: PolicyGroupMap,
-  leaderRoleIds: LeaderRoleIds = new Set<number>(),
+  _leaderRoleIds: LeaderRoleIds = new Set<number>(),
   leaderRoleLookupFailed = false,
 ): RunsheetAccessPolicyResult {
   const editorGroupIds: string[] = [];
@@ -96,11 +96,11 @@ export function resolveRunsheetAccessPolicy(
     const isCampusEditor = (CAMPUS_EDIT_GROUP_TYPE_IDS as readonly number[]).includes(membership.groupTypeId);
     const isMinistryMember = (CAMPUS_VIEW_GROUP_TYPE_IDS as readonly number[]).includes(membership.groupTypeId);
     const isEventsTeam = Boolean(group?.name && EVENTS_TEAM_NAME_PATTERN.test(group.name.trim()));
-    const isLeader = leaderRoleLookupFailed
-      ? GROUP_TYPE_23_LEADER_ROLE_IDS.includes(membership.groupRoleId as (typeof GROUP_TYPE_23_LEADER_ROLE_IDS)[number])
-      : leaderRoleIds.has(Number(membership.groupRoleId));
-    const canEdit = isGlobal || isCampusEditor || (isMinistryMember && isEventsTeam && isLeader);
-    const canView = isGlobal || isCampusEditor || isMinistryMember;
+    // Ministry Teams no longer get blanket access: only Events Teams keep a
+    // campus-wide view, and no Ministry Team role edits. Everyone else sees
+    // the runsheets they are rostered on (see lib/rosterAccess).
+    const canEdit = isGlobal || isCampusEditor;
+    const canView = isGlobal || isCampusEditor || (isMinistryMember && isEventsTeam);
 
     if (!canView) continue;
 

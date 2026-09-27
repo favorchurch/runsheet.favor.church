@@ -510,4 +510,34 @@ describe('RunsheetTableEditor layout & column ordering', () => {
     // Layout toggle appears in the schedule header container after the title
     expect(scheduleHeading.compareDocumentPosition(layoutGroup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+
+  it('badges a master template and hides its start-time control', () => {
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="MNL // Runsheet Master Template"
+        columns={columnsWithDescFirst}
+        initialItems={items}
+        initialStartTime="10:00 AM"
+      />
+    );
+
+    expect(screen.getByText('Master Template')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Start:')).not.toBeInTheDocument();
+  });
+
+  it('keeps the start-time control on ordinary runsheets', () => {
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="MNL Crowne // October 4, 2099 // 10AM"
+        columns={columnsWithDescFirst}
+        initialItems={items}
+        initialStartTime="10:00 AM"
+      />
+    );
+
+    expect(screen.queryByText('Master Template')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Start:')).toBeInTheDocument();
+  });
 });

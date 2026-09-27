@@ -6,6 +6,9 @@ jest.mock('./rockObjectCache', () => ({
   readRockObjectCache: jest.fn(async () => ({ hit: false })),
   writeRockObjectCache: jest.fn(async () => undefined),
 }));
+jest.mock('@/auth0-hooks/server/assertAuthenticated', () => ({
+  assertAuthenticated: jest.fn(async () => undefined),
+}));
 
 const mockReadRockObjectCache = jest.mocked(readRockObjectCache);
 const mockWriteRockObjectCache = jest.mocked(writeRockObjectCache);
@@ -154,7 +157,8 @@ describe('rockResolveAccess', () => {
 
       const result = await rockResolveAccess([305]);
 
-      expect(result.rolesMap.editor).toEqual(['19109']);
+      expect(result.rolesMap.editor).toBeUndefined();
+      expect(result.rolesMap.viewer).toEqual(['19109']);
       expect(result.access.runsheetCampuses).toEqual(['MNL']);
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('GroupTypeRole.IsLeader lookup failed'),
@@ -193,7 +197,7 @@ describe('rockResolveAccess', () => {
         return rockResponse([{ Id: 32879, GroupTypeId: 1, Name: 'GLB | Dashboard Creator', ParentGroupId: null }]);
       }
       if (path === '/Groups' && filter === 'GroupTypeId eq 23') {
-        return rockResponse([{ Id: 19109, GroupTypeId: 23, Name: 'MNL Volunteer Team', ParentGroupId: 57 }]);
+        return rockResponse([{ Id: 19109, GroupTypeId: 23, Name: 'MNL Events Team', ParentGroupId: 57 }]);
       }
       if (path === '/GroupTypeRoles') return rockResponse([{ Id: 19, IsLeader: false }]);
       return rockResponse([]);
@@ -419,5 +423,42 @@ describe('rockResolveAccess', () => {
       .map(([input]) => decodeURIComponent(String(input)))
       .filter((url) => url.includes('/GroupMembers'));
     expect(groupMemberCalls.some((url) => url.includes('PersonId eq 912'))).toBe(false);
+  });
+
+  it('adds rostered-only keys from Scheduler attendances, excluding Grow schedules', async () => {
+    mockFetch.mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      const path = url.pathname.replace(/^\/api/, '');
+      if (path === '/People') return rockResponse([{ Id: 410, FirstName: 'Rostered', LastName: 'Volunteer' }]);
+      if (path === '/GroupMembers') return rockResponse([]);
+      if (path === '/PersonAlias') return rockResponse([{ Id: 9410 }]);
+      if (path === '/Attendances') {
+        return rockResponse([
+          { OccurrenceId: 1, CampusId: 1, StartDateTime: '2099-09-27T15:00:00' },
+          { OccurrenceId: 2, CampusId: 1, StartDateTime: '2099-09-27T15:00:00' },
+        ]);
+      }
+      if (path === '/AttendanceOccurrences') {
+        return rockResponse([
+          { Id: 1, ScheduleId: 311, OccurrenceDate: '2099-09-27T00:00:00' },
+          { Id: 2, ScheduleId: 752, OccurrenceDate: '2099-09-27T00:00:00' },
+        ]);
+      }
+      if (path === '/Schedules') return rockResponse([{ Id: 752, Name: 'MNL Grow - Build x FDNA', iCalendarContent: '' }]);
+      return rockResponse([]);
+    });
+
+    const result = await rockResolveAccess([410]);
+
+    expect(result.rolesMap.rosteredViewer).toEqual(['MNL:2099-09-27:15:00:00']);
+    expect(result.rolesMap.growViewer).toEqual(['752:2099-09-27']);
+    expect(result.rolesMap.viewer).toBeUndefined();
+
+    const attendanceCalls = mockFetch.mock.calls
+      .map(([input]) => decodeURIComponent(String(input).replace(/\+/g, ' ')))
+      .filter((url) => url.includes('/Attendances'));
+    expect(attendanceCalls.length).toBe(1);
+    expect(attendanceCalls[0]).toContain('(ScheduledToAttend eq true or RequestedToAttend eq true)');
+    expect(attendanceCalls[0]).toContain("RSVP ne '2'");
   });
 });
