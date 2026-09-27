@@ -59,6 +59,7 @@ import { SongSearchDropdown } from './SongSearchDropdown';
 import { SongDetailModal } from './SongDetailModal';
 import { ShareRunsheetModal } from './ShareRunsheetModal';
 import { EventTeamRosterCard, ensureRosterItems } from './EventTeamRosterCard';
+import { REORDER_INDEX_ATTR, usePointerReorder } from './usePointerReorder';
 
 function extractCategoryCampus(catName: string): RunsheetCampusCode | null {
   if (!catName) return null;
@@ -238,7 +239,10 @@ export function RunsheetTableEditor({
   );
   const [deletedIds, setDeletedIds] = useState<(number | string)[]>([]);
   const [startTime, setStartTime] = useState(initialStartTime);
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const { drag: rowDrag, getHandleProps: getRowDragHandleProps } = usePointerReorder(
+    (fromIndex, toIndex) => handleReorderRow(fromIndex, toIndex),
+    readOnly
+  );
 
   const [columnOrder, setColumnOrder] = useState<string[]>(() => {
     if (initialColumnMetadata?.order && initialColumnMetadata.order.length > 0) {
@@ -1093,58 +1097,38 @@ export function RunsheetTableEditor({
     setIsDirty(true);
   };
 
-  const handleDragStart = (index: number, event: React.DragEvent) => {
-    if (readOnly) return;
-    setDraggedIndex(index);
-    const rowElement = event.currentTarget.closest('tr');
-    if (rowElement && event.dataTransfer) {
-      event.dataTransfer.setDragImage(rowElement, 20, 20);
-    }
-  };
-
   /**
-   * Moves the item with `draggedId` to sit where `targetId` currently is.
-   * Resolved by stable id rather than array index, since a row's position in
-   * `items` (which also holds hidden "Roster: ..." placeholder rows) doesn't
-   * necessarily match its position in the roster-filtered, user-visible list.
+   * Moves the visible row at `fromIndex` into the visible slot at `toIndex`
+   * (landing after the target when dragging down, before it when dragging up).
+   * Both indices are positions within the roster-filtered `processedRows`, not
+   * the raw `items` array — resolved by stable id so a dragged row always lands
+   * next to the row the user actually dropped it on, even when hidden
+   * "Roster: ..." placeholder rows have thrown off a plain index splice.
    */
-  const moveItemById = (draggedId: number | string, targetId: number | string) => {
+  const handleReorderRow = (fromIndex: number, toIndex: number) => {
+    if (readOnly || fromIndex === toIndex) return;
+    const draggedId = processedRows[fromIndex]?.id;
+    const targetId = processedRows[toIndex]?.id;
+    if (draggedId === undefined || targetId === undefined) return;
+
     saveSnapshot();
     setItems((previous) => {
       const updated = [...previous];
-      const fromIndex = updated.findIndex((item) => item.id === draggedId);
-      if (fromIndex === -1) return previous;
-      const [moved] = updated.splice(fromIndex, 1);
-      const toIndex = updated.findIndex((item) => item.id === targetId);
-      updated.splice(toIndex === -1 ? fromIndex : toIndex, 0, moved);
+      const from = updated.findIndex((item) => item.id === draggedId);
+      if (from === -1) return previous;
+      const [moved] = updated.splice(from, 1);
+      const target = updated.findIndex((item) => item.id === targetId);
+      if (target === -1) return previous;
+      updated.splice(toIndex > fromIndex ? target + 1 : target, 0, moved);
       return updated;
     });
     setIsDirty(true);
-  };
-
-  const handleDrop = (targetIndex: number) => {
-    if (readOnly || draggedIndex === null || draggedIndex === targetIndex) return;
-
-    // Both indices are positions within the roster-filtered `processedRows`,
-    // not the raw `items` array — resolve by stable id so a dragged row always
-    // lands next to the row the user actually dropped it on, even when roster
-    // placeholder rows have thrown off a plain index-to-index splice.
-    const draggedId = processedRows[draggedIndex]?.id;
-    const targetId = processedRows[targetIndex]?.id;
-    if (draggedId === undefined || targetId === undefined) return;
-
-    moveItemById(draggedId, targetId);
-    setDraggedIndex(null);
     setEditingCell(null);
   };
 
   /**
-   * Up/down reorder for the mobile Card view, where HTML5 drag-and-drop doesn't
-   * work reliably on touch. A direct swap by id, not `moveItemById` — that
-   * helper's "remove then insert before the target's post-removal slot" logic
-   * correctly swaps adjacent rows moving up, but is a no-op moving down: removing
-   * the dragged row shifts the very-next target back by exactly the one slot
-   * being inserted into, landing the dragged row right back where it started.
+   * Up/down reorder buttons for the Card view. Complements the drag handle with one-tap nudges. A direct swap by id of
+   * the two adjacent visible rows.
    */
   const handleMoveCard = (index: number, direction: 'up' | 'down') => {
     if (readOnly) return;
@@ -2567,22 +2551,23 @@ export function RunsheetTableEditor({
               {processedRows.map((item, index) => {
                 const spanInfo = timeSpanMap[index];
                 const parentBlockIndex = parentBlockMap[index];
-                const isDragOver = draggedIndex === index;
+                const isDragSource = rowDrag?.fromIndex === index;
+                const dropEdge = rowDrag && rowDrag.overIndex === index && rowDrag.fromIndex !== index
+                  ? (rowDrag.overIndex > rowDrag.fromIndex ? 'bottom' : 'top')
+                  : null;
                 const isBlockEditing = !readOnly && editingDurationBlockIndex === parentBlockIndex;
                 const currentTitleVal = item.attributeValues?.ACTIVITYTITLE || item.title || '';
 
                 return (
                   <tr
                     key={item.id}
-                    onDragOver={(event) => !readOnly && event.preventDefault()}
-                    onDrop={() => !readOnly && handleDrop(index)}
-                    className={`border-b border-slate-200 transition-colors hover:bg-slate-50/90 ${isDragOver ? 'border-t-2 border-blue-500 bg-blue-50' : ''
-                      }`}
+                    {...{ [REORDER_INDEX_ATTR]: index }}
+                    className={`border-b border-slate-200 transition-colors hover:bg-slate-50/90 ${isDragSource ? 'bg-blue-50 opacity-60' : ''
+                      } ${dropEdge === 'top' ? 'shadow-[inset_0_2px_0_0_#3b82f6] bg-blue-50' : ''} ${dropEdge === 'bottom' ? 'shadow-[inset_0_-2px_0_0_#3b82f6] bg-blue-50' : ''}`}
                   >
                     {!readOnly && (
                       <td
-                        draggable
-                        onDragStart={(event) => handleDragStart(index, event)}
+                        {...getRowDragHandleProps(index)}
                         className="cursor-grab select-none border-r border-slate-200 p-0.5 text-center align-middle text-slate-400 hover:text-slate-700 active:cursor-grabbing"
                         title="Drag handle cell to move whole row"
                       >
@@ -2757,16 +2742,33 @@ export function RunsheetTableEditor({
             const currentTitleVal = item.attributeValues?.ACTIVITYTITLE || item.title || '';
             const isMusic = !!musicCellMap[String(item.id)];
             const plainTitle = htmlToPlainText(currentTitleVal) || 'New Segment';
+            const isDragSource = rowDrag?.fromIndex === index;
+            const dropEdge = rowDrag && rowDrag.overIndex === index && rowDrag.fromIndex !== index
+              ? (rowDrag.overIndex > rowDrag.fromIndex ? 'bottom' : 'top')
+              : null;
 
             return (
               <div
                 id={`card_item_${item.id}`}
                 key={item.id}
+                {...{ [REORDER_INDEX_ATTR]: index }}
                 onClick={() => !readOnly && setEditingCardIndex(index)}
-                className="rounded-xl border border-slate-200 bg-white p-2 sm:p-2.5 shadow-xs flex flex-col gap-1.5 transition-all active:bg-slate-50 cursor-pointer scroll-mt-4"
+                className={`rounded-xl border border-slate-200 bg-white p-2 sm:p-2.5 shadow-xs flex flex-col gap-1.5 transition-all active:bg-slate-50 cursor-pointer scroll-mt-4 ${isDragSource ? 'opacity-60' : ''
+                  } ${dropEdge === 'top' ? 'shadow-[0_-3px_0_0_#3b82f6]' : ''} ${dropEdge === 'bottom' ? 'shadow-[0_3px_0_0_#3b82f6]' : ''}`}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
+                    {!readOnly && (
+                      <span
+                        {...getRowDragHandleProps(index)}
+                        role="button"
+                        aria-label="Drag to reorder"
+                        title="Drag to reorder"
+                        className="-ml-1 flex h-7 w-7 cursor-grab select-none items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700 active:cursor-grabbing"
+                      >
+                        <HiBars3 className="h-4 w-4 pointer-events-none" />
+                      </span>
+                    )}
                     <span className="font-mono text-xs font-bold text-blue-900 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
                       {item.calculatedStart}
                     </span>
