@@ -1,7 +1,7 @@
 'use server';
 
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
-import { canUserEditRunsheet } from '@/lib/permissions';
+import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
 import {
   getRockRosterRole,
   isRockLinkedCampus,
@@ -48,8 +48,12 @@ export async function rockSyncRosterRole(input: {
   const { channelName, roleTitle, personIds } = input;
 
   const session = await getRockSession();
-  if (!canUserEditRunsheet(session)) {
-    return fail('You do not have permission to edit this roster.');
+  // The same per-channel gate every other mutation uses: a coarse "is an
+  // editor" check would let a Grow-only Head, or an editor scoped to another
+  // campus, write MNL service rosters straight into Rock.
+  const access = await assertRunsheetEditAccess(session, channelName);
+  if (!access.allowed) {
+    return fail(access.error || 'You do not have permission to edit this roster.');
   }
   if (isPastChannel(channelName)) {
     return fail('This runsheet is in the past, so its roster can no longer be changed.');
@@ -172,12 +176,16 @@ export async function rockSyncRosterRole(input: {
 
     // Read back rather than trusting the plan: Rock is the source of truth, and
     // a partially-applied write must surface as what actually happened.
-    const after = ((await rockGet('/Attendances', {
-      $filter: [...occurrenceIdByLocation.values()].map((id) => `OccurrenceId eq ${id}`).join(' or '),
-      $expand: 'PersonAlias/Person',
-      $select:
-        'Id,OccurrenceId,RSVP,PersonAlias/PersonId,PersonAlias/Person/NickName,PersonAlias/Person/LastName',
-    }, true)) || []) as any[];
+    // With no occurrences the filter would be empty, and an empty `$filter` is
+    // sent as-is — that fetches every Attendance in Rock, so skip the read.
+    const after = occurrenceIdByLocation.size
+      ? (((await rockGet('/Attendances', {
+          $filter: [...occurrenceIdByLocation.values()].map((id) => `OccurrenceId eq ${id}`).join(' or '),
+          $expand: 'PersonAlias/Person',
+          $select:
+            'Id,OccurrenceId,RSVP,PersonAlias/PersonId,PersonAlias/Person/NickName,PersonAlias/Person/LastName',
+        }, true)) || []) as any[])
+      : [];
 
     const people = after
       .filter((a) => ROSTERED_RSVP.has(a.RSVP) && a.PersonAlias?.Person)

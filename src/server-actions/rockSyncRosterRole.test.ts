@@ -12,9 +12,14 @@ jest.mock('@/server-actions/internal/rockFetch', () => ({
 
 const mockSession = jest.mocked(getRockSession);
 const mockRockPut = jest.mocked(rockPut);
+const mockRockGet = jest.mocked(rockGet);
 
 const EDITOR = { rolesMap: { editor: ['7001'] }, access: { runsheetCampuses: ['MNL'] } } as any;
 const VIEWER = { rolesMap: { viewer: ['7001'] }, access: { runsheetCampuses: ['MNL'] } } as any;
+/** An editor scoped to another campus entirely. */
+const BNE_EDITOR = { rolesMap: { editor: ['7002'] }, access: { runsheetCampuses: ['BNE'] } } as any;
+/** A Grow Course Head: an editor, but only of Grow runsheets. */
+const GROW_HEAD = { rolesMap: { growEditor: ['19108'] }, access: { runsheetCampuses: [] } } as any;
 
 /** A date comfortably in the future so the past-date guard never fires. */
 const FUTURE = 'MNL Crowne // December 27, 2099 // 3PM';
@@ -34,8 +39,37 @@ describe('rockSyncRosterRole', () => {
       personIds: [10],
     });
     expect(res.success).toBe(false);
-    expect(res.error).toBe('You do not have permission to edit this roster.');
     expect(mockRockPut).not.toHaveBeenCalled();
+    // Denied at the gate, before any Rock lookup happens.
+    expect(mockRockGet).not.toHaveBeenCalled();
+  });
+
+  it('refuses an editor scoped to another campus', async () => {
+    mockSession.mockResolvedValueOnce(BNE_EDITOR);
+    const res = await rockSyncRosterRole({
+      channelName: FUTURE,
+      roleTitle: 'Roster: Service Director',
+      personIds: [10],
+    });
+    expect(res.success).toBe(false);
+    expect(mockRockPut).not.toHaveBeenCalled();
+    // Denied at the gate, before any Rock lookup happens.
+    expect(mockRockGet).not.toHaveBeenCalled();
+  });
+
+  it('refuses a Grow Course Head writing a Sunday service roster', async () => {
+    mockSession.mockResolvedValueOnce(GROW_HEAD);
+    const res = await rockSyncRosterRole({
+      channelName: FUTURE,
+      roleTitle: 'Roster: Service Director',
+      personIds: [10],
+    });
+    expect(res.success).toBe(false);
+    expect(mockRockPut).not.toHaveBeenCalled();
+    // The gate itself reads /Schedules to test the title against Grow
+    // Courses; what must never happen is the roster lookup that precedes a
+    // write.
+    expect(mockRockGet).not.toHaveBeenCalledWith('/GroupLocations', expect.anything());
   });
 
   it('refuses a runsheet whose date has passed', async () => {
@@ -109,6 +143,37 @@ describe('rockSyncRosterRole', () => {
     expect(res.error).toBe('Rock only has 1 slot for this role, but 2 people were assigned.');
     expect(mockRockPut).not.toHaveBeenCalled();
     expect(jest.mocked(rockPost)).not.toHaveBeenCalled();
+  });
+
+  it('never reads back with an empty filter when Rock has no occurrence rows', async () => {
+    // Clearing a role that Rock has never opened a slot for: nothing to add and
+    // nothing to remove. An unguarded read-back would send `$filter=` and pull
+    // every Attendance in Rock back into the picker.
+    jest.mocked(rockGet)
+      .mockResolvedValueOnce([
+        { GroupId: 19100, LocationId: 475, Schedules: [{ Id: 565, Name: 'MNL Crowne 3PM' }] },
+      ] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      // occurrenceRows: Rock has no slot open for this role/date yet
+      .mockResolvedValueOnce([] as any);
+
+    const res = await rockSyncRosterRole({
+      channelName: FUTURE,
+      roleTitle: 'Roster: Service Director',
+      personIds: [],
+    });
+
+    expect(res.success).toBe(true);
+    expect(res.people).toEqual([]);
+    expect(mockRockPut).not.toHaveBeenCalled();
+    expect(mockRockGet).not.toHaveBeenCalledWith(
+      '/Attendances',
+      expect.objectContaining({ $filter: '' }),
+      expect.anything(),
+    );
   });
 
   it('performs removes first then adds and returns updated people', async () => {

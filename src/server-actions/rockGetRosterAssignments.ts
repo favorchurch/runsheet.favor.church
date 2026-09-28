@@ -111,7 +111,7 @@ export async function rockGetRosterAssignments(
         })) || []) as any[])
       : [];
 
-    const occupants: RosterOccupant[] = [];
+    const occupants: (RosterOccupant & { groupId: number })[] = [];
     for (const a of attendances) {
       if (!ROSTERED_RSVP.has(a.RSVP)) continue;
       const slot = byOccurrenceId.get(a.OccurrenceId);
@@ -122,13 +122,18 @@ export async function rockGetRosterAssignments(
         personId: a.PersonAlias.PersonId,
         name: `${person.NickName || ''} ${person.LastName || ''}`.trim(),
         locationId: slot.locationId,
+        groupId: slot.groupId,
       });
     }
 
     const roles = linkedRoles.map((entry) => ({
       roleTitle: entry.role.roleTitle,
       people: mergeRosterOccupants(
-        occupants.filter((o) => entry.locationIds.includes(o.locationId)),
+        // Scoped by group as well as location, exactly as the write path is
+        // (`GroupId eq role.groupId`). Location ids are disjoint per role
+        // today, so matching on location alone would only misattribute people
+        // once Rock reuses a location across teams.
+        occupants.filter((o) => o.groupId === entry.role.groupId && entry.locationIds.includes(o.locationId)),
         entry.locationIds,
       ).map((o) => ({ personId: o.personId, name: o.name })),
     }));

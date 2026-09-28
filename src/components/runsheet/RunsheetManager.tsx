@@ -570,6 +570,7 @@ export function RunsheetManager({
                 editorMode={editorMode}
                 onModeChange={handleModeChange}
                 runsheetCampuses={user?.access?.runsheetCampuses}
+                accessScope={accessScope}
                 onCreated={handleRunsheetCreated}
                 onDeleted={() => handleRunsheetDeleted(runsheetData.channelId)}
                 onDirtyChange={(dirty) => setIsEditorDirty(dirty)}

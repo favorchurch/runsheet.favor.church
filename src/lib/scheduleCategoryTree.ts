@@ -109,14 +109,18 @@ export function scheduleRootsForCategory({
     return [categoryId];
   }
 
+  // Youth is tested first: it is the narrower label, and both tests are bare
+  // substring matches. A category such as "MNL | Sunday Youth" would otherwise
+  // resolve to the Sunday tree and then be filtered down to nothing, leaving
+  // the picker empty.
+  // (e.g. "MNL | Youth Service", "YOUTH SERVICES", or categoryId 475)
+  if (isYouthCategoryName(categoryName) || categoryId === YOUTH_SERVICES_CATEGORY_ID) {
+    return [campus ? CAMPUS_YOUTH_SCHEDULE_ROOT_IDS[campus] : YOUTH_SERVICES_CATEGORY_ID];
+  }
+
   // If name indicates Sunday Service (e.g. "MNL | Sunday Service", "SUNDAY SERVICES", or categoryId 50)
   if (isSundayCategoryName(categoryName) || categoryId === SUNDAY_SERVICES_CATEGORY_ID) {
     return [campus ? CAMPUS_SUNDAY_SCHEDULE_ROOT_IDS[campus] : SUNDAY_SERVICES_CATEGORY_ID];
-  }
-
-  // If name indicates Youth Service (e.g. "MNL | Youth Service", "YOUTH SERVICES", or categoryId 475)
-  if (isYouthCategoryName(categoryName) || categoryId === YOUTH_SERVICES_CATEGORY_ID) {
-    return [campus ? CAMPUS_YOUTH_SCHEDULE_ROOT_IDS[campus] : YOUTH_SERVICES_CATEGORY_ID];
   }
 
   // If categoryId was passed but not Sunday or Youth, it's an event (e.g. Family Night, Movement Night)

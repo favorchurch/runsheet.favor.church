@@ -114,6 +114,8 @@ interface RunsheetTableEditorProps {
   editorMode?: 'view' | 'edit';
   onModeChange?: (mode: 'view' | 'edit') => void;
   runsheetCampuses?: string[];
+  /** Cache discriminator for the authorized result set; see getRunsheetAccessScope. */
+  accessScope?: string;
   onCreated?: (channelId: number, title: string, createdData?: RunsheetDetails) => void;
   onDeleted?: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
@@ -215,6 +217,7 @@ export function RunsheetTableEditor({
   editorMode,
   onModeChange,
   runsheetCampuses,
+  accessScope = 'anonymous',
   onCreated,
   onDeleted,
   onDirtyChange,
@@ -243,7 +246,8 @@ export function RunsheetTableEditor({
   );
 
   const queryClient = useSafeQueryClient();
-  const rosterQuery = useRosterAssignments(channelName, !readOnly || true);
+  // Always enabled: the roster is shown in read-only mode too.
+  const rosterQuery = useRosterAssignments(channelName, true, accessScope);
 
   // Keep the stored `Roster:` items in step with Rock, so propagate/compare/print
   // never disagree with the card. Rock is the source of truth; these rows are a mirror.
@@ -2032,7 +2036,7 @@ export function RunsheetTableEditor({
                 onSaved={(people) => {
                   handleAttrValueChange(targetItem.id, personKey, people.map((p) => p.name).join(', '));
                   queryClient?.setQueryData(
-                    runsheetQueryKeys.rosterAssignments(channelName),
+                    runsheetQueryKeys.rosterAssignments(channelName, accessScope),
                     (current: any) =>
                       current
                         ? {

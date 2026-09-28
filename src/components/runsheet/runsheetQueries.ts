@@ -62,8 +62,8 @@ export const runsheetQueryKeys = {
     ['runsheet', 'channels', accessScope, includeArchived] as const,
   details: (channelId: number, accessScope: string = 'anonymous') =>
     ['runsheet', 'details', accessScope, channelId] as const,
-  rosterAssignments: (channelName: string) =>
-    ['runsheet', 'rosterAssignments', channelName] as const,
+  rosterAssignments: (channelName: string, accessScope: string = 'anonymous') =>
+    ['runsheet', 'rosterAssignments', accessScope, channelName] as const,
 };
 
 const queryBehavior = {
@@ -120,9 +120,9 @@ export async function prefetchRunsheetDetails(
  * Refresh-driven by decision: fetched on mount, never polled, never refetched on
  * focus. A Group Scheduler change appears on the next page load.
  */
-export function useRosterAssignments(channelName: string, enabled: boolean) {
+export function useRosterAssignments(channelName: string, enabled: boolean, accessScope: string = 'anonymous') {
   return useQuery(
-    runsheetQueryKeys.rosterAssignments(channelName),
+    runsheetQueryKeys.rosterAssignments(channelName, accessScope),
     () => rockGetRosterAssignments(channelName),
     {
       enabled: enabled && !!channelName,
