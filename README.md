@@ -70,6 +70,23 @@ Person-backed columns (Rock field type 18, plus keys containing `PLATFORM`,
 `ANCHOR` or `PREACHER`) stay a people picker rather than a rich-text cell — the
 stored value has to remain a resolvable person name.
 
+## Preacher notes (PDF attachments)
+
+A channel gets an attachments column by having a `PREACHERNOTES` item attribute
+(field type Text) in Rock. The value is a JSON array of
+`{key, name, size, uploadedAt}`, where `key` is an Asset Manager key under
+`PreacherNotes/<CAMPUS>/<itemId>/<random>/<file>.pdf` on the `Local Content`
+provider.
+
+Attachments are **editor-only**: a rostered viewer who can read the runsheet
+does not see the column and is refused by the routes. PDFs are uploaded, viewed
+and deleted through `/api/runsheet-attachments/*`, which proxies Rock so the raw
+asset URL is never rendered in the page. Note that asset URLs are public to
+anyone who holds them — see the design spec for the accepted risk.
+
+Each upload and delete saves to Rock immediately and does not depend on the
+grid's save button.
+
 ## Known gaps
 
 - **The runsheet list is hardcoded.** `RunsheetManager` lists a fixed set of
