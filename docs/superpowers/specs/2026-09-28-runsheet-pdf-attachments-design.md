@@ -27,20 +27,39 @@ other column in this app is discovered at runtime.
 The attribute value is a JSON array:
 
 ```json
-[{"guid":"…","name":"Nov 2 notes.pdf","size":184320,"uploadedAt":"2026-09-28T02:11:00Z"}]
+[{"key":"PreacherNotes/1042/nov-2-notes.pdf","name":"Nov 2 notes.pdf","size":184320,"uploadedAt":"2026-09-28T02:11:00Z"}]
 ```
 
 - Absent, empty, or unparseable values are all read as "no attachments". A
   hand-edited Rock value can never break the grid.
+- `key` is the Asset Manager asset key (its path within the storage provider).
 - `name` and `size` are denormalised so the grid renders the list without a
   per-file Rock round-trip. A rename inside Rock does not propagate; that is an
   accepted trade.
 
-Files are Rock `BinaryFile` records under a new BinaryFileType named
-**Runsheet Attachment**, created with `RequiresViewSecurity = true` so Rock's
-`GetFile.ashx` will not serve them to an anonymous URL holder. Rock has no
-`ContentChannelItemAttachment` entity (verified against the live API), so an
-attribute-held guid list is the only link available.
+Files are stored in Rock's **Asset Manager**, under the existing `Local Content`
+AssetStorageProvider (Id 1, file-system type, verified against the live API), in
+a dedicated folder — `PreacherNotes/<itemId>/`. Rock has no
+`ContentChannelItemAttachment` entity (also verified), so an attribute-held key
+list is the only link available.
+
+### Accepted risk: asset URLs are public
+
+Asset Manager files on a file-system provider are served as static content from
+`~/Content`, with no per-file Rock security. Anyone who has or guesses the raw
+URL can fetch the PDF without signing in, including people outside the church.
+This was raised and accepted as a deliberate trade for using the Asset Manager,
+which staff can already browse and upload to by hand at
+`https://rock.favor.church/admin/cms/asset-manager`.
+
+Two consequences follow, and the implementation must honour both:
+
+- The app still proxies reads through its own route and still enforces editor
+  access there. The proxy is what the UI links to; the raw asset URL is never
+  rendered in the page, so it is not casually copyable.
+- Filenames are stored under a random per-file prefix rather than a predictable
+  path, so the URL is not guessable from a service date or a preacher name. This
+  is obscurity, not security, and does not change the risk above.
 
 ## Access
 
@@ -57,12 +76,14 @@ Route handlers under `src/app/api/runsheet-attachments/`:
 
 - `POST /upload` — multipart. Asserts channel edit access; rejects the file
   unless its declared content type is `application/pdf` and its first bytes are
-  `%PDF-`; posts to Rock `/api/BinaryFiles/Upload` under the Runsheet Attachment
-  type; returns `{guid, name, size}`.
-- `GET /[guid]` — asserts access, streams the file from Rock with
+  `%PDF-`; uploads to the Asset Manager provider at
+  `PreacherNotes/<itemId>/<random>/<filename>`; returns `{key, name, size}`.
+- `GET /[key]` — asserts access, streams the asset with
   `Content-Disposition: inline` so it can render in an embedded viewer, and with
-  a `?download=1` variant that sends `attachment` instead.
-- `DELETE /[guid]` — asserts access, deletes the BinaryFile in Rock.
+  a `?download=1` variant that sends `attachment` instead. The key is passed
+  URL-encoded and validated against the `PreacherNotes/` prefix so it cannot be
+  used to read arbitrary paths on the provider.
+- `DELETE /[key]` — asserts access, deletes the asset from the provider.
 
 Server action in `src/server-actions/`:
 
@@ -79,7 +100,7 @@ grid's own save button — closing the tab right after an upload loses nothing.
 Deletes persist the same way.
 
 Upload and attribute write stay separate calls. If the attribute write fails,
-the result is an orphaned BinaryFile in Rock rather than a half-written
+the result is an orphaned asset in Rock rather than a half-written
 attribute, and the panel surfaces the failure so the user can retry. Orphans are
 harmless; a cleanup script can come later if they accumulate.
 
@@ -114,9 +135,16 @@ must report the failure in the panel rather than fail silently.
 
 No E2E tests; this repo has none.
 
-## Prerequisite
+## Prerequisites and unknowns
 
-The **Runsheet Attachment** BinaryFileType must be created in Rock before any of
-this works. It is created once, by hand or by script, not by the app at runtime.
-The `PREACHERNOTES` attribute is then added to each channel that should have
-attachments.
+- The `PREACHERNOTES` attribute must be added in Rock to each channel that
+  should have attachments. No app change is needed per channel.
+- The `PreacherNotes/` folder must exist on the `Local Content` provider, or be
+  created on first upload.
+- **Unverified:** whether Rock's asset upload endpoint
+  (`FileUploader.ashx?IsAssetStorageProviderAsset=true&StorageId=1&Key=…`)
+  accepts an API-key header, or requires an authenticated Rock session cookie.
+  Handlers ending in `.ashx` have historically wanted a session. The first task
+  of implementation is a spike against rock-preview that settles this; if the API
+  key is refused, the fallback is BinaryFile storage, which the API key does
+  support, and that decision comes back to the user before any UI work starts.
