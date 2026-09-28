@@ -43,7 +43,7 @@ jest.mock('@/lib/richText', () => ({
 
 import '@testing-library/jest-dom';
 import React from 'react';
-import { render, fireEvent, screen } from '@testing-library/react';
+import { render, fireEvent, screen, act } from '@testing-library/react';
 import { RunsheetTableEditor } from '@/components/runsheet/RunsheetTableEditor';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
@@ -123,6 +123,74 @@ describe('RunsheetTableEditor dirty state', () => {
     );
 
     // After render, onDirtyChange should have been called with false (or last call should be false)
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  test('stops reporting unsaved changes once a save succeeds', async () => {
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
+    (rockGetAvailableRunsheetChannels as jest.Mock).mockResolvedValue({ success: true, channels: [] });
+    const onDirtyChange = jest.fn();
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="10:00:00 AM"
+        onSaveRef={(fn) => (saveFn = fn)}
+        onDirtyChange={onDirtyChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Start:'), { target: { value: '09:30:00 AM' } });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+    await act(async () => {
+      await saveFn?.();
+    });
+
+    // Saved work is no longer pending: the Save button should settle and
+    // leaving the page must not prompt to save again.
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  test('stops reporting unsaved changes after saving an edited row', async () => {
+    // Rock echoes each saved row back, which is the path that writes straight
+    // into baselineRef — the case a Start Time edit never exercises.
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({
+      success: true,
+      results: [{ ok: true, clientId: 101, rockId: 101 }],
+    });
+    (rockGetAvailableRunsheetChannels as jest.Mock).mockResolvedValue({ success: true, channels: [] });
+    const onDirtyChange = jest.fn();
+    let saveFn: (() => Promise<boolean>) | undefined;
+
+    render(
+      <RunsheetTableEditor
+        channelId={1}
+        channelName="Sun 10:00 AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="10:00:00 AM"
+        onSaveRef={(fn) => (saveFn = fn)}
+        onDirtyChange={onDirtyChange}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /card view/i }));
+    fireEvent.click(screen.getAllByText('Edit Card')[0]);
+    const titleInput = screen.getByPlaceholderText('Enter activity title...') as HTMLInputElement;
+    fireEvent.change(titleInput, { target: { value: 'Favor News' } });
+    fireEvent.blur(titleInput);
+
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+    await act(async () => {
+      await saveFn?.();
+    });
+
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
 

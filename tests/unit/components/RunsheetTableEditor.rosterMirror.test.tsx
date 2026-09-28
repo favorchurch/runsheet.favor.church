@@ -60,7 +60,7 @@ jest.mock('@/lib/richText', () => ({
 
 import '@testing-library/jest-dom';
 import React from 'react';
-import { render } from '@testing-library/react';
+import { render, act, fireEvent, screen } from '@testing-library/react';
 import { RunsheetTableEditor } from '@/components/runsheet/RunsheetTableEditor';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
@@ -141,6 +141,87 @@ describe('RunsheetTableEditor roster mirror and dirty state', () => {
         {...props}
       />
     );
+
+  test('saving an edited row clears the prompt while a Rock roster is linked', async () => {
+    // Channel 122's real configuration: a live Rock roster mirrored into the
+    // sheet, plus an ordinary row edit. Saving must settle the dirty state, or
+    // Save stays clickable and leaving still prompts.
+    rosterPeople.length = 0;
+    rosterPeople.push({ personId: 10, name: 'Rostered In Rock' });
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({
+      success: true,
+      results: [{ ok: true, clientId: 3630, rockId: 3630 }],
+    });
+    (rockGetAvailableRunsheetChannels as jest.Mock).mockResolvedValue({ success: true, channels: [] });
+
+    const onDirtyChange = jest.fn();
+    let saveFn: (() => Promise<boolean>) | undefined;
+    render(
+      <RunsheetTableEditor
+        channelId={122}
+        channelName="MNL Crowne // October 4, 2026 // 11:30AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="11:30 AM"
+        onDirtyChange={onDirtyChange}
+        onSaveRef={(fn) => (saveFn = fn)}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /card view/i }));
+    fireEvent.click(screen.getAllByText('Edit Card')[0]);
+    const titleInput = screen.getByPlaceholderText('Enter activity title...') as HTMLInputElement;
+    fireEvent.change(titleInput, { target: { value: 'Changed Segment' } });
+    fireEvent.blur(titleInput);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+    await act(async () => {
+      await saveFn?.();
+    });
+
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  test('a successful save survives the propagation lookup failing', async () => {
+    // The propagate offer runs after Rock has already been written. When it
+    // threw, the rejection escaped handleSave: Rock had the change, but the UI
+    // still showed Save as pending and prompted "unsaved changes" on exit.
+    rosterPeople.length = 0;
+    (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({
+      success: true,
+      results: [{ ok: true, clientId: 3630, rockId: 3630 }],
+    });
+    (rockGetAvailableRunsheetChannels as jest.Mock).mockRejectedValue(new Error('Rock unreachable'));
+
+    const onDirtyChange = jest.fn();
+    let saveFn: (() => Promise<boolean>) | undefined;
+    render(
+      <RunsheetTableEditor
+        channelId={122}
+        channelName="MNL Crowne // October 4, 2026 // 11:30AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="11:30 AM"
+        onDirtyChange={onDirtyChange}
+        onSaveRef={(fn) => (saveFn = fn)}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /card view/i }));
+    fireEvent.click(screen.getAllByText('Edit Card')[0]);
+    const titleInput = screen.getByPlaceholderText('Enter activity title...') as HTMLInputElement;
+    fireEvent.change(titleInput, { target: { value: 'Changed Segment' } });
+    fireEvent.blur(titleInput);
+
+    let saved: boolean | undefined;
+    await act(async () => {
+      saved = await saveFn?.();
+    });
+
+    // The save reports success, so "Save & Leave" completes and the prompt closes.
+    expect(saved).toBe(true);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
 
   test('a populated Rock roster stays clean across a details refetch', () => {
     // The regression behind channel 122: the baseline is rebuilt from the

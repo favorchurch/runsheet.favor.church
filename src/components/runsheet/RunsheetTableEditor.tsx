@@ -1601,6 +1601,10 @@ export function RunsheetTableEditor({
 
       setStatus({ type: 'success', message: 'Favor Runsheet successfully saved to Rock RMS!' });
       toast.success('Favor Runsheet successfully saved to Rock RMS!');
+      // baselineRef was just mutated above; a ref write alone does not
+      // re-run computedDirtyState, so the runsheet would keep reporting the
+      // rows it had only just saved as still pending.
+      setBaselineVersion((v) => v + 1);
       setIsDirty(false);
       setDeletedIds([]);
 
@@ -1622,17 +1626,29 @@ export function RunsheetTableEditor({
       });
       onSaveSettled?.(channelId);
 
+      /*
+       * Offering propagation is a bonus on top of a save that has already
+       * succeeded, so it must never decide the save's outcome. This sits
+       * outside the try above, and an unhandled rejection here used to escape
+       * handleSave *after* Rock had been written and isDirty cleared — leaving
+       * Save clickable and "unsaved changes" still prompting on the way out,
+       * for work that was in fact saved.
+       */
       if (candidates.length > 0) {
-        const channelsRes = await rockGetAvailableRunsheetChannels(false);
-        if (channelsRes.success) {
-          const siblings = resolveSiblings(channelId, channelName, channelsRes.channels);
-          if (siblings.length > 0) {
-            setPropagateSiblings(siblings);
-            setPropagateCandidates(candidates);
-            setPropagateBarDismissed(false);
-            // Show the bar and wait for an explicit "Review" click before
-            // opening anything — the review no longer opens on its own.
+        try {
+          const channelsRes = await rockGetAvailableRunsheetChannels(false);
+          if (channelsRes?.success) {
+            const siblings = resolveSiblings(channelId, channelName, channelsRes.channels);
+            if (siblings.length > 0) {
+              setPropagateSiblings(siblings);
+              setPropagateCandidates(candidates);
+              setPropagateBarDismissed(false);
+              // Show the bar and wait for an explicit "Review" click before
+              // opening anything — the review no longer opens on its own.
+            }
           }
+        } catch (err) {
+          console.error('Could not look up sibling runsheets to offer propagation:', err);
         }
       }
 
