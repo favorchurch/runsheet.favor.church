@@ -3,14 +3,15 @@
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import {
   isRockLinkedCampus,
-  ROCK_ROSTER_GROUP_IDS,
   ROCK_ROSTER_ROLES,
   usableRoleLocationIds,
 } from '@/lib/rockRosterRoles';
 import { mergeRosterOccupants } from '@/lib/rockRosterSlots';
-import { matchRockSchedule, type RockServiceCandidate } from '@/lib/rockServiceSchedule';
-import { rockGet } from '@/server-actions/internal/rockFetch';
-import { fetchRosterOccupants } from '@/server-actions/internal/rockRosterQueries';
+import { matchRockSchedule } from '@/lib/rockServiceSchedule';
+import {
+  fetchRosterOccupants,
+  fetchRosterScheduleMap,
+} from '@/server-actions/internal/rockRosterQueries';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 
 export interface RosterRoleAssignment {
@@ -58,33 +59,9 @@ export async function rockGetRosterAssignments(
   }
 
   try {
-    // One pass per group gives both its services and its locations.
-    const perGroup = await Promise.all(
-      ROCK_ROSTER_GROUP_IDS.map((groupId) =>
-        rockGet('/GroupLocations', {
-          $filter: `GroupId eq ${groupId}`,
-          $expand: 'Schedules,Location',
-        }) as Promise<any[] | null>,
-      ),
-    );
+    const { services, scheduleIdsByLocation } = await fetchRosterScheduleMap();
 
-    const services = new Map<number, RockServiceCandidate>();
-    const scheduleIdsByLocation = new Map<number, Set<number>>();
-    for (const rows of perGroup) {
-      for (const row of rows || []) {
-        const locationId = row.LocationId ?? row.Location?.Id;
-        for (const schedule of row.Schedules || []) {
-          if (!schedule?.Id) continue;
-          services.set(schedule.Id, { scheduleId: schedule.Id, name: schedule.Name });
-          if (locationId === undefined) continue;
-          const set = scheduleIdsByLocation.get(locationId) ?? new Set<number>();
-          set.add(schedule.Id);
-          scheduleIdsByLocation.set(locationId, set);
-        }
-      }
-    }
-
-    const occurrence = matchRockSchedule(channelName, [...services.values()]);
+    const occurrence = matchRockSchedule(channelName, services);
     if (!occurrence) return UNLINKED;
 
     // A role Rock does not schedule for this service has no slot to read or

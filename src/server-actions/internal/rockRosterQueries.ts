@@ -1,6 +1,8 @@
 import 'server-only';
 
+import { ROCK_ROSTER_GROUP_IDS } from '@/lib/rockRosterRoles';
 import type { RosterOccupant } from '@/lib/rockRosterSlots';
+import type { RockServiceCandidate } from '@/lib/rockServiceSchedule';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 
 /**
@@ -146,4 +148,69 @@ export async function fetchRosterOccupants(params: {
     });
   }
   return occupants;
+}
+
+export interface RosterScheduleMap {
+  /** Every service the five Group Scheduler teams run, for channel matching. */
+  services: RockServiceCandidate[];
+  /** Rock Location id → the Schedule ids attached to it. */
+  scheduleIdsByLocation: Map<number, Set<number>>;
+}
+
+/**
+ * Which teams run which services, and in which locations.
+ *
+ * Two things matter here, both learned the hard way:
+ *
+ *  - **Ask for four fields, not the whole graph.** `$expand=Schedules,Location`
+ *    returns 561KB for one group — 90% of it expanded Schedule rows, iCalendar
+ *    text included — and this runs for five groups on every runsheet open. The
+ *    nested `$select` brings that to 22KB a group.
+ *  - **Cache it.** Group/location/schedule wiring changes when someone rewires a
+ *    team, not between page loads. Next serialises server actions, so an
+ *    expensive roster read queues ahead of the runsheet's own load and the
+ *    editor sits under "Updating runsheet data…" waiting for it.
+ */
+const SCHEDULE_MAP_TTL_MS = 10 * 60 * 1000;
+let scheduleMapCache: { at: number; value: RosterScheduleMap } | null = null;
+
+export function clearRosterScheduleMapCache(): void {
+  scheduleMapCache = null;
+}
+
+export async function fetchRosterScheduleMap(): Promise<RosterScheduleMap> {
+  if (scheduleMapCache && Date.now() - scheduleMapCache.at < SCHEDULE_MAP_TTL_MS) {
+    return scheduleMapCache.value;
+  }
+
+  const perGroup = await Promise.all(
+    ROCK_ROSTER_GROUP_IDS.map(
+      (groupId) =>
+        rockGet('/GroupLocations', {
+          $filter: `GroupId eq ${groupId}`,
+          $expand: 'Schedules',
+          $select: 'GroupId,LocationId,Schedules/Id,Schedules/Name',
+        }) as Promise<any[] | null>,
+    ),
+  );
+
+  const services = new Map<number, RockServiceCandidate>();
+  const scheduleIdsByLocation = new Map<number, Set<number>>();
+  for (const rows of perGroup) {
+    for (const row of rows || []) {
+      const locationId = row.LocationId ?? row.Location?.Id;
+      for (const schedule of row.Schedules || []) {
+        if (!schedule?.Id) continue;
+        services.set(schedule.Id, { scheduleId: schedule.Id, name: schedule.Name });
+        if (locationId === undefined) continue;
+        const set = scheduleIdsByLocation.get(locationId) ?? new Set<number>();
+        set.add(schedule.Id);
+        scheduleIdsByLocation.set(locationId, set);
+      }
+    }
+  }
+
+  const value: RosterScheduleMap = { services: [...services.values()], scheduleIdsByLocation };
+  scheduleMapCache = { at: Date.now(), value };
+  return value;
 }

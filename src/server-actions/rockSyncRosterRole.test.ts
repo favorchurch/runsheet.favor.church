@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet, rockPost, rockPut } from '@/server-actions/internal/rockFetch';
+import { clearRosterScheduleMapCache } from '@/server-actions/internal/rockRosterQueries';
 import { rockSyncRosterRole } from './rockSyncRosterRole';
 
 jest.mock('@/auth0-hooks/server/getRockSession', () => ({ getRockSession: jest.fn() }));
@@ -28,6 +29,9 @@ const PAST = 'MNL Crowne // September 27, 2020 // 3PM';
 describe('rockSyncRosterRole', () => {
   beforeEach(() => {
     jest.resetAllMocks();
+    // The group/schedule map is cached per process; without this a test
+    // inherits the previous test's Rock fixtures.
+    clearRosterScheduleMapCache();
     mockSession.mockResolvedValue(EDITOR);
   });
 

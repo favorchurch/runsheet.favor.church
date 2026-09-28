@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
+import { clearRosterScheduleMapCache } from '@/server-actions/internal/rockRosterQueries';
 import { rockGetRosterAssignments } from './rockGetRosterAssignments';
 
 jest.mock('@/auth0-hooks/server/getRockSession', () => ({ getRockSession: jest.fn() }));
@@ -29,6 +30,9 @@ function groupLocations() {
 describe('rockGetRosterAssignments', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // The group/schedule map is cached per process; without this a test
+    // inherits the previous test's Rock fixtures.
+    clearRosterScheduleMapCache();
     mockSession.mockResolvedValue(SESSION);
   });
 

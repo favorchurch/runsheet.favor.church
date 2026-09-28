@@ -5,14 +5,16 @@ import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization
 import {
   getRockRosterRole,
   isRockLinkedCampus,
-  ROCK_ROSTER_GROUP_IDS,
   usableRoleLocationIds,
 } from '@/lib/rockRosterRoles';
 import { planRosterSlots } from '@/lib/rockRosterSlots';
-import { matchRockSchedule, type RockServiceCandidate } from '@/lib/rockServiceSchedule';
+import { matchRockSchedule } from '@/lib/rockServiceSchedule';
 import { extractChannelDate } from '@/lib/runsheetDate';
 import { rockGet, rockPost, rockPut } from '@/server-actions/internal/rockFetch';
-import { fetchRosterOccupants } from '@/server-actions/internal/rockRosterQueries';
+import {
+  fetchRosterOccupants,
+  fetchRosterScheduleMap,
+} from '@/server-actions/internal/rockRosterQueries';
 
 export interface RockSyncRosterRoleResult {
   success: boolean;
@@ -64,35 +66,11 @@ export async function rockSyncRosterRole(input: {
   }
 
   try {
-    // Resolve the occurrence from every linked group, exactly as the read does,
-    // so a role whose own team does not carry the schedule reports *that* rather
-    // than "no such service".
-    const perGroup = await Promise.all(
-      ROCK_ROSTER_GROUP_IDS.map((groupId) =>
-        rockGet('/GroupLocations', {
-          $filter: `GroupId eq ${groupId}`,
-          $expand: 'Schedules,Location',
-        }) as Promise<any[] | null>,
-      ),
-    );
+    // Same cached map the read uses, so the two always agree on which team
+    // runs which service.
+    const { services, scheduleIdsByLocation } = await fetchRosterScheduleMap();
 
-    const services = new Map<number, RockServiceCandidate>();
-    const scheduleIdsByLocation = new Map<number, Set<number>>();
-    for (const rows of perGroup) {
-      for (const row of rows || []) {
-        const locationId = row.LocationId ?? row.Location?.Id;
-        for (const schedule of row.Schedules || []) {
-          if (!schedule?.Id) continue;
-          services.set(schedule.Id, { scheduleId: schedule.Id, name: schedule.Name });
-          if (locationId === undefined) continue;
-          const set = scheduleIdsByLocation.get(locationId) ?? new Set<number>();
-          set.add(schedule.Id);
-          scheduleIdsByLocation.set(locationId, set);
-        }
-      }
-    }
-
-    const occurrence = matchRockSchedule(channelName, [...services.values()]);
+    const occurrence = matchRockSchedule(channelName, services);
     if (!occurrence) return fail('This runsheet does not match a Rock service.');
 
     // Only the slots this role really has for this service. Empty means Rock has
