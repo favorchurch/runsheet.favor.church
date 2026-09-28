@@ -19,7 +19,7 @@ jest.mock('@/auth0-hooks/server/getServerSession', () => ({ getServerSession: je
 jest.mock('@/auth0-hooks/server/getRockSession', () => ({ getRockSession: jest.fn().mockResolvedValue({}) }));
 
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { CreateRunsheetForm } from '@/components/runsheet/CreateRunsheetForm';
 import { getRockContentChannelOptions } from '@/server-actions/getRockContentChannelOptions';
@@ -148,12 +148,13 @@ describe('CreateRunsheetForm Grow course creation', () => {
     // User chooses a different date (e.g. Wednesday 2026-09-30)
     fireEvent.change(dateInput, { target: { value: '2026-09-30' } });
 
-    // Wait for the schedule re-fetch to complete
+    // Wait for the schedule re-fetch triggered by the date change to complete.
+    // Asserted on the argument, not the call count: the form legitimately fetches
+    // three times here (mount, the automatic jump to the schedule's nextDate, then
+    // this edit), and a count would only pass if waitFor happened to sample
+    // between the second and third.
     await waitFor(() => {
-      expect(rockGetScheduleOptions).toHaveBeenCalledTimes(2);
-    });
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 50));
+      expect(rockGetScheduleOptions).toHaveBeenLastCalledWith(338, '2026-09-30');
     });
 
     // Ensure the date is NOT reverted to 2026-10-04
