@@ -1409,24 +1409,53 @@ export function RunsheetTableEditor({
      * only; `window.__runsheetDirty` holds the same breakdown for inspection.
      */
     if (dirty && process.env.NODE_ENV !== 'production') {
-      const reason = {
-        rows: itemsToSave.map((item) => ({
-          id: item.id,
-          title: (item.attributeValues?.ACTIVITYTITLE || item.title || '').replace(/<[^>]*>/g, ''),
-          hasBaseline: baselineRef.current.has(item.id),
-          isNew: Boolean(item.isNew),
-        })),
-        deletedIds,
-        startTimeChanged: startTimeChanged ? { startTime, initialStartTime } : false,
-        subtitleChanged: subtitleChanged ? { subtitle, normalizedInitialSubtitle } : false,
-        columnMetadataChanged: columnMetadataChanged
-          ? { columnOrder, baseOrder, columnWidths, baseWidths }
-          : false,
-        fromTemplate: Boolean(initialTemplate),
-      };
+      /*
+       * Say which field differs, inline. `startDateTime` is excluded on purpose:
+       * the diff ignores it too, because a prepared row carries a derived clock
+       * string where the baseline holds Rock's ISO timestamp.
+       */
+      const tally: Record<string, number> = {};
+      const examples: string[] = [];
+      for (const item of itemsToSave) {
+        const baseline = baselineRef.current.get(item.id);
+        const plain = (v: unknown) => String(v ?? '').replace(/<[^>]*>/g, '');
+        if (!baseline) {
+          tally['no-baseline'] = (tally['no-baseline'] || 0) + 1;
+          if (examples.length < 3) {
+            examples.push(`#${item.id} "${plain(item.title).slice(0, 24)}" has no baseline`);
+          }
+          continue;
+        }
+        const current = createRowFingerprint(item);
+        const keys = new Set([
+          ...Object.keys(current.attributeValues || {}),
+          ...Object.keys(baseline.attributeValues || {}),
+        ]);
+        const changed: string[] = [];
+        if (current.title !== baseline.title) changed.push('title');
+        if (current.order !== baseline.order) changed.push(`order ${baseline.order}->${current.order}`);
+        if (current.duration !== baseline.duration) changed.push('duration');
+        for (const key of keys) {
+          if ((current.attributeValues?.[key] || '') !== (baseline.attributeValues?.[key] || '')) {
+            changed.push(`attr:${key}`);
+          }
+        }
+        for (const c of changed) tally[c.split(' ')[0]] = (tally[c.split(' ')[0]] || 0) + 1;
+        if (!changed.length) tally['identical-but-queued'] = (tally['identical-but-queued'] || 0) + 1;
+        if (examples.length < 3) {
+          examples.push(`#${item.id} "${plain(item.title).slice(0, 24)}" ${changed.join(', ') || 'NO DIFF'}`);
+        }
+      }
+      const summary =
+        `[runsheet] unsaved: ${itemsToSave.length} rows | ` +
+        `${Object.entries(tally).map(([k, v]) => `${k}=${v}`).join(' ') || 'none'} | ` +
+        `startTime=${startTimeChanged} subtitle=${subtitleChanged} cols=${columnMetadataChanged} ` +
+        `template=${Boolean(initialTemplate)} deleted=${deletedIds.length}`;
       // eslint-disable-next-line no-console
-      console.warn('[runsheet] unsaved because:', reason);
-      if (typeof window !== 'undefined') (window as any).__runsheetDirty = reason;
+      console.warn(summary, '\n  ' + examples.join('\n  '));
+      if (typeof window !== 'undefined') {
+        (window as any).__runsheetDirty = { summary, examples, itemsToSave };
+      }
     }
 
     return dirty;
