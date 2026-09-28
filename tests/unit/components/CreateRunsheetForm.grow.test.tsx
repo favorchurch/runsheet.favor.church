@@ -19,7 +19,7 @@ jest.mock('@/auth0-hooks/server/getServerSession', () => ({ getServerSession: je
 jest.mock('@/auth0-hooks/server/getRockSession', () => ({ getRockSession: jest.fn().mockResolvedValue({}) }));
 
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { CreateRunsheetForm } from '@/components/runsheet/CreateRunsheetForm';
 import { getRockContentChannelOptions } from '@/server-actions/getRockContentChannelOptions';
@@ -42,7 +42,7 @@ describe('CreateRunsheetForm Grow course creation', () => {
       types: [{ id: 13, name: 'Service Runsheet' }],
       categories: [{ id: 338, name: 'Grow Class' }],
     });
-    (rockGetScheduleOptions as jest.Mock).mockResolvedValue({
+    (rockGetScheduleOptions as jest.Mock).mockImplementation(async () => ({
       success: true,
       schedules: [
         {
@@ -58,7 +58,7 @@ describe('CreateRunsheetForm Grow course creation', () => {
           ],
         },
       ],
-    });
+    }));
     (rockCreateServiceRunsheet as jest.Mock).mockResolvedValue({
       success: true,
       id: 201,
@@ -130,5 +130,48 @@ describe('CreateRunsheetForm Grow course creation', () => {
       338
     );
     expect(onCreated).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows the user to manually change the date to any day without being reverted to nextDate', async () => {
+    const onCreated = jest.fn();
+    const { container } = render(<CreateRunsheetForm growOnly onCreated={onCreated} />);
+
+    await waitFor(() => {
+      const elements = screen.getAllByDisplayValue(/MNL Grow - Build x FDNA/i);
+      expect(elements.some((el) => el.tagName === 'INPUT')).toBe(true);
+    });
+
+    // The date input initially holds the schedule's nextDate (2026-10-04)
+    const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement;
+    expect(dateInput).toHaveValue('2026-10-04');
+
+    // User chooses a different date (e.g. Wednesday 2026-09-30)
+    fireEvent.change(dateInput, { target: { value: '2026-09-30' } });
+
+    // Wait for the schedule re-fetch to complete
+    await waitFor(() => {
+      expect(rockGetScheduleOptions).toHaveBeenCalledTimes(2);
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    // Ensure the date is NOT reverted to 2026-10-04
+    expect(dateInput).toHaveValue('2026-09-30');
+
+    // Runsheet title must reflect the manually chosen date
+    const titleInput = screen.getByDisplayValue(/September 30, 2026/i);
+    expect(titleInput).toHaveValue('MNL Grow - Build x FDNA // September 30, 2026 // 3PM');
+
+    // Submitting the form uses the manually chosen date
+    fireEvent.click(screen.getByRole('button', { name: /Save Runsheet/i }));
+
+    await waitFor(() => {
+      expect(rockCreateServiceRunsheet).toHaveBeenCalledWith(
+        'MNL Grow - Build x FDNA // September 30, 2026 // 3PM',
+        13,
+        338
+      );
+    });
   });
 });

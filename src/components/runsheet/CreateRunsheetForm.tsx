@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { getRockContentChannelOptions, ContentChannelCategoryOption } from '@/server-actions/getRockContentChannelOptions';
 import { rockGetScheduleOptions, ScheduleOption } from '@/server-actions/rockGetScheduleOptions';
 import { rockCreateServiceRunsheet } from '@/server-actions/rockCreateServiceRunsheet';
@@ -87,6 +87,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
   const [title, setTitle] = useState('');
   const [batchCreateCourse, setBatchCreateCourse] = useState(false);
   const [status, setStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message?: string }>({ type: 'idle' });
+  const userEditedDateRef = useRef(false);
 
   const selectedSchedule = React.useMemo(
     () => schedules.find((s) => s.name === session),
@@ -188,6 +189,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
 
   // Schedules with a designated next occurrence (Grow, Youth, etc.): jump the date to it.
   useEffect(() => {
+    if (userEditedDateRef.current) return;
     const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
     const isYouth = /youth/i.test(selectedCategory?.name || '');
     const isGrow = selectedCategoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID;
@@ -347,7 +349,10 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
               required
               className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:border-blue-600 focus:outline-none"
               value={selectedCategoryId}
-              onChange={(e) => setSelectedCategoryId(e.target.value ? Number(e.target.value) : '')}
+              onChange={(e) => {
+                userEditedDateRef.current = false;
+                setSelectedCategoryId(e.target.value ? Number(e.target.value) : '');
+              }}
             >
               {categories.length === 0 && <option value="" disabled>No Categories Available</option>}
               {categories.map((cat) => (
@@ -367,7 +372,10 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
               required
               className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:border-blue-600 focus:outline-none"
               value={date}
-              onChange={(e) => setDate(e.target.value)}
+              onChange={(e) => {
+                userEditedDateRef.current = true;
+                setDate(e.target.value);
+              }}
             />
           </div>
 
