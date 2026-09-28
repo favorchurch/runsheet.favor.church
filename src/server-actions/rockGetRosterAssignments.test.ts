@@ -64,6 +64,38 @@ describe('rockGetRosterAssignments', () => {
     ]);
   });
 
+  it('shows accepted, maybe and unanswered people, and hides only declines', async () => {
+    mockRockGet
+      .mockResolvedValueOnce(groupLocations() as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([{ Id: 900, GroupId: 19100, LocationId: 475 }] as any)
+      .mockResolvedValueOnce([
+        { Id: 1, OccurrenceId: 900, RSVP: 1, PersonAliasId: 5010 }, // Yes
+        { Id: 2, OccurrenceId: 900, RSVP: 3, PersonAliasId: 5020 }, // Unknown / pending
+        { Id: 3, OccurrenceId: 900, RSVP: 2, PersonAliasId: 5030 }, // Maybe
+        { Id: 4, OccurrenceId: 900, RSVP: 0, PersonAliasId: 5040 }, // No / declined
+      ] as any)
+      .mockResolvedValueOnce([
+        { Id: 5010, PersonId: 10 },
+        { Id: 5020, PersonId: 20 },
+        { Id: 5030, PersonId: 30 },
+      ] as any)
+      .mockResolvedValueOnce([
+        { Id: 10, NickName: 'Accepted', LastName: 'Volunteer' },
+        { Id: 20, NickName: 'Pending', LastName: 'Volunteer' },
+        { Id: 30, NickName: 'Maybe', LastName: 'Volunteer' },
+      ] as any);
+
+    const res = await rockGetRosterAssignments('MNL Crowne // September 27, 2026 // 3PM');
+
+    expect(
+      res.roles.find((r) => r.roleTitle === 'Roster: Service Director')?.people.map((p) => p.name),
+    ).toEqual(['Accepted Volunteer', 'Pending Volunteer', 'Maybe Volunteer']);
+  });
+
   it('never asks Rock for a filter long enough to trip the 100-node OData limit', async () => {
     mockRockGet
       .mockResolvedValueOnce(groupLocations() as any)

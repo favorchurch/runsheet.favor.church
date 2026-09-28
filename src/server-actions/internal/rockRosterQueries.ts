@@ -7,12 +7,19 @@ import { rockGet } from '@/server-actions/internal/rockFetch';
  * Rock's `RSVP` enum (`Rock.Model.RSVP`), verified against live roster rows on
  * 2026-09-29: `No = 0`, `Yes = 1`, `Maybe = 2`, `Unknown = 3`.
  *
- * A Group Scheduler assignment is Yes once the volunteer accepts, and stays
- * Unknown while the request is outstanding — both are rostered. Only an explicit
- * No is excluded. (This was previously coded as `{0, 2}`, i.e. No and Maybe,
- * which is exactly inverted and matched nobody.)
+ * Declining is the only thing that takes someone off the runsheet's roster. A
+ * volunteer who has accepted, answered maybe, or not replied at all is still
+ * the person the team is expecting, and the producer needs to see them — an
+ * unanswered request is exactly when the card is most useful.
+ *
+ * Filtered in memory on purpose: Rock exposes `RSVP` as an enum over OData, so
+ * `$filter=RSVP eq 1` fails with an Edm.String/Edm.Int32 type mismatch.
  */
-export const ROSTERED_RSVP: ReadonlySet<number> = new Set([1, 3]);
+const DECLINED_RSVP = 0;
+
+export function isRosteredRsvp(rsvp: unknown): boolean {
+  return rsvp !== DECLINED_RSVP;
+}
 
 /**
  * Rock's OData endpoint rejects any query whose expression tree exceeds 100
@@ -103,7 +110,7 @@ export async function fetchRosterOccupants(params: {
   );
 
   const rostered = attendances.filter(
-    (a) => ROSTERED_RSVP.has(a.RSVP) && a.PersonAliasId && slotByOccurrenceId.has(a.OccurrenceId),
+    (a) => isRosteredRsvp(a.RSVP) && a.PersonAliasId && slotByOccurrenceId.has(a.OccurrenceId),
   );
   if (rostered.length === 0) return [];
 
