@@ -133,6 +133,25 @@ export function RunsheetManager({
     }
   }, [showCreateForm, canEdit]);
 
+  /*
+   * A server action that never settles leaves React Query fetching forever, and
+   * the runsheet overlay spinning with no way back — the only recovery is a hard
+   * reload. This route is `force-dynamic`, so every server action also
+   * re-executes the page (and re-resolves the Rock session) behind the scenes,
+   * which is exactly the kind of work that can stall on a slow soft navigation.
+   * After a while, say so and offer a retry rather than spinning silently.
+   */
+  const SLOW_FETCH_MS = 15_000;
+  const [detailsFetchIsSlow, setDetailsFetchIsSlow] = useState(false);
+  useEffect(() => {
+    if (!detailsQuery.isFetching) {
+      setDetailsFetchIsSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setDetailsFetchIsSlow(true), SLOW_FETCH_MS);
+    return () => clearTimeout(timer);
+  }, [detailsQuery.isFetching]);
+
   const isEditMode = canEdit && editorMode === 'edit';
 
   /*
@@ -619,7 +638,18 @@ export function RunsheetManager({
                       aria-hidden="true"
                       className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
                     />
-                    <span>Updating runsheet data…</span>
+                    <span>
+                      {detailsFetchIsSlow ? 'Still loading from Rock…' : 'Updating runsheet data…'}
+                    </span>
+                    {detailsFetchIsSlow && (
+                      <button
+                        type="button"
+                        onClick={() => detailsQuery.refetch()}
+                        className="pointer-events-auto ml-1 rounded-md bg-white/15 px-2 py-1 text-[11px] font-semibold text-white hover:bg-white/25 cursor-pointer"
+                      >
+                        Retry
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
