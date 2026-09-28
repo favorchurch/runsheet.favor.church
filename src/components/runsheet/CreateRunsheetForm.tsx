@@ -7,14 +7,30 @@ import { rockCreateServiceRunsheet } from '@/server-actions/rockCreateServiceRun
 import { buildGrowRunsheetTitle, GROW_CONTENT_CHANNEL_CATEGORY_ID } from '@/lib/growRunsheets';
 import toast from 'react-hot-toast';
 
-function getNextSunday() {
-  const d = new Date();
-  d.setDate(d.getDate() + ((7 - d.getDay()) % 7 || 7));
-  return d.toISOString().split('T')[0];
+/**
+ * `YYYY-MM-DD` for a date, read in the viewer's own timezone.
+ *
+ * Never `toISOString()` here: that serialises in UTC, so a locally-built date in
+ * Manila (UTC+8) comes back as the *previous* day any time before 08:00. That is
+ * how "MNL Crowne // October 3, 2026" — a Saturday — was created for a Sunday
+ * service, and why its roster then matched nothing in Rock.
+ */
+export function toLocalIsoDate(d: Date): string {
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
-function formatDateToWordy(dateStr: string) {
-  const d = new Date(dateStr);
+export function getNextSunday(now: Date = new Date()): string {
+  const d = new Date(now);
+  d.setDate(d.getDate() + ((7 - d.getDay()) % 7 || 7));
+  return toLocalIsoDate(d);
+}
+
+export function formatDateToWordy(dateStr: string) {
+  // `new Date('2026-10-04')` is parsed as UTC midnight, which renders as the
+  // previous day west of Greenwich. The explicit time makes it local.
+  const d = new Date(`${dateStr}T00:00:00`);
   return d.toLocaleDateString('en-US', {
     month: 'long',
     day: 'numeric',
