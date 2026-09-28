@@ -37,6 +37,7 @@ import { rockDeleteServiceRunsheet } from '@/server-actions/rockDeleteServiceRun
 import { getRockContentChannelOptions, ContentChannelCategoryOption } from '@/server-actions/getRockContentChannelOptions';
 import { rockGetScheduleOptions, ScheduleOption } from '@/server-actions/rockGetScheduleOptions';
 import { rockDuplicateServiceRunsheet } from '@/server-actions/rockDuplicateServiceRunsheet';
+import type { RockRosterAssignmentsResult } from '@/server-actions/rockGetRosterAssignments';
 import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetDetails, RunsheetColumnMetadata } from '@/types/Runsheet';
 import { resolveSiblings, type SiblingChannel } from '@/lib/runsheetSiblings';
 import { matchRows, type MatchResult } from '@/lib/runsheetMatch';
@@ -116,7 +117,12 @@ interface RunsheetTableEditorProps {
   runsheetCampuses?: string[];
   /** Cache discriminator for the authorized result set; see getRunsheetAccessScope. */
   accessScope?: string;
-  onCreated?: (channelId: number, title: string, createdData?: RunsheetDetails) => void;
+  onCreated?: (
+    channelId: number,
+    title: string,
+    createdData?: RunsheetDetails,
+    rosterData?: RockRosterAssignmentsResult,
+  ) => void;
   onDeleted?: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
   onSaveRef?: (saveFn: () => Promise<boolean>) => void;
@@ -1286,7 +1292,11 @@ export function RunsheetTableEditor({
 
     if (res.success && res.id) {
       setShowDuplicateModal(false);
-      onCreated?.(res.id, finalTitle, res.data);
+      if (res.rosterData !== undefined) {
+        onCreated?.(res.id, finalTitle, res.data, res.rosterData);
+      } else {
+        onCreated?.(res.id, finalTitle, res.data);
+      }
     } else {
       setDuplicateError(res.error || 'Failed to duplicate runsheet.');
     }

@@ -9,7 +9,8 @@ import { rockEnsureRunsheetTemplate } from '@/server-actions/rockEnsureRunsheetT
 import { buildDefaultTemplateItems } from '@/lib/runsheetTemplate';
 import { SIBLINGKEY_ATTRIBUTE_KEY } from '@/constants/runsheetColumns';
 import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
-import type { RunsheetItemRow } from '@/types/Runsheet';
+import { rockGetRosterAssignments, type RockRosterAssignmentsResult } from '@/server-actions/rockGetRosterAssignments';
+import type { RunsheetDetails, RunsheetItemRow } from '@/types/Runsheet';
 
 const RUNSHEET_CONTENT_CHANNEL_TYPE_ID = 13;
 
@@ -25,18 +26,30 @@ async function loadCampusTemplateItems(title: string): Promise<RunsheetItemRow[]
   if (!details.success || !details.data) return [];
 
   const stamp = Date.now();
-  return details.data.items.map((row, idx) => ({
-    ...row,
-    id: `new_${idx}_${stamp}`,
-    isNew: true,
-    changedKeys: undefined,
-    order: idx + 1,
-    // A fresh runsheet must not inherit the template's cross-service keys.
-    attributeValues: { ...row.attributeValues, [SIBLINGKEY_ATTRIBUTE_KEY]: '' },
-  }));
+  return details.data.items
+    .filter((row) => !(row.title && row.title.startsWith('Roster:')))
+    .map((row, idx) => ({
+      ...row,
+      id: `new_${idx}_${stamp}`,
+      isNew: true,
+      changedKeys: undefined,
+      order: idx + 1,
+      // A fresh runsheet must not inherit the template's cross-service keys.
+      attributeValues: { ...row.attributeValues, [SIBLINGKEY_ATTRIBUTE_KEY]: '' },
+    }));
 }
 
-export async function rockCreateServiceRunsheet(title: string, contentChannelTypeId: number, _categoryId?: number) {
+export async function rockCreateServiceRunsheet(
+  title: string,
+  contentChannelTypeId: number,
+  _categoryId?: number,
+): Promise<{
+  success: boolean;
+  id?: number;
+  data?: RunsheetDetails;
+  rosterData?: RockRosterAssignmentsResult;
+  error?: string;
+}> {
   try {
     const session = await getRockSession();
 
@@ -94,16 +107,29 @@ export async function rockCreateServiceRunsheet(title: string, contentChannelTyp
       console.warn('Could not populate initial template items:', templateErr);
     }
 
+    // 4. Fetch the full, genuine runsheet details (real columns, real item IDs,
+    //    and resolved person names) and preload roster assignments from Rock Group Scheduler.
+    let rosterData: RockRosterAssignmentsResult | undefined = undefined;
+    try {
+      rosterData = await rockGetRosterAssignments(title);
+    } catch (rosterErr) {
+      console.warn('Could not preload roster assignments for new runsheet:', rosterErr);
+    }
+
+    const details = await rockGetRunsheetDetails(channelId);
+    if (details.success && details.data) {
+      return {
+        success: true,
+        id: channelId,
+        data: details.data,
+        rosterData,
+      };
+    }
+
     return {
       success: true,
       id: channelId,
-      data: {
-        channelId,
-        name: title,
-        contentChannelTypeId: RUNSHEET_CONTENT_CHANNEL_TYPE_ID,
-        columns: [],
-        items: preparedItems,
-      },
+      rosterData,
     };
   } catch (err: any) {
     console.error('Error creating content channel:', err);

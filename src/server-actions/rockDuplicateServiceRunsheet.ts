@@ -5,6 +5,8 @@ import { rockPost } from '@/server-actions/internal/rockFetch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import { extractRunsheetCampuses } from '@/lib/runsheetCampus';
 import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
+import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
+import { rockGetRosterAssignments, type RockRosterAssignmentsResult } from '@/server-actions/rockGetRosterAssignments';
 import type { DynamicAttributeColumn, RunsheetItemRow, RunsheetDetails, RunsheetColumnMetadata } from '@/types/Runsheet';
 
 const RUNSHEET_CONTENT_CHANNEL_TYPE_ID = 13;
@@ -22,6 +24,7 @@ export async function rockDuplicateServiceRunsheet(
   success: boolean;
   id?: number;
   data?: RunsheetDetails;
+  rosterData?: RockRosterAssignmentsResult;
   error?: string;
 }> {
   try {
@@ -62,31 +65,42 @@ export async function rockDuplicateServiceRunsheet(
     //    ContentChannels via REST API (runsheets are grouped by title convention).
     //    We retain the categoryId parameter for caller signature compatibility.
 
-    // 4. Clone all items into the new runsheet channel
-    const preparedItems: RunsheetItemRow[] = itemsToDuplicate.map((row, idx) => ({
-      ...row,
-      id: `dup_${idx}_${Date.now()}`,
-      isNew: true,
-      order: idx + 1,
-    }));
+    // 4. Clone all items into the new runsheet channel, omitting stale Roster: rows
+    // so the new target service receives its own roster from Rock Group Scheduler.
+    const preparedItems: RunsheetItemRow[] = itemsToDuplicate
+      .filter((row) => !(row.title && row.title.startsWith('Roster:')))
+      .map((row, idx) => ({
+        ...row,
+        id: `dup_${idx}_${Date.now()}`,
+        isNew: true,
+        order: idx + 1,
+      }));
 
     if (preparedItems.length > 0 || columnMetadata !== undefined || subtitle !== undefined || startTime !== undefined) {
       await rockBulkSaveRunsheetItems(newChannelId, preparedItems, [], columns, subtitle, startTime, columnMetadata);
     }
 
+    let rosterData: RockRosterAssignmentsResult | undefined = undefined;
+    try {
+      rosterData = await rockGetRosterAssignments(targetTitle);
+    } catch (rosterErr) {
+      console.warn('Could not preload roster assignments for duplicated runsheet:', rosterErr);
+    }
+
+    const details = await rockGetRunsheetDetails(newChannelId);
+    if (details.success && details.data) {
+      return {
+        success: true,
+        id: newChannelId,
+        data: details.data,
+        rosterData,
+      };
+    }
+
     return {
       success: true,
       id: newChannelId,
-      data: {
-        channelId: newChannelId,
-        name: targetTitle,
-        subtitle,
-        startTime,
-        columnMetadata,
-        contentChannelTypeId: RUNSHEET_CONTENT_CHANNEL_TYPE_ID,
-        columns: columns || [],
-        items: preparedItems,
-      },
+      rosterData,
     };
   } catch (err: any) {
     console.error('Error duplicating runsheet:', err);

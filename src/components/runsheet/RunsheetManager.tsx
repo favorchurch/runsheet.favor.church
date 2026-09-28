@@ -16,6 +16,7 @@ import { extractCourseTitle } from '@/lib/runsheetSiblings';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import type { AuthUser } from '@/types/AuthUser';
 import type { RunsheetDetails } from '@/types/Runsheet';
+import type { RockRosterAssignmentsResult } from '@/server-actions/rockGetRosterAssignments';
 import {
   getRunsheetAccessScope,
   runsheetQueryKeys,
@@ -341,7 +342,12 @@ export function RunsheetManager({
     }
   };
 
-  const handleRunsheetCreated = (newChannelId: number, title: string, createdData?: RunsheetDetails) => {
+  const handleRunsheetCreated = (
+    newChannelId: number,
+    title: string,
+    createdData?: RunsheetDetails,
+    rosterData?: RockRosterAssignmentsResult,
+  ) => {
     const newChannel = { id: newChannelId, name: title, time: extractChannelTime(title) };
     queryClient.setQueryData(runsheetQueryKeys.channels(showArchived, accessScope), (current: any) => ({
       success: true,
@@ -356,7 +362,13 @@ export function RunsheetManager({
     setSelectedChannelId(newChannelId);
     updateUrl(`/${newChannelId}`);
 
-    if (createdData && createdData.items) {
+    if (rosterData && rosterData.success) {
+      queryClient.setQueryData(runsheetQueryKeys.rosterAssignments(title, accessScope), rosterData);
+    } else {
+      queryClient.invalidateQueries(runsheetQueryKeys.rosterAssignments(title, accessScope));
+    }
+
+    if (createdData && createdData.columns && createdData.columns.length > 0 && createdData.items) {
       queryClient.setQueryData(runsheetQueryKeys.details(newChannelId, accessScope), { success: true, data: createdData });
       queryClient.invalidateQueries(runsheetQueryKeys.details(newChannelId, accessScope));
     } else {

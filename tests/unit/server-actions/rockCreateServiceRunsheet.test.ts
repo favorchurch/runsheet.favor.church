@@ -13,6 +13,16 @@ jest.mock('@/server-actions/internal/rockFetch', () => ({ rockGet: jest.fn(), ro
 jest.mock('@/server-actions/rockBulkSaveRunsheetItems', () => ({ rockBulkSaveRunsheetItems: jest.fn() }));
 jest.mock('@/server-actions/rockEnsureRunsheetTemplate', () => ({ rockEnsureRunsheetTemplate: jest.fn() }));
 jest.mock('@/server-actions/rockGetRunsheetDetails', () => ({ rockGetRunsheetDetails: jest.fn() }));
+jest.mock('@/server-actions/rockGetRosterAssignments', () => ({
+  rockGetRosterAssignments: jest.fn().mockResolvedValue({
+    success: true,
+    rockManaged: true,
+    linked: true,
+    scheduleId: 10,
+    isoDate: '2026-10-04',
+    roles: [],
+  }),
+}));
 
 const mockEnsure = jest.mocked(rockEnsureRunsheetTemplate);
 const mockDetails = jest.mocked(rockGetRunsheetDetails);

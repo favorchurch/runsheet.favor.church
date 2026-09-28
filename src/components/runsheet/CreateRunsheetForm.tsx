@@ -5,6 +5,7 @@ import { getRockContentChannelOptions, ContentChannelCategoryOption } from '@/se
 import { rockGetScheduleOptions, ScheduleOption } from '@/server-actions/rockGetScheduleOptions';
 import { rockCreateServiceRunsheet } from '@/server-actions/rockCreateServiceRunsheet';
 import { buildGrowRunsheetTitle, GROW_CONTENT_CHANNEL_CATEGORY_ID } from '@/lib/growRunsheets';
+import type { RockRosterAssignmentsResult } from '@/server-actions/rockGetRosterAssignments';
 import toast from 'react-hot-toast';
 
 /**
@@ -86,7 +87,12 @@ function extractCategoryCampus(catName: string): RunsheetCampusCode | null {
 interface CreateRunsheetFormProps {
   runsheetCampuses?: string[];
   growOnly?: boolean;
-  onCreated?: (channelId: number, title: string, createdData?: RunsheetDetails) => void;
+  onCreated?: (
+    channelId: number,
+    title: string,
+    createdData?: RunsheetDetails,
+    rosterData?: RockRosterAssignmentsResult,
+  ) => void;
   onCancel?: () => void;
 }
 
@@ -267,6 +273,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
       let firstId: number | null = null;
       let firstTitle = '';
       let firstData: RunsheetDetails | undefined = undefined;
+      let firstRosterData: RockRosterAssignmentsResult | undefined = undefined;
       let createdCount = 0;
 
       for (const occ of occurrences) {
@@ -283,6 +290,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
               firstId = res.id;
               firstTitle = occTitle;
               firstData = res.data;
+              firstRosterData = res.rosterData;
             }
           }
         } catch (err) {
@@ -299,7 +307,11 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
         toast.success(successMsg);
 
         if (onCreated) {
-          onCreated(firstId, firstTitle, firstData);
+          if (firstRosterData !== undefined) {
+            onCreated(firstId, firstTitle, firstData, firstRosterData);
+          } else {
+            onCreated(firstId, firstTitle, firstData);
+          }
         }
         return;
       } else {
@@ -326,7 +338,11 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
 
       // Automatically load into editor
       if (onCreated) {
-        onCreated(res.id, finalTitle, res.data);
+        if (res.rosterData !== undefined) {
+          onCreated(res.id, finalTitle, res.data, res.rosterData);
+        } else {
+          onCreated(res.id, finalTitle, res.data);
+        }
       }
     } else {
       const errorMsg = res.error || 'Unknown error';
