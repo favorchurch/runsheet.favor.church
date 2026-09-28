@@ -1576,6 +1576,20 @@ export function RunsheetTableEditor({
       return false;
     }
 
+    if (process.env.NODE_ENV !== 'production') {
+      const results = result.results || [];
+      const failed = results.filter((r) => !r.ok);
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[runsheet] save: sent=${itemsToSave.length} success=${result.success} ` +
+          `results=${results.length} ok=${results.length - failed.length} failed=${failed.length}` +
+          (results.length === 0 && itemsToSave.length > 0
+            ? ' | NO RESULTS: rows cannot be remapped to their Rock ids and will stay unsaved'
+            : ''),
+        failed.length ? failed.slice(0, 3) : '',
+      );
+    }
+
     if (result.success) {
       const candidates: CandidateCellChange[] = [];
       const oldTitlesForMatching = new Map<number, string>();
