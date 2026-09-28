@@ -90,10 +90,43 @@ export function useAvailableRunsheetChannels(includeArchived: boolean, accessSco
   );
 }
 
+/**
+ * Dev-only trace for the runsheet load.
+ *
+ * "The spinner never stops" has two opposite causes — one request that never
+ * settles, or the same request firing over and over — and they need opposite
+ * fixes. This makes the difference visible in the console: a single `start`
+ * with no `done` is a hang; repeated `start` lines are a loop.
+ */
+let detailsFetchSeq = 0;
+function traceDetailsFetch(channelId: number) {
+  if (process.env.NODE_ENV === 'production') return () => undefined;
+  const id = ++detailsFetchSeq;
+  const startedAt = Date.now();
+  // eslint-disable-next-line no-console
+  console.warn(`[runsheet] details fetch #${id} start (channel ${channelId})`);
+  return (outcome: string) => {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[runsheet] details fetch #${id} ${outcome} after ${Date.now() - startedAt}ms (channel ${channelId})`,
+    );
+  };
+}
+
 export function useRunsheetDetails(channelId: number | null, accessScope: string = 'anonymous') {
   return useQuery(
     runsheetQueryKeys.details(channelId ?? 0, accessScope),
-    async () => throwOnFailedRead(await rockGetRunsheetDetails(channelId as number)),
+    async () => {
+      const done = traceDetailsFetch(channelId as number);
+      try {
+        const result = throwOnFailedRead(await rockGetRunsheetDetails(channelId as number));
+        done('done');
+        return result;
+      } catch (err) {
+        done('failed');
+        throw err;
+      }
+    },
     {
       ...queryBehavior,
       enabled: channelId !== null,

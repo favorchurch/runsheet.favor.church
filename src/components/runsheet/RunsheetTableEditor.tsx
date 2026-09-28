@@ -1395,13 +1395,41 @@ export function RunsheetTableEditor({
       JSON.stringify(columnOrder) !== JSON.stringify(baseOrder) ||
       JSON.stringify(columnWidths) !== JSON.stringify(baseWidths);
 
-    return (
+    const dirty =
       itemsToSave.length > 0 ||
       deletedIds.length > 0 ||
       startTimeChanged ||
       subtitleChanged ||
-      columnMetadataChanged
-    );
+      columnMetadataChanged;
+
+    /*
+     * "It still says unsaved after I saved" is unactionable without knowing
+     * *which* of these is true — a row that never matches its baseline looks
+     * identical, from the outside, to a start time that never settles. Dev
+     * only; `window.__runsheetDirty` holds the same breakdown for inspection.
+     */
+    if (dirty && process.env.NODE_ENV !== 'production') {
+      const reason = {
+        rows: itemsToSave.map((item) => ({
+          id: item.id,
+          title: (item.attributeValues?.ACTIVITYTITLE || item.title || '').replace(/<[^>]*>/g, ''),
+          hasBaseline: baselineRef.current.has(item.id),
+          isNew: Boolean(item.isNew),
+        })),
+        deletedIds,
+        startTimeChanged: startTimeChanged ? { startTime, initialStartTime } : false,
+        subtitleChanged: subtitleChanged ? { subtitle, normalizedInitialSubtitle } : false,
+        columnMetadataChanged: columnMetadataChanged
+          ? { columnOrder, baseOrder, columnWidths, baseWidths }
+          : false,
+        fromTemplate: Boolean(initialTemplate),
+      };
+      // eslint-disable-next-line no-console
+      console.warn('[runsheet] unsaved because:', reason);
+      if (typeof window !== 'undefined') (window as any).__runsheetDirty = reason;
+    }
+
+    return dirty;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     initialTemplate,
