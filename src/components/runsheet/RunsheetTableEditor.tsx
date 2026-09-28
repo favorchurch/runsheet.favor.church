@@ -277,22 +277,7 @@ export function RunsheetTableEditor({
     });
   }, [rosterUnavailable]);
 
-  // Keep the stored `Roster:` items in step with Rock, so propagate/compare/print
-  // never disagree with the card. Rock is the source of truth; these rows are a mirror.
-  useEffect(() => {
-    const roster = rosterQuery.data;
-    if (!roster?.linked || !roster.success) return;
-    const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
-    setItems((previous) =>
-      previous.map((item) => {
-        const fromRock = roster.roles.find((r) => r.roleTitle === item.title);
-        if (!fromRock) return item;
-        const next = fromRock.people.map((p) => p.name).join(', ');
-        if ((item.attributeValues?.[personKey] || '') === next) return item;
-        return { ...item, attributeValues: { ...item.attributeValues, [personKey]: next } };
-      }),
-    );
-  }, [rosterQuery.data, columns]);
+
   const [deletedIds, setDeletedIds] = useState<(number | string)[]>([]);
   const [startTime, setStartTime] = useState(initialStartTime);
   const { drag: rowDrag, getHandleProps: getRowDragHandleProps } = usePointerReorder(
@@ -518,6 +503,42 @@ export function RunsheetTableEditor({
     baselineRef.current = map;
     setBaselineVersion((v) => v + 1);
   }, [initialItems, createRowFingerprint]);
+
+  // Keep the stored `Roster:` items in step with Rock, so propagate/compare/print
+  // never disagree with the card. Rock is the source of truth; these rows are a mirror.
+  useEffect(() => {
+    const roster = rosterQuery.data;
+    if (!roster?.linked || !roster.success) return;
+    const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
+
+    let changed = false;
+    const next = items.map((item) => {
+      const fromRock = roster.roles.find((r) => r.roleTitle === item.title);
+      if (!fromRock) return item;
+      const value = fromRock.people.map((p) => p.name).join(', ');
+      if ((item.attributeValues?.[personKey] || '') === value) return item;
+      changed = true;
+      return { ...item, attributeValues: { ...item.attributeValues, [personKey]: value } };
+    });
+    if (!changed) return;
+
+    /*
+     * Re-baseline the mirrored rows. Copying Rock's answer in is not something
+     * the user did, so it must not register as an unsaved change: without this
+     * the runsheet is dirty the moment it loads, prompts "save or discard" on
+     * the way out, and — in view mode, where handleSave returns false straight
+     * away — can only ever be left by discarding. It bites hardest when Rock has
+     * nobody rostered yet, since the mirror then blanks names the sheet already
+     * had.
+     */
+    next.forEach((item) => {
+      if (item.title?.startsWith('Roster:')) {
+        baselineRef.current.set(item.id, createRowFingerprint(item));
+      }
+    });
+    setItems(next);
+    setBaselineVersion((v) => v + 1);
+  }, [rosterQuery.data, columns, items, createRowFingerprint]);
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
