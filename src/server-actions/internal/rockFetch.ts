@@ -42,7 +42,7 @@ function deriveRockTag(url: string): string {
  */
 export async function rockFetch(
   url: string,
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   params?: RockQueryParams,
   body?: Record<string, any> | any[],
   noCache?: boolean,
@@ -79,6 +79,10 @@ export async function rockFetch(
     Accept: 'application/json',
   };
 
+  if (method === 'PUT' && !body) {
+    headers['Content-Length'] = '0';
+  }
+
   if (method === 'GET' && !noCache) {
     const cached = await readRockObjectCache(url, method, params);
     if (cached.hit) {
@@ -92,10 +96,10 @@ export async function rockFetch(
     signal: AbortSignal.timeout(15000),
   };
 
-  if (body && (method === 'POST' || method === 'PATCH')) {
+  if (body && (method === 'POST' || method === 'PATCH' || method === 'PUT')) {
     fetchOptions.body = JSON.stringify(body);
     fetchOptions.cache = 'no-store';
-  } else if (method === 'DELETE' || noCache) {
+  } else if (method === 'DELETE' || method === 'PUT' || noCache) {
     fetchOptions.cache = 'no-store';
   } else {
     fetchOptions.next = {
@@ -187,3 +191,11 @@ export const rockDelete = (
   params?: RockQueryParams,
   ignoreStatuses?: number[]
 ) => rockFetch(url, 'DELETE', params, undefined, true, ignoreStatuses);
+
+/**
+ * Uncached PUT. Rock's Group Scheduler write actions
+ * (`ScheduledPersonAddConfirmed`, `ScheduledPersonRemove`) are PUTs that take
+ * their arguments in the querystring, hence `params` before `body`.
+ */
+export const rockPut = (url: string, params?: RockQueryParams, body?: any) =>
+  rockFetch(url, 'PUT', params, body, true);
