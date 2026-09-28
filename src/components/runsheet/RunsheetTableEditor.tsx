@@ -48,6 +48,8 @@ import { PropagateReviewPanel } from './PropagateReviewPanel';
 import { PeopleSearchDropdown, parsePeopleString } from './PeopleSearchDropdown';
 import { RockRosterRolePicker } from './RockRosterRolePicker';
 import { runsheetQueryKeys, useRosterAssignments, useSafeQueryClient } from './runsheetQueries';
+import { PREACHER_NOTES_ATTRIBUTE_KEY } from '@/lib/runsheetAttachments';
+import RunsheetAttachmentsCell from './RunsheetAttachmentsCell';
 
 function extractChannelDateLabel(name: string): string {
   const parts = name.split('//');
@@ -437,6 +439,7 @@ export function RunsheetTableEditor({
     const cleanAttrValues: Record<string, string> = {};
     if (item.attributeValues) {
       Object.entries(item.attributeValues).forEach(([k, v]) => {
+        if (k === PREACHER_NOTES_ATTRIBUTE_KEY) return;
         cleanAttrValues[k] = v ?? '';
       });
     }
@@ -819,42 +822,46 @@ export function RunsheetTableEditor({
     const list = columns && columns.length > 0 ? columns : FALLBACK_RUNSHEET_COLUMNS;
     const filtered = list.filter((col) => !RESERVED_RUNSHEET_COLUMN_KEYS.includes(col.key));
 
+    let cols = filtered;
     if (columnOrder.length > 0) {
       const orderMap = new Map<string, number>();
       columnOrder.forEach((key, idx) => orderMap.set(key, idx));
 
-      return [...filtered].sort((a, b) => {
+      cols = [...filtered].sort((a, b) => {
         const orderA = orderMap.has(a.key) ? orderMap.get(a.key)! : Number.MAX_SAFE_INTEGER;
         const orderB = orderMap.has(b.key) ? orderMap.get(b.key)! : Number.MAX_SAFE_INTEGER;
         if (orderA !== orderB) return orderA - orderB;
         return 0;
       });
+    } else {
+      const isPlatformCol = (col: DynamicAttributeColumn) => {
+        const k = col.key.toUpperCase();
+        const n = col.name.toLowerCase();
+        return k === 'PLATFORM' || k === 'ANCHORPREACHER' || n.includes('platform') || isPersonColumn(col);
+      };
+
+      const isDescriptionCol = (col: DynamicAttributeColumn) => {
+        const k = col.key.toUpperCase();
+        const n = col.name.toLowerCase();
+        return k === 'DESCRIPTION' || k === 'DETIAL' || n.includes('description') || n.includes('detail');
+      };
+
+      const platformIdx = filtered.findIndex(isPlatformCol);
+      const descIdx = filtered.findIndex(isDescriptionCol);
+
+      if (platformIdx !== -1 && descIdx !== -1 && platformIdx > descIdx) {
+        const result = [...filtered];
+        const [platformCol] = result.splice(platformIdx, 1);
+        result.splice(descIdx, 0, platformCol);
+        cols = result;
+      }
     }
 
-    const isPlatformCol = (col: DynamicAttributeColumn) => {
-      const k = col.key.toUpperCase();
-      const n = col.name.toLowerCase();
-      return k === 'PLATFORM' || k === 'ANCHORPREACHER' || n.includes('platform') || isPersonColumn(col);
-    };
-
-    const isDescriptionCol = (col: DynamicAttributeColumn) => {
-      const k = col.key.toUpperCase();
-      const n = col.name.toLowerCase();
-      return k === 'DESCRIPTION' || k === 'DETIAL' || n.includes('description') || n.includes('detail');
-    };
-
-    const platformIdx = filtered.findIndex(isPlatformCol);
-    const descIdx = filtered.findIndex(isDescriptionCol);
-
-    if (platformIdx !== -1 && descIdx !== -1 && platformIdx > descIdx) {
-      const result = [...filtered];
-      const [platformCol] = result.splice(platformIdx, 1);
-      result.splice(descIdx, 0, platformCol);
-      return result;
-    }
-
-    return filtered;
-  }, [columns, columnOrder]);
+    // Attachments are editor-only; a viewer must not even see the column.
+    return readOnly
+      ? cols.filter((col) => col.key !== PREACHER_NOTES_ATTRIBUTE_KEY)
+      : cols;
+  }, [columns, columnOrder, readOnly]);
 
   /**
    * Walks the rows in order, accumulating the clock and grouping each timed row
@@ -1300,7 +1307,7 @@ export function RunsheetTableEditor({
 
       const allKeys = new Set([...Object.keys(currentAttrs), ...Object.keys(baselineAttrs)]);
       allKeys.forEach((key) => {
-        if (key === 'ACTIVITYTITLE') return;
+        if (key === 'ACTIVITYTITLE' || key === PREACHER_NOTES_ATTRIBUTE_KEY) return;
         const curVal = currentAttrs[key] ?? '';
         const baseVal = baselineAttrs[key] ?? '';
         if (curVal !== baseVal) {
@@ -1439,11 +1446,12 @@ export function RunsheetTableEditor({
 
     let result: Awaited<ReturnType<typeof rockBulkSaveRunsheetItems>>;
     try {
+      const savableColumns = columns.filter((col) => col.key !== PREACHER_NOTES_ATTRIBUTE_KEY);
       result = await rockBulkSaveRunsheetItems(
         channelId,
         itemsToSave,
         deletedIds,
-        columns,
+        savableColumns,
         subtitle,
         startTimeChanged ? startTime : undefined,
         ...(columnMetadataToSave ? [columnMetadataToSave] : [])
@@ -2775,6 +2783,34 @@ export function RunsheetTableEditor({
                     </td>
 
                     {dynamicAttrCols.map((col) => {
+                      if (col.key === PREACHER_NOTES_ATTRIBUTE_KEY) {
+                        return (
+                          <td
+                            key={col.id}
+                            className="border-r border-slate-200 p-0 align-middle text-center"
+                            style={getColumnStyle(col.key, col.name)}
+                          >
+                            <RunsheetAttachmentsCell
+                              channelId={channelId}
+                              itemId={item.id}
+                              value={readRunsheetCellValue(item, col.key)}
+                              readOnly={readOnly}
+                              onValueChange={(next) => {
+                                // Mirror Rock into local state without marking the row dirty:
+                                // the attachment list is already saved.
+                                setItems((rows) =>
+                                  rows.map((row) =>
+                                    row.id === item.id
+                                      ? { ...row, attributeValues: { ...row.attributeValues, [col.key]: next } }
+                                      : row,
+                                  ),
+                                );
+                              }}
+                            />
+                          </td>
+                        );
+                      }
+
                       const isCellEditing = editingCell?.itemId === item.id && editingCell?.key === col.key;
                       return (
                         <td
@@ -2957,7 +2993,31 @@ export function RunsheetTableEditor({
                 <div className="flex flex-col gap-1">
                   {sortedAttrCols.map((col) => {
                     const val = readRunsheetCellValue(item, col.key);
-                    if (!val) return null;
+                    if (!val && col.key !== PREACHER_NOTES_ATTRIBUTE_KEY) return null;
+                    if (col.key === PREACHER_NOTES_ATTRIBUTE_KEY) {
+                      return (
+                        <div key={col.id} className="rounded-md bg-slate-50 border border-slate-200 p-1.5 text-xs">
+                          <span className="font-extrabold text-[9px] uppercase tracking-wider text-slate-500 block mb-0.5">
+                            {col.name}
+                          </span>
+                          <RunsheetAttachmentsCell
+                            channelId={channelId}
+                            itemId={item.id}
+                            value={val}
+                            readOnly={readOnly}
+                            onValueChange={(next) => {
+                              setItems((rows) =>
+                                rows.map((row) =>
+                                  row.id === item.id
+                                    ? { ...row, attributeValues: { ...row.attributeValues, [col.key]: next } }
+                                    : row,
+                                ),
+                              );
+                            }}
+                          />
+                        </div>
+                      );
+                    }
                     return (
                       <div key={col.id} className="rounded-md bg-slate-50 border border-slate-200 p-1.5 text-xs">
                         <span className="font-extrabold text-[9px] uppercase tracking-wider text-slate-500 block mb-0.5">
@@ -3124,6 +3184,31 @@ export function RunsheetTableEditor({
               {sortedAttrCols.map((col) => {
                 const val = readRunsheetCellValue(processedRows[editingCardIndex], col.key);
                 const isPerson = isPersonColumn(col);
+
+                if (col.key === PREACHER_NOTES_ATTRIBUTE_KEY) {
+                  return (
+                    <div key={col.id} className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                      <label className="font-bold text-slate-700 text-xs uppercase tracking-wider text-[10px]">{col.name}</label>
+                      <div className="mt-0.5">
+                        <RunsheetAttachmentsCell
+                          channelId={channelId}
+                          itemId={processedRows[editingCardIndex].id}
+                          value={val}
+                          readOnly={readOnly}
+                          onValueChange={(next) => {
+                            setItems((rows) =>
+                              rows.map((row) =>
+                                row.id === processedRows[editingCardIndex].id
+                                  ? { ...row, attributeValues: { ...row.attributeValues, [col.key]: next } }
+                                  : row,
+                              ),
+                            );
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                }
 
                 return (
                   <div key={col.id} className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
