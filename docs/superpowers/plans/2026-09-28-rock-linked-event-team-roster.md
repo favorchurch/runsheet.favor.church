@@ -146,7 +146,7 @@ git commit -m "docs: record Rock scheduler REST write-action findings"
 `roleTitle` is the full runsheet item title, e.g. `'Roster: Service Director'` — that is what the
 card and the editor pass around.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from '@jest/globals';
@@ -236,12 +236,12 @@ describe('usableRoleLocationIds', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test -- src/lib/rockRosterRoles.test.ts`
 Expected: FAIL — `Cannot find module './rockRosterRoles'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```ts
 /**
@@ -311,7 +311,7 @@ export function usableRoleLocationIds(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test -- src/lib/rockRosterRoles.test.ts`
 Expected: PASS
@@ -319,7 +319,7 @@ Expected: PASS
 If the first test fails because `VITAL_ROLES` and the table disagree, the table is wrong — fix the
 table, not the test.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/rockRosterRoles.ts src/lib/rockRosterRoles.test.ts
@@ -352,7 +352,7 @@ Matching rules, in order, requiring **exactly one** surviving candidate:
 Anything else — no match, several matches, non-MNL, unparseable date — returns `null`, and the
 runsheet is unlinked.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from '@jest/globals';
@@ -421,12 +421,12 @@ describe('matchRockSchedule', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test -- src/lib/rockServiceSchedule.test.ts`
 Expected: FAIL — `Cannot find module './rockServiceSchedule'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```ts
 /**
@@ -518,12 +518,12 @@ export function matchRockSchedule(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test -- src/lib/rockServiceSchedule.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/rockServiceSchedule.ts src/lib/rockServiceSchedule.test.ts
@@ -551,7 +551,7 @@ git commit -m "feat: resolve runsheet channel names to Rock service schedules"
 `attendanceId`s, `adds` are person+slot pairs, and a person who is already in the role keeps their
 existing assignment and appears in neither list.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from '@jest/globals';
@@ -639,12 +639,12 @@ describe('planRosterSlots', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test -- src/lib/rockRosterSlots.test.ts`
 Expected: FAIL — `Cannot find module './rockRosterSlots'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```ts
 /**
@@ -727,12 +727,12 @@ export function planRosterSlots(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test -- src/lib/rockRosterSlots.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/rockRosterSlots.ts src/lib/rockRosterSlots.test.ts
@@ -756,7 +756,7 @@ handles only `GET`/`POST`/`PATCH`/`DELETE`.
 Rock's scheduler actions take their arguments in the querystring and no body, which is why `body`
 is optional and second here.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
@@ -797,12 +797,12 @@ describe('rockPut', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test -- src/server-actions/internal/rockFetch.put.test.ts`
 Expected: FAIL — `rockPut is not a function`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `rockFetch.ts`, widen the method union:
 
@@ -836,12 +836,12 @@ export const rockPut = (url: string, params?: RockQueryParams, body?: any) =>
 The existing cache-busting branch is `method !== 'GET'`, so a `PUT` already busts the Redis object
 cache and revalidates the tag. No change needed there.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test -- src/server-actions/internal/rockFetch.put.test.ts && pnpm test -- src/server-actions`
 Expected: PASS, and no existing `rockFetch` consumer regresses.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/server-actions/internal/rockFetch.ts src/server-actions/internal/rockFetch.put.test.ts
@@ -900,7 +900,7 @@ Filter to `RSVP` 0 (Unknown/pending) or 2 (Yes/confirmed); exclude 1 (No/decline
 A role that is linked but empty still appears in `roles`, with `people: []`. Present-and-empty and
 absent mean different things to the card, and the difference is the whole point of this task.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
@@ -1026,12 +1026,12 @@ describe('rockGetRosterAssignments', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test -- src/server-actions/rockGetRosterAssignments.test.ts`
 Expected: FAIL — `Cannot find module './rockGetRosterAssignments'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```ts
 'use server';
@@ -1185,12 +1185,12 @@ export async function rockGetRosterAssignments(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test -- src/server-actions/rockGetRosterAssignments.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/server-actions/rockGetRosterAssignments.ts src/server-actions/rockGetRosterAssignments.test.ts
@@ -1240,7 +1240,7 @@ Order of operations:
 An `add` needs the `AttendanceOccurrence` for `{ groupId, locationId, scheduleId, isoDate }`. If it
 does not exist yet, create it with `POST /AttendanceOccurrences`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
@@ -1358,12 +1358,12 @@ describe('rockSyncRosterRole', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test -- src/server-actions/rockSyncRosterRole.test.ts`
 Expected: FAIL — `Cannot find module './rockSyncRosterRole'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```ts
 'use server';
@@ -1562,18 +1562,18 @@ export async function rockSyncRosterRole(input: {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test -- src/server-actions/rockSyncRosterRole.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Verify against `rock-preview` before going further**
+- [x] **Step 5: Verify against `rock-preview` before going further**
 
 Point `ROCK_API_URL` at `rock-preview`, run the app, and make one real add and one real remove on
 a future occurrence. Confirm in the Group Scheduler UI that the assignment appeared confirmed and
 that the removal is gone. A passing unit test is not evidence the write works.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/server-actions/rockSyncRosterRole.ts src/server-actions/rockSyncRosterRole.test.ts
@@ -1600,7 +1600,7 @@ git commit -m "feat: write one roster role back to Rock Group Scheduler"
 Display rule: when `rockLinked` and a role appears in `rockRoles`, that role's cell shows the Rock
 names joined by `, `. Otherwise the cell shows the stored `Roster:` value exactly as today.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```tsx
 import { describe, expect, it } from '@jest/globals';
@@ -1674,12 +1674,12 @@ import { setRosterCollapsedPreference } from '@/lib/userPreferences';
 beforeEach(() => setRosterCollapsedPreference(false));
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test -- tests/unit/components/eventTeamRosterCard.rock.test.tsx`
 Expected: FAIL — the Rock name is not rendered; `Stale Name` is.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `runsheetQueries.ts`, beside the existing keys and hooks:
 
@@ -1767,12 +1767,12 @@ In `RunsheetTableEditor.tsx`, call the hook and pass the results through:
 (keep the existing `editingRoleTitle`, `onOpenRolePicker` and `renderPeoplePicker` props exactly as
 they are).
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test -- tests/unit/components/eventTeamRosterCard.rock.test.tsx && pnpm test -- tests/unit/components`
 Expected: PASS, with no existing card test regressing.
 
-- [ ] **Step 5: Mirror Rock's names into the `Roster:` items**
+- [x] **Step 5: Mirror Rock's names into the `Roster:` items**
 
 So propagate, compare and print keep matching what the card shows, sync the stored items once per
 successful Rock read. In `RunsheetTableEditor.tsx`, beside the other effects:
@@ -1796,7 +1796,7 @@ successful Rock read. In `RunsheetTableEditor.tsx`, beside the other effects:
   }, [rosterQuery.data, columns]);
 ```
 
-- [ ] **Step 6: Run the full component suite and commit**
+- [x] **Step 6: Run the full component suite and commit**
 
 Run: `pnpm test -- tests/unit/components && pnpm typecheck`
 Expected: PASS
@@ -1845,7 +1845,7 @@ unaddressable in Rock. Saving calls `rockSyncRosterRole`; on success it calls `o
 post-write state and closes; on failure it keeps the picker open, shows the error, and reverts the
 chips to `initialPeople`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```tsx
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
@@ -1920,12 +1920,12 @@ describe('RockRosterRolePicker', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test -- tests/unit/components/rockRosterRolePicker.test.tsx`
 Expected: FAIL — `Cannot find module '@/components/runsheet/RockRosterRolePicker'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```tsx
 'use client';
@@ -2126,12 +2126,12 @@ In `RunsheetTableEditor.tsx`, use it for linked roles only — every other role 
         }}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test -- tests/unit/components/rockRosterRolePicker.test.tsx && pnpm typecheck`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/components/runsheet/RockRosterRolePicker.tsx src/components/runsheet/RunsheetTableEditor.tsx tests/unit/components/rockRosterRolePicker.test.tsx
@@ -2155,7 +2155,7 @@ Independent of every other task — this one can ship on its own.
   - `sortRunsheetChannels<T>(channels: T[], direction?: RunsheetSortDirection): T[]` — `'asc'` by default, so every existing caller is unchanged
   - `partitionRunsheetChannelsByRecency<T>(channels: T[], today?: Date): { upcoming: T[]; past: T[] }`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from '@jest/globals';
@@ -2197,12 +2197,12 @@ describe('partitionRunsheetChannelsByRecency', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm test -- src/lib/runsheetDate.test.ts`
 Expected: FAIL — `sortRunsheetChannels` takes one argument; `partitionRunsheetChannelsByRecency` is not exported.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Replace `sortRunsheetChannels` and add the partition helper in `runsheetDate.ts`:
 
@@ -2257,12 +2257,12 @@ and add `partitionRunsheetChannelsByRecency` to the existing `@/lib/runsheetDate
 Leave the preload effect at ~line 215 alone — it wants the next five *upcoming* runsheets, and
 plain `sortRunsheetChannels(channels)` still gives it those.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm test -- src/lib/runsheetDate.test.ts && pnpm test -- src/lib && pnpm typecheck`
 Expected: PASS — every existing `sortRunsheetChannels` caller still gets ascending order.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/runsheetDate.ts src/lib/runsheetDate.test.ts src/components/runsheet/RunsheetLandingView.tsx
@@ -2276,19 +2276,19 @@ git commit -m "feat: list archived runsheets newest-first"
 **Files:**
 - Modify: `package.json`
 
-- [ ] **Step 1: Bump the version**
+- [x] **Step 1: Bump the version**
 
 ```bash
 cd /Users/jerwyn/Desktop/Favor/runsheet.favor.church
 npm version 1.20.0 --no-git-tag-version
 ```
 
-- [ ] **Step 2: Run the whole suite**
+- [x] **Step 2: Run the whole suite**
 
 Run: `pnpm test && pnpm typecheck && pnpm lint`
 Expected: PASS. Do not claim completion on a partial run — paste the actual output.
 
-- [ ] **Step 3: Smoke-test the two features against `rock-preview`**
+- [x] **Step 3: Smoke-test the two features against `rock-preview`**
 
 - Open a future MNL runsheet: the ten roles show Rock's names, and the card shows no error note.
 - Change one role in Group Scheduler, reload the runsheet page: the new name is there.
@@ -2301,7 +2301,7 @@ Expected: PASS. Do not claim completion on a partial run — paste the actual ou
 - Tick **Show Archived** on the landing page: the most recent past runsheet is at the top of the
   archived block.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add package.json
