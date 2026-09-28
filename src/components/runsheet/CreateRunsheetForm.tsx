@@ -186,13 +186,17 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
     };
   }, [selectedCategoryId, date]);
 
-  // Grow topics carry their next occurrence; jump the date to it.
+  // Schedules with a designated next occurrence (Grow, Youth, etc.): jump the date to it.
   useEffect(() => {
-    if (selectedCategoryId !== GROW_CONTENT_CHANNEL_CATEGORY_ID) return;
-    const next = schedules.find((s) => s.name === session)?.nextDate;
+    const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
+    const isYouth = /youth/i.test(selectedCategory?.name || '');
+    const isGrow = selectedCategoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID;
+    if (!isGrow && !isYouth) return;
+
+    const next = schedules.find((s) => s.name === session)?.nextDate || schedules[0]?.nextDate;
     if (next && next !== date) setDate(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, schedules, selectedCategoryId]);
+  }, [session, schedules, selectedCategoryId, categories]);
 
   useEffect(() => {
     const selectedCategory = categories.find((c) => c.id === selectedCategoryId);

@@ -10,6 +10,7 @@ import {
   descendantCategoryIds,
   scheduleRootsForCategory,
   SCHEDULE_CATEGORY_ENTITY_TYPE_ID,
+  YOUTH_SERVICES_CATEGORY_ID,
 } from '@/lib/scheduleCategoryTree';
 import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
 
@@ -119,12 +120,25 @@ export async function rockGetScheduleOptions(
     );
 
     // 2. Youth Category vs Non-Youth Category filtering
-    // Youth categories: 341 (MNL Youth), 344 (BNE Youth), or any categoryId mapped to youth
-    const isYouthCategory = /youth/i.test(contentCategory?.Name || '');
+    const categoryTree = (categoryRows || []).map((c) => ({
+      id: Number(c.Id),
+      parentId: c.ParentCategoryId ?? null,
+    }));
+    const youthCategoryIds = new Set(
+      descendantCategoryIds(categoryTree, YOUTH_SERVICES_CATEGORY_ID)
+    );
+    const isYouthCategory =
+      /youth/i.test(contentCategory?.Name || '') ||
+      (categoryId != null && youthCategoryIds.has(categoryId)) ||
+      targetCategoryIds.some((id) => youthCategoryIds.has(id));
 
     list = list.filter((s) => {
       const nameLower = s.Name.toLowerCase();
-      const isYouthSchedule = nameLower.includes('youth') || nameLower.includes('fy service') || nameLower.includes('fy');
+      const isYouthSchedule =
+        nameLower.includes('youth') ||
+        nameLower.includes('fy service') ||
+        /\bfy\b/i.test(nameLower) ||
+        youthCategoryIds.has(s.CategoryId);
       if (isYouthCategory) {
         return isYouthSchedule;
       } else {
@@ -150,7 +164,7 @@ export async function rockGetScheduleOptions(
         };
         const dayCode = dayMap[dayOfWeek];
 
-        list = list.filter((s) => {
+        const dateFilteredList = list.filter((s) => {
           const ical = s.iCalendarContent || '';
           const icalUpper = ical.toUpperCase();
           const nameLower = s.Name.toLowerCase();
@@ -203,7 +217,7 @@ export async function rockGetScheduleOptions(
           let schedDay: string | null = null;
           if (icalUpper.includes('BYDAY=SU') || nameLower.includes('sunday')) schedDay = 'SU';
           else if (icalUpper.includes('BYDAY=SA') || nameLower.includes('saturday')) schedDay = 'SA';
-          else if (icalUpper.includes('BYDAY=FR') || nameLower.includes('friday') || nameLower.includes('fy')) schedDay = 'FR';
+          else if (icalUpper.includes('BYDAY=FR') || nameLower.includes('friday') || /\bfy\b/i.test(nameLower)) schedDay = 'FR';
           else if (icalUpper.includes('BYDAY=TH') || nameLower.includes('thursday')) schedDay = 'TH';
           else if (icalUpper.includes('BYDAY=WE') || nameLower.includes('wednesday')) schedDay = 'WE';
           else if (icalUpper.includes('BYDAY=TU') || nameLower.includes('tuesday')) schedDay = 'TU';
@@ -218,15 +232,31 @@ export async function rockGetScheduleOptions(
           }
           return false;
         });
+
+        // If date-filtering produced matches, keep them.
+        // If it produced 0 matches (e.g. form date was initialized to Sunday, but
+        // Youth schedules occur on Saturday/Friday), keep the active list so schedules
+        // remain selectable and can jump the form date via nextDate.
+        if (dateFilteredList.length > 0) {
+          list = dateFilteredList;
+        }
       }
     }
 
-    const schedules: ScheduleOption[] = list.map((s) => ({
-      id: s.Id,
-      name: s.Name,
-      categoryId: s.CategoryId,
-      timeLabel: formatScheduleTime(s.Name),
-    }));
+    const schedules: ScheduleOption[] = list.map((s) => {
+      const occurrences = s.iCalendarContent
+        ? expandIcalOccurrences(s.iCalendarContent, today, s.EffectiveEndDate)
+        : [];
+      const next = occurrences[0];
+      return {
+        id: s.Id,
+        name: s.Name,
+        categoryId: s.CategoryId,
+        timeLabel: formatScheduleTime(s.Name),
+        nextDate: next?.date,
+        upcomingOccurrences: occurrences.map((o) => ({ date: o.date, time: o.time })),
+      };
+    });
 
     return {
       success: true,

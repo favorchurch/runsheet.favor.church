@@ -51,6 +51,27 @@ const SUNDAY_CROWNE_SCHEDULES = [
   },
 ];
 
+const YOUTH_MANILA_SCHEDULES = [
+  {
+    Id: 106,
+    Name: 'MNL 1PM Saturday Youth',
+    CategoryId: 479,
+    iCalendarContent:
+      'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART:20260516T130000\r\nRRULE:FREQ=WEEKLY;UNTIL=20261205T000000;BYDAY=SA\r\nEND:VEVENT\r\nEND:VCALENDAR',
+    EffectiveStartDate: '2026-05-16T00:00:00+08:00',
+    EffectiveEndDate: '2026-12-05T00:00:00+08:00',
+  },
+  {
+    Id: 107,
+    Name: 'MNL 4PM Saturday Youth',
+    CategoryId: 479,
+    iCalendarContent:
+      'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART:20260516T160000\r\nRRULE:FREQ=WEEKLY;UNTIL=20261205T000000;BYDAY=SA\r\nEND:VEVENT\r\nEND:VCALENDAR',
+    EffectiveStartDate: '2026-05-16T00:00:00+08:00',
+    EffectiveEndDate: '2026-12-05T00:00:00+08:00',
+  },
+];
+
 describe('rockGetScheduleOptions - Sunday services schedule resolution', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -136,5 +157,81 @@ describe('rockGetScheduleOptions - Sunday services schedule resolution', () => {
 
     expect(capturedFilter).toContain('CategoryId eq 305');
     expect(capturedFilter).not.toContain('CategoryId eq 417');
+  });
+
+  it('queries Category 475 tree when categoryId is 475 directly (YOUTH SERVICES)', async () => {
+    let capturedFilter = '';
+    mockRockGet.mockImplementation(async (url: string, params?: any) => {
+      if (url === '/Categories') {
+        return SCHEDULE_CATEGORIES as any;
+      }
+      if (url === '/Categories/475') {
+        return { Id: 475, Name: 'YOUTH SERVICES' } as any;
+      }
+      if (url === '/Schedules') {
+        capturedFilter = params?.$filter || '';
+        return YOUTH_MANILA_SCHEDULES as any;
+      }
+      return null;
+    });
+
+    const res = await rockGetScheduleOptions(475);
+
+    expect(res.success).toBe(true);
+    expect(capturedFilter).toContain('CategoryId eq 475');
+    expect(capturedFilter).toContain('CategoryId eq 479');
+    expect(res.schedules.length).toBeGreaterThan(0);
+    expect(res.schedules[0].name).toBe('MNL 1PM Saturday Youth');
+    expect(res.schedules[0].nextDate).toBeDefined();
+  });
+
+  it('queries Category 479 when category is MNL Youth Service (341) and preserves youth schedules even if form date is Sunday', async () => {
+    let capturedFilter = '';
+    mockRockGet.mockImplementation(async (url: string, params?: any) => {
+      if (url === '/Categories') {
+        return SCHEDULE_CATEGORIES as any;
+      }
+      if (url === '/Categories/341') {
+        return { Id: 341, Name: 'MNL | Youth Service' } as any;
+      }
+      if (url === '/Schedules') {
+        capturedFilter = params?.$filter || '';
+        return YOUTH_MANILA_SCHEDULES as any;
+      }
+      return null;
+    });
+
+    // Form starts with Sunday date (e.g. 2026-10-04), but youth services run on Saturday
+    const res = await rockGetScheduleOptions(341, '2026-10-04');
+
+    expect(res.success).toBe(true);
+    expect(capturedFilter).toContain('CategoryId eq 479');
+    expect(res.schedules).toHaveLength(2);
+    expect(res.schedules[0].name).toBe('MNL 1PM Saturday Youth');
+    expect(res.schedules[0].nextDate).toBeDefined();
+  });
+
+  it('recognizes child category 479 directly as youth even without "youth" in its name', async () => {
+    let capturedFilter = '';
+    mockRockGet.mockImplementation(async (url: string, params?: any) => {
+      if (url === '/Categories') {
+        return SCHEDULE_CATEGORIES as any;
+      }
+      if (url === '/Categories/479') {
+        return { Id: 479, Name: '🇵🇭 Manila' } as any;
+      }
+      if (url === '/Schedules') {
+        capturedFilter = params?.$filter || '';
+        return YOUTH_MANILA_SCHEDULES as any;
+      }
+      return null;
+    });
+
+    const res = await rockGetScheduleOptions(479);
+
+    expect(res.success).toBe(true);
+    expect(capturedFilter).toContain('CategoryId eq 479');
+    expect(res.schedules).toHaveLength(2);
+    expect(res.schedules[0].name).toBe('MNL 1PM Saturday Youth');
   });
 });
