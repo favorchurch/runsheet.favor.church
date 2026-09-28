@@ -42,8 +42,17 @@ attached to the team `Group`, and a **service** is a `Schedule`.
 
 Multi-slot roles read as one merged cell: whichever slots are filled in Rock contribute a name,
 in slot order, and empty slots contribute nothing. They write back positionally — the first name
-in the cell goes to the first slot, the second to the second. Submitting more names than the role
-has slots is rejected with a message naming the limit; it is never silently truncated.
+in the cell goes to the first slot, the second to the second.
+
+Rock permits several people in one slot — production has two people in each of the two Worship
+Leader slots — so more names than slots is valid, not an error. Newcomers take the empty slots in
+order; once every slot is spoken for, the rest join the last one, so a third worship leader sits
+alongside Worship Leader 2 rather than being promoted into Worship Leader 1, and a third offstage
+name joins the Shadow rather than becoming the Director. People already in the role keep their
+existing slot, so a spread Rock already has is preserved exactly.
+
+(Superseded 2026-09-29: this originally rejected more names than slots. That assumption was wrong
+about Rock and made real rosters uneditable.)
 
 ### Occurrence resolution
 

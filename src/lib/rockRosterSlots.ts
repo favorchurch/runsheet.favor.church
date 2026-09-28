@@ -48,15 +48,6 @@ export function planRosterSlots(
   if (new Set(desiredPersonIds).size !== desiredPersonIds.length) {
     return { ...empty, error: 'The same person cannot be assigned to this role twice.' };
   }
-  if (desiredPersonIds.length > locationIds.length) {
-    return {
-      ...empty,
-      error: `Rock only has ${locationIds.length} slot${
-        locationIds.length === 1 ? '' : 's'
-      } for this role, but ${desiredPersonIds.length} people were assigned.`,
-    };
-  }
-
   const current = mergeRosterOccupants(occupants, locationIds);
   const keptPersonIds = new Set(
     desiredPersonIds.filter((id) => current.some((o) => o.personId === id)),
@@ -70,9 +61,19 @@ export function planRosterSlots(
   );
   const freeSlots = locationIds.filter((id) => !takenSlots.has(id));
 
+  // Rock lets several people share one slot — production already has two people
+  // in each of the two Worship Leader slots — so more names than slots is valid,
+  // not an error. Newcomers take the empty slots in order, and once every slot
+  // is spoken for the rest join the last one: a third worship leader belongs
+  // alongside Worship Leader 2, never promoted into Worship Leader 1, and a
+  // third offstage name joins the Shadow rather than becoming the Director.
+  // People already in the role are untouched, so an existing spread across slots
+  // is preserved exactly as Rock has it.
+  const overflowSlot = locationIds[locationIds.length - 1];
+
   const adds = desiredPersonIds
     .filter((id) => !keptPersonIds.has(id))
-    .map((personId, index) => ({ personId, locationId: freeSlots[index] }));
+    .map((personId, index) => ({ personId, locationId: freeSlots[index] ?? overflowSlot }));
 
   return { adds, removes, error: null };
 }

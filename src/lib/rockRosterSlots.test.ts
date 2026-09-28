@@ -68,11 +68,48 @@ describe('planRosterSlots', () => {
     });
   });
 
-  it('rejects more names than the role has slots and plans nothing', () => {
-    const plan = planRosterSlots([], [10, 20, 30], WL);
-    expect(plan.adds).toEqual([]);
-    expect(plan.removes).toEqual([]);
-    expect(plan.error).toBe('Rock only has 2 slots for this role, but 3 people were assigned.');
+  it('puts extra people beyond the slot count into the last slot', () => {
+    // Rock allows several people per slot, so a third worship leader is valid.
+    // They join Worship Leader 2 rather than displacing Worship Leader 1.
+    expect(planRosterSlots([], [10, 20, 30], WL)).toEqual({
+      adds: [
+        { personId: 10, locationId: 799 },
+        { personId: 20, locationId: 800 },
+        { personId: 30, locationId: 800 },
+      ],
+      removes: [],
+      error: null,
+    });
+  });
+
+  it('adds a second person to a single-slot role without evicting the first', () => {
+    expect(planRosterSlots([occ(1, 10, 'Stays', 475)], [10, 99], [475])).toEqual({
+      adds: [{ personId: 99, locationId: 475 }],
+      removes: [],
+      error: null,
+    });
+  });
+
+  it('leaves an existing multi-person spread exactly as Rock has it', () => {
+    // Two people already share each slot; re-submitting all four touches nothing.
+    const occupants = [
+      occ(1, 10, 'WL1a', 799),
+      occ(2, 20, 'WL1b', 799),
+      occ(3, 30, 'WL2a', 800),
+      occ(4, 40, 'WL2b', 800),
+    ];
+    expect(planRosterSlots(occupants, [10, 20, 30, 40], WL)).toEqual({
+      adds: [],
+      removes: [],
+      error: null,
+    });
+  });
+
+  it('never plans an add without a slot to put it in', () => {
+    const plan = planRosterSlots([], [10, 20, 30, 40, 50], WL);
+    expect(plan.error).toBeNull();
+    expect(plan.adds).toHaveLength(5);
+    for (const add of plan.adds) expect(WL).toContain(add.locationId);
   });
 
   it('rejects the same person listed twice', () => {

@@ -120,18 +120,35 @@ describe('rockSyncRosterRole', () => {
     expect(jest.mocked(rockPost)).not.toHaveBeenCalled();
   });
 
-  it('writes nothing when more people are assigned than the role has slots', async () => {
-    // Five group-locations reads, 1 occurrences read, 1 attendances read; then the plan rejects.
+  it('schedules both people when a one-slot role is given two, since Rock allows it', async () => {
     jest.mocked(rockGet)
       .mockResolvedValueOnce([
         { GroupId: 19100, LocationId: 475, Schedules: [{ Id: 565, Name: 'MNL Crowne 3PM' }] },
+      ] as any) // 19100
+      .mockResolvedValueOnce([] as any) // 19109
+      .mockResolvedValueOnce([] as any) // 19095
+      .mockResolvedValueOnce([] as any) // 19096
+      .mockResolvedValueOnce([] as any) // 19144
+      // current occupants: none
+      .mockResolvedValueOnce([] as any) // occurrences
+      // occurrenceIdByLocation
+      .mockResolvedValueOnce([{ Id: 100, LocationId: 475 }] as any)
+      // read-back: both now in the role, sharing the one slot
+      .mockResolvedValueOnce([{ Id: 100, GroupId: 19100, LocationId: 475 }] as any)
+      .mockResolvedValueOnce([
+        { Id: 61, OccurrenceId: 100, RSVP: 1, PersonAliasId: 5010 },
+        { Id: 62, OccurrenceId: 100, RSVP: 1, PersonAliasId: 5020 },
       ] as any)
-      .mockResolvedValueOnce([] as any)
-      .mockResolvedValueOnce([] as any)
-      .mockResolvedValueOnce([] as any)
-      .mockResolvedValueOnce([] as any)
-      .mockResolvedValueOnce([] as any)
-      .mockResolvedValueOnce([] as any);
+      .mockResolvedValueOnce([
+        { Id: 5010, PersonId: 10 },
+        { Id: 5020, PersonId: 20 },
+      ] as any)
+      .mockResolvedValueOnce([
+        { Id: 10, NickName: 'First', LastName: 'Director' },
+        { Id: 20, NickName: 'Second', LastName: 'Director' },
+      ] as any);
+
+    mockRockPut.mockResolvedValue({} as any);
 
     const res = await rockSyncRosterRole({
       channelName: FUTURE,
@@ -139,10 +156,19 @@ describe('rockSyncRosterRole', () => {
       personIds: [10, 20],
     });
 
-    expect(res.success).toBe(false);
-    expect(res.error).toBe('Rock only has 1 slot for this role, but 2 people were assigned.');
-    expect(mockRockPut).not.toHaveBeenCalled();
-    expect(jest.mocked(rockPost)).not.toHaveBeenCalled();
+    expect(res.success).toBe(true);
+    expect(res.people).toEqual([
+      { personId: 10, name: 'First Director' },
+      { personId: 20, name: 'Second Director' },
+    ]);
+    expect(mockRockPut).toHaveBeenCalledWith('/Attendances/ScheduledPersonAddConfirmed', {
+      personId: 10,
+      attendanceOccurrenceId: 100,
+    });
+    expect(mockRockPut).toHaveBeenCalledWith('/Attendances/ScheduledPersonAddConfirmed', {
+      personId: 20,
+      attendanceOccurrenceId: 100,
+    });
   });
 
   it('never reads back with an empty filter when Rock has no occurrence rows', async () => {
