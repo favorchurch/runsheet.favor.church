@@ -19,6 +19,7 @@ import {
   extractChannelTime,
   formatChannelDateDisplay,
   extractChannelTitleDisplay,
+  partitionRunsheetChannelsByRecency,
   sortRunsheetChannels,
 } from '@/lib/runsheetDate';
 import {
@@ -259,7 +260,8 @@ export function RunsheetLandingView({
       const dateStr = (formatChannelDateDisplay(c.name) || '').toLowerCase();
       return rawName.includes(q) || time.includes(q) || dateStr.includes(q);
     });
-    return sortRunsheetChannels(matches);
+    const { upcoming, past } = partitionRunsheetChannelsByRecency(matches);
+    return [...sortRunsheetChannels(upcoming), ...sortRunsheetChannels(past, 'desc')];
   }, [channels, searchQuery, selectedCampusFilter, effectiveKind]);
 
   return (

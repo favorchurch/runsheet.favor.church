@@ -161,9 +161,39 @@ export function compareRunsheetChannels(
   return (a.id ?? 0) - (b.id ?? 0);
 }
 
-/** Returns a new sorted array of runsheet channels ordered chronologically by date and time signature. */
+export type RunsheetSortDirection = 'asc' | 'desc';
+
+/**
+ * Returns a new sorted array of runsheet channels ordered by date and time
+ * signature. Ascending by default — `'desc'` is what the archived list wants,
+ * so last Sunday sits at the top instead of the oldest runsheet on record.
+ */
 export function sortRunsheetChannels<T extends { id?: number; name: string; time?: string }>(
-  channels: T[]
+  channels: T[],
+  direction: RunsheetSortDirection = 'asc',
 ): T[] {
-  return [...channels].sort(compareRunsheetChannels);
+  const sorted = [...channels].sort(compareRunsheetChannels);
+  return direction === 'desc' ? sorted.reverse() : sorted;
+}
+
+/**
+ * Splits channels into services still to come and services already past.
+ * Today counts as upcoming — a runsheet is in use all through its own service
+ * day. An undated channel counts as upcoming so it stays visible.
+ */
+export function partitionRunsheetChannelsByRecency<T extends { name: string }>(
+  channels: T[],
+  today: Date = new Date(),
+): { upcoming: T[]; past: T[] } {
+  const midnight = new Date(today);
+  midnight.setHours(0, 0, 0, 0);
+
+  const upcoming: T[] = [];
+  const past: T[] = [];
+  for (const channel of channels) {
+    const date = extractChannelDate(channel.name);
+    if (date && date.getTime() < midnight.getTime()) past.push(channel);
+    else upcoming.push(channel);
+  }
+  return { upcoming, past };
 }
