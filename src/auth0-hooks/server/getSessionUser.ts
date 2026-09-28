@@ -16,6 +16,7 @@ export async function getSessionUser(): Promise<AuthUser> {
     const rockSession = await getRockSession();
     return {
       ...user,
+      sub: String(rockSession.personId),
       contact: rockSession.contact,
       rolesMap: rockSession.rolesMap,
       access: rockSession.access,

@@ -44,7 +44,7 @@ export function getRunsheetAccessScope(user?: AuthUser | null): string {
     .sort((a, b) => a.id - b.id || a.kind.localeCompare(b.kind));
 
   return JSON.stringify({
-    principal: user?.sub || (user?.contact?.id ? `contact:${user.contact.id}` : 'anonymous'),
+    principal: (user?.contact?.id ? `contact:${user.contact.id}` : user?.sub) || 'anonymous',
     access: {
       campusIds: sortedNumbers(access?.campusIds),
       connectLeaderGroupIds: sortedNumbers(access?.connectLeaderGroupIds),

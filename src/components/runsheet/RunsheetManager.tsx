@@ -578,12 +578,21 @@ export function RunsheetManager({
           {((detailsQuery.isFetching && selectedChannelId !== null) || (channelsQuery.isFetching && !channelsLoading)) && (
             <span
               role="status"
-              aria-label="Fetching runsheet"
+              aria-label="Updating runsheet"
               aria-live="polite"
               className="inline-flex items-center gap-2 text-xs font-medium text-slate-600"
             >
               <span aria-hidden="true" className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
-              Updating runsheet data…
+              <span>{detailsFetchIsSlow ? 'Still loading from Rock…' : 'Updating runsheet data…'}</span>
+              {detailsFetchIsSlow && (
+                <button
+                  type="button"
+                  onClick={() => detailsQuery.refetch()}
+                  className="rounded-md bg-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-300 cursor-pointer"
+                >
+                  Retry
+                </button>
+              )}
             </span>
           )}
 
@@ -620,39 +629,6 @@ export function RunsheetManager({
                 onOptimisticSave={handleOptimisticSave}
                 onSaveSettled={handleSaveSettled}
               />
-              {detailsQuery.isFetching && (
-                <div
-                  role="status"
-                  aria-label="Updating runsheet"
-                  /*
-                   * `pointer-events-none` is load-bearing: this covers the whole
-                   * editor, so without it any background refetch makes the grid
-                   * and the roster card unclickable, and a fetch that never
-                   * settles locks the runsheet up entirely. It is a progress
-                   * indicator, not a modal — it must never swallow clicks.
-                   */
-                  className="pointer-events-none absolute inset-0 z-45 flex items-start justify-center pt-24 bg-white/60 backdrop-blur-[1px] rounded-xl transition-all duration-200"
-                >
-                  <div className="sticky top-28 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-900/90 text-white shadow-lg backdrop-blur text-xs font-semibold">
-                    <span
-                      aria-hidden="true"
-                      className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
-                    />
-                    <span>
-                      {detailsFetchIsSlow ? 'Still loading from Rock…' : 'Updating runsheet data…'}
-                    </span>
-                    {detailsFetchIsSlow && (
-                      <button
-                        type="button"
-                        onClick={() => detailsQuery.refetch()}
-                        className="pointer-events-auto ml-1 rounded-md bg-white/15 px-2 py-1 text-[11px] font-semibold text-white hover:bg-white/25 cursor-pointer"
-                      >
-                        Retry
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           ) : loading ? (
             <RunsheetTableSkeleton />
