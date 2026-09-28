@@ -27,7 +27,7 @@ other column in this app is discovered at runtime.
 The attribute value is a JSON array:
 
 ```json
-[{"key":"PreacherNotes/1042/nov-2-notes.pdf","name":"Nov 2 notes.pdf","size":184320,"uploadedAt":"2026-09-28T02:11:00Z"}]
+[{"key":"PreacherNotes/MNL/1042/9f3c/nov-2-notes.pdf","name":"Nov 2 notes.pdf","size":184320,"uploadedAt":"2026-09-28T02:11:00Z"}]
 ```
 
 - Absent, empty, or unparseable values are all read as "no attachments". A
@@ -86,7 +86,7 @@ Route handlers under `src/app/api/runsheet-attachments/`:
 - `GET /[key]` — asserts access, streams the asset with
   `Content-Disposition: inline` so it can render in an embedded viewer, and with
   a `?download=1` variant that sends `attachment` instead. The key is passed
-  URL-encoded and validated against the `PreacherNotes/` prefix so it cannot be
+  URL-encoded and validated against the `PreacherNotes/<CAMPUS>/` prefix so it cannot be
   used to read arbitrary paths on the provider.
 - `DELETE /[key]` — asserts access, deletes the asset from the provider.
 
