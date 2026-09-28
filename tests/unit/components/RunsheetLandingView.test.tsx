@@ -162,11 +162,11 @@ describe('RunsheetLandingView', () => {
 
   it('sorts channels chronologically by date and sortable time signatures', () => {
     const unsortedChannels = [
-      { id: 201, name: 'MNL Crowne // August 16, 2026 // 5PM', time: '5PM' },
-      { id: 202, name: 'MNL Crowne // August 16, 2026 // 9AM', time: '9AM' },
-      { id: 203, name: 'MNL Crowne // August 16, 2026 // 11:30AM', time: '11:30AM' },
-      { id: 204, name: 'MNL Crowne // August 16, 2026 // 10AM', time: '10AM' },
-      { id: 205, name: 'MNL Crowne // August 9, 2026 // 10AM', time: '10AM' },
+      { id: 201, name: 'MNL Crowne // December 16, 2099 // 5PM', time: '5PM' },
+      { id: 202, name: 'MNL Crowne // December 16, 2099 // 9AM', time: '9AM' },
+      { id: 203, name: 'MNL Crowne // December 16, 2099 // 11:30AM', time: '11:30AM' },
+      { id: 204, name: 'MNL Crowne // December 16, 2099 // 10AM', time: '10AM' },
+      { id: 205, name: 'MNL Crowne // December 9, 2099 // 10AM', time: '10AM' },
     ];
 
     renderLandingView({ channels: unsortedChannels });
@@ -175,12 +175,31 @@ describe('RunsheetLandingView', () => {
     const renderedIds = cards.map((c) => Number(c.getAttribute('data-channel-id')));
 
     // Expected chronological order:
-    // 1. Aug 9, 10AM (205)
-    // 2. Aug 16, 9AM (202)
-    // 3. Aug 16, 10AM (204)
-    // 4. Aug 16, 11:30AM (203)
-    // 5. Aug 16, 5PM (201)
+    // 1. Dec 9, 10AM (205)
+    // 2. Dec 16, 9AM (202)
+    // 3. Dec 16, 10AM (204)
+    // 4. Dec 16, 11:30AM (203)
+    // 5. Dec 16, 5PM (201)
     expect(renderedIds).toEqual([205, 202, 204, 203, 201]);
+  });
+
+  it('sorts archived/past channels newest-first', () => {
+    const pastChannels = [
+      { id: 205, name: 'MNL Crowne // August 9, 2020 // 10AM', time: '10AM' },
+      { id: 201, name: 'MNL Crowne // August 16, 2020 // 5PM', time: '5PM' },
+      { id: 202, name: 'MNL Crowne // August 16, 2020 // 9AM', time: '9AM' },
+    ];
+
+    renderLandingView({ channels: pastChannels, showArchived: true });
+
+    const cards = screen.getAllByRole('button', { name: /select runsheet/i });
+    const renderedIds = cards.map((c) => Number(c.getAttribute('data-channel-id')));
+
+    // Newest past service first:
+    // 1. Aug 16 5PM (201)
+    // 2. Aug 16 9AM (202)
+    // 3. Aug 9 10AM (205)
+    expect(renderedIds).toEqual([201, 202, 205]);
   });
 
   it('renders the time prominently with inline campus pill and location in the top badge', () => {
