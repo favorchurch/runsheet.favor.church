@@ -39,7 +39,12 @@ The attribute value is a JSON array:
 
 Files are stored in Rock's **Asset Manager**, under the existing `Local Content`
 AssetStorageProvider (Id 1, file-system type, verified against the live API), in
-a dedicated folder — `PreacherNotes/<itemId>/`. Rock has no
+a dedicated folder tree — `PreacherNotes/<CAMPUS>/<itemId>/`, where `<CAMPUS>`
+is `BNE`, `MNL` or `SEL`, resolved from the channel name by the existing
+`extractRunsheetCampus()` in `src/lib/runsheetCampus.ts`. A channel whose name
+yields no campus code (or an all-campus channel) files under
+`PreacherNotes/ALL/`, matching the `ALL_CAMPUSES` constant already in that
+module. Rock has no
 `ContentChannelItemAttachment` entity (also verified), so an attribute-held key
 list is the only link available.
 
@@ -77,7 +82,7 @@ Route handlers under `src/app/api/runsheet-attachments/`:
 - `POST /upload` — multipart. Asserts channel edit access; rejects the file
   unless its declared content type is `application/pdf` and its first bytes are
   `%PDF-`; uploads to the Asset Manager provider at
-  `PreacherNotes/<itemId>/<random>/<filename>`; returns `{key, name, size}`.
+  `PreacherNotes/<CAMPUS>/<itemId>/<random>/<filename>`; returns `{key, name, size}`.
 - `GET /[key]` — asserts access, streams the asset with
   `Content-Disposition: inline` so it can render in an embedded viewer, and with
   a `?download=1` variant that sends `attachment` instead. The key is passed
@@ -139,8 +144,11 @@ No E2E tests; this repo has none.
 
 - The `PREACHERNOTES` attribute must be added in Rock to each channel that
   should have attachments. No app change is needed per channel.
-- The `PreacherNotes/` folder must exist on the `Local Content` provider, or be
-  created on first upload.
+- The folder tree `PreacherNotes/` with `BNE/`, `MNL/`, `SEL/` and `ALL/`
+  beneath it must exist on the `Local Content` provider. The implementation plan
+  creates it — by script against the Asset Manager, or by hand at
+  `https://rock.favor.church/admin/cms/asset-manager` — and uploads also create
+  a missing folder on demand so a new campus code does not require a deploy.
 - **Unverified:** whether Rock's asset upload endpoint
   (`FileUploader.ashx?IsAssetStorageProviderAsset=true&StorageId=1&Key=…`)
   accepts an API-key header, or requires an authenticated Rock session cookie.
