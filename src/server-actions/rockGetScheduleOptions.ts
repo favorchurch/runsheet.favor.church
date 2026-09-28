@@ -8,7 +8,7 @@ import { GROW_CONTENT_CHANNEL_CATEGORY_ID } from '@/lib/growRunsheets';
 import { expandIcalOccurrences } from '@/lib/scheduleOccurrences';
 import {
   descendantCategoryIds,
-  scheduleRootForCampus,
+  scheduleRootsForCategory,
   SCHEDULE_CATEGORY_ENTITY_TYPE_ID,
 } from '@/lib/scheduleCategoryTree';
 import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
@@ -87,9 +87,16 @@ export async function rockGetScheduleOptions(
     ]);
 
     const campus = contentCategory?.Name ? extractRunsheetCampus(contentCategory.Name.replace(/\|/g, ' ')) : null;
+    const knownScheduleCategoryIds = new Set((categoryRows || []).map((c) => Number(c.Id)));
+    const roots = scheduleRootsForCategory({
+      campus,
+      categoryName: contentCategory?.Name,
+      categoryId,
+      knownScheduleCategoryIds,
+    });
     const targetCategoryIds = descendantCategoryIds(
       (categoryRows || []).map((c) => ({ id: Number(c.Id), parentId: c.ParentCategoryId ?? null })),
-      scheduleRootForCampus(campus),
+      roots,
     );
 
     const rawSchedules = (await rockGet('/Schedules', {
