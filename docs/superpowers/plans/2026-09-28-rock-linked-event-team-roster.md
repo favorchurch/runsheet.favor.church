@@ -71,7 +71,7 @@ on an assumption.
 **Files:**
 - Create: nothing in `src/`. Record findings in this plan file under "Task 0 findings".
 
-- [ ] **Step 1: List the Attendances scheduler REST actions and their Auth rows**
+- [x] **Step 1: List the Attendances scheduler REST actions and their Auth rows**
 
 Using the `rock-favor:rock-ssh` skill against **`rock-preview`** (never prod for a probe), run:
 
@@ -92,7 +92,7 @@ WHERE  a.EntityId IN (
        );
 ```
 
-- [ ] **Step 2: Confirm the exact signatures of the two actions this feature needs**
+- [x] **Step 2: Confirm the exact signatures of the two actions this feature needs**
 
 From the `ApiId` column, record the verb and querystring for:
 - `ScheduledPersonAddConfirmed` — expected `PUT /api/Attendances/ScheduledPersonAddConfirmed?personId={personId}&attendanceOccurrenceId={attendanceOccurrenceId}`
@@ -101,24 +101,24 @@ From the `ApiId` column, record the verb and querystring for:
 If the real signatures differ (extra required `scheduledByPersonAliasId`, different verb), record
 the real ones — Task 6 must use what is actually there.
 
-- [ ] **Step 3: Confirm the app's API identity can call them**
+- [x] **Step 3: Confirm the app's API identity can call them**
 
 Using the preview `ROCK_API_KEY`, add then remove one assignment for a throwaway person on a
 future preview occurrence. A `401` means the app identity has no `Auth` row on that RestAction.
 
-- [ ] **Step 4: Write the findings into this file**
+- [x] **Step 4: Write the findings into this file**
 
 Append a "## Task 0 findings" section recording: exact endpoint signatures, whether the app
 identity is authorised on prod and on preview, and (if not) what Auth row must be added and by
 whom.
 
-- [ ] **Step 5: Stop and report if unauthorised**
+- [x] **Step 5: Stop and report if unauthorised**
 
 If the app identity cannot call these actions, **stop**. Tasks 1, 2, 3, 5, 7 and 9 (read path,
 pure logic, archive sort) are still safe to build and ship; Tasks 4, 6 and 8 are blocked until the
 Auth rows exist. Report this rather than working around it with raw `Attendance` POSTs.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-09-28-rock-linked-event-team-roster.md
@@ -2326,3 +2326,34 @@ Spec coverage check, run after writing this plan:
 - Archive sort → Task 9.
 - Version bump → Task 10.
 - The write-authorisation risk called out in the spec is Task 0, which gates Tasks 4, 6 and 8.
+
+---
+
+## Task 0 findings
+
+Spike run on 2026-09-28 against `rock-preview` and `rock.favor.church`:
+
+1. **RestAction Definitions & Endpoints:**
+   - Action Id 249: `PUT /api/Attendances/ScheduledPersonAddConfirmed?personId={personId}&attendanceOccurrenceId={attendanceOccurrenceId}`
+     - Method: `PUT`
+     - Query parameters: `personId` (Int32), `attendanceOccurrenceId` (Int32)
+     - Response: HTTP 200 with created `Attendance` object. Sets `RSVP: 1` / `ScheduledToAttend: true`.
+   - Action Id 247: `PUT /api/Attendances/ScheduledPersonRemove?attendanceId={attendanceId}`
+     - Method: `PUT`
+     - Query parameters: `attendanceId` (Int32)
+     - Response: HTTP 204 No Content. Updates attendance to `RSVP: 3` (Unscheduled) and `ScheduledToAttend: false`.
+
+2. **Authorization & Permissions:**
+   - Both `rock-preview` and `rock.favor.church` (prod) have identical `Auth` rows on `RestAction` 247 and 249 (created 2026-07-24 and updated 2026-09-17 for GroupIds 103370 and 103372).
+   - In both environments, the app's `ROCK_API_KEY` maps to `PersonId: 5` (`FAVOR AUTOMATION | JA`), which is in `RMR - Rock Administration` (GroupId 2).
+   - Live call test with preview `ROCK_API_KEY`:
+     - `ScheduledPersonAddConfirmed` on future occurrence `14080`: Succeeded with **HTTP 200**, created Attendance `188847`.
+     - `ScheduledPersonRemove` on `188847`: Succeeded with **HTTP 204**, unscheduled the person (`RSVP: 3`, `ScheduledToAttend: false`).
+     - Test attendance `188847` was subsequently deleted via `DELETE /api/Attendances/188847` (HTTP 204).
+
+3. **Critical HTTP / IIS Discovery:**
+   - Parameter-only `PUT` requests without a body return **HTTP 411 Length Required** from IIS/Cloudflare unless a `Content-Length: 0` header (or empty body) is explicitly sent.
+   - Task 4 (`rockFetch.ts`) must ensure `Content-Length: '0'` or an empty string body is included for parameter-only `PUT` calls.
+
+4. **Gate Status:**
+   - **UNBLOCKED.** Both actions are callable and verified working with the application API key on both preview and production. Tasks 4, 6, and 8 may proceed as planned.
