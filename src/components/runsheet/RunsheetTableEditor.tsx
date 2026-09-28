@@ -511,34 +511,48 @@ export function RunsheetTableEditor({
     if (!roster?.linked || !roster.success) return;
     const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
 
-    let changed = false;
+    /** Role title -> the value Rock dictates for it. */
+    const rockValue = new Map(
+      roster.roles.map((r) => [r.roleTitle, r.people.map((p) => p.name).join(', ')]),
+    );
+
+    let itemsChanged = false;
     const next = items.map((item) => {
-      const fromRock = roster.roles.find((r) => r.roleTitle === item.title);
-      if (!fromRock) return item;
-      const value = fromRock.people.map((p) => p.name).join(', ');
+      if (!item.title || !rockValue.has(item.title)) return item;
+      const value = rockValue.get(item.title) as string;
       if ((item.attributeValues?.[personKey] || '') === value) return item;
-      changed = true;
+      itemsChanged = true;
       return { ...item, attributeValues: { ...item.attributeValues, [personKey]: value } };
     });
-    if (!changed) return;
 
     /*
      * Re-baseline the mirrored rows. Copying Rock's answer in is not something
-     * the user did, so it must not register as an unsaved change: without this
-     * the runsheet is dirty the moment it loads, prompts "save or discard" on
-     * the way out, and — in view mode, where handleSave returns false straight
-     * away — can only ever be left by discarding. It bites hardest when Rock has
-     * nobody rostered yet, since the mirror then blanks names the sheet already
-     * had.
+     * the user did, so it must not register as an unsaved change: otherwise the
+     * runsheet is dirty the moment it loads, prompts "save or discard" on the
+     * way out, and — in view mode, where handleSave returns false straight away
+     * — can only ever be left by discarding.
+     *
+     * This runs even when `items` already matched. The baseline effect above
+     * rebuilds baselineRef from the *stored* rows whenever initialItems changes
+     * (any details refetch), which silently undoes an earlier re-baseline and
+     * leaves the runsheet permanently dirty with nothing to save. Only roles
+     * Rock dictates are touched, so a genuine edit to any other row still
+     * registers.
      */
+    let baselineChanged = false;
     next.forEach((item) => {
-      if (item.title?.startsWith('Roster:')) {
-        baselineRef.current.set(item.id, createRowFingerprint(item));
+      if (!item.title || !rockValue.has(item.title)) return;
+      const fingerprint = createRowFingerprint(item);
+      const previous = baselineRef.current.get(item.id);
+      if (!previous || JSON.stringify(previous) !== JSON.stringify(fingerprint)) {
+        baselineRef.current.set(item.id, fingerprint);
+        baselineChanged = true;
       }
     });
-    setItems(next);
-    setBaselineVersion((v) => v + 1);
-  }, [rosterQuery.data, columns, items, createRowFingerprint]);
+
+    if (itemsChanged) setItems(next);
+    if (baselineChanged) setBaselineVersion((v) => v + 1);
+  }, [rosterQuery.data, columns, items, createRowFingerprint, baselineVersion]);
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);

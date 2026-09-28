@@ -616,14 +616,21 @@ export function RunsheetManager({
               You have unsaved changes on the current runsheet. What would you like to do before leaving?
             </p>
             <div className="mt-6 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={handleSaveAndLeave}
-                disabled={isSavingModal}
-                className="w-full rounded-lg bg-pink-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-pink-800 cursor-pointer disabled:opacity-50"
-              >
-                {isSavingModal ? 'Saving to Rock...' : '1. Save & Leave'}
-              </button>
+              {/*
+                * Only offered in edit mode. handleSave returns false immediately
+                * when readOnly, so a view-mode "Save & Leave" can never succeed —
+                * it just sits there while the only way out is Discard.
+                */}
+              {isEditMode && (
+                <button
+                  type="button"
+                  onClick={handleSaveAndLeave}
+                  disabled={isSavingModal}
+                  className="w-full rounded-lg bg-pink-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-pink-800 cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingModal ? 'Saving to Rock...' : '1. Save & Leave'}
+                </button>
+              )}
 
               <button
                 type="button"
@@ -631,7 +638,7 @@ export function RunsheetManager({
                 disabled={isSavingModal}
                 className="w-full rounded-lg bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer disabled:opacity-50"
               >
-                2. Discard & Leave
+                {isEditMode ? '2. ' : ''}Discard &amp; Leave
               </button>
 
               <button
@@ -643,7 +650,7 @@ export function RunsheetManager({
                 disabled={isSavingModal}
                 className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
               >
-                3. Cancel & Continue Editing
+                {isEditMode ? '3. ' : ''}Cancel &amp; Stay
               </button>
             </div>
           </div>

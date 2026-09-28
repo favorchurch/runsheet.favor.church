@@ -25,6 +25,9 @@ jest.mock('@/server-actions/rockBulkSaveRunsheetItems');
 jest.mock('@/server-actions/rockDeleteServiceRunsheet');
 jest.mock('@/server-actions/getRockContentChannelOptions');
 jest.mock('@/server-actions/rockGetScheduleOptions');
+/** Mutable so a test can model Rock having people, or having none. */
+const rosterPeople: { personId: number; name: string }[] = [];
+
 jest.mock('@/components/runsheet/runsheetQueries', () => ({
   ...jest.requireActual('@/components/runsheet/runsheetQueries'),
   // Rock knows this service but nobody is rostered yet — the state channel 121
@@ -37,7 +40,7 @@ jest.mock('@/components/runsheet/runsheetQueries', () => ({
       scheduleId: 557,
       isoDate: '2026-10-03',
       roles: [
-        { roleTitle: 'Roster: Service Director', people: [] },
+        { roleTitle: 'Roster: Service Director', people: rosterPeople },
         { roleTitle: 'Roster: Stage Manager Captain', people: [] },
       ],
     },
@@ -139,7 +142,46 @@ describe('RunsheetTableEditor roster mirror and dirty state', () => {
       />
     );
 
+  test('a populated Rock roster stays clean across a details refetch', () => {
+    // The regression behind channel 122: the baseline is rebuilt from the
+    // *stored* rows whenever initialItems changes, which undid the mirror's
+    // re-baseline and left the runsheet permanently dirty with nothing to save.
+    rosterPeople.length = 0;
+    rosterPeople.push({ personId: 10, name: 'Rostered In Rock' });
+
+    const onDirtyChange = jest.fn();
+    const { rerender } = render(
+      <RunsheetTableEditor
+        channelId={122}
+        channelName="MNL Crowne // October 4, 2026 // 11:30AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="11:30 AM"
+        onDirtyChange={onDirtyChange}
+      />
+    );
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+
+    // A refetch hands down a new array with the same stored (stale) contents.
+    onDirtyChange.mockClear();
+    rerender(
+      <RunsheetTableEditor
+        channelId={122}
+        channelName="MNL Crowne // October 4, 2026 // 11:30AM"
+        columns={columns}
+        initialItems={initialItems.map((item) => ({ ...item }))}
+        initialStartTime="11:30 AM"
+        onDirtyChange={onDirtyChange}
+      />
+    );
+
+    // onDirtyChange only fires on a change, so "never called with true" is the
+    // invariant: the refetch must not turn a clean runsheet dirty.
+    expect(onDirtyChange).not.toHaveBeenCalledWith(true);
+  });
+
   test('syncing an empty Rock roster does not make an untouched runsheet dirty', () => {
+    rosterPeople.length = 0;
     const onDirtyChange = jest.fn();
     render121({ onDirtyChange });
 
@@ -150,6 +192,7 @@ describe('RunsheetTableEditor roster mirror and dirty state', () => {
   });
 
   test('stays clean in view mode, where the save that the prompt offers cannot run', () => {
+    rosterPeople.length = 0;
     const onDirtyChange = jest.fn();
     render121({ onDirtyChange, readOnly: true });
 
