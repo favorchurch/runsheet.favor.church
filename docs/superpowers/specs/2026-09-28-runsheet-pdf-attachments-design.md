@@ -94,7 +94,7 @@ Server action in `src/server-actions/`:
 ### Save timing
 
 Each file is persisted the moment its upload finishes: the route returns the
-guid, and the client immediately calls `rockSetRunsheetItemAttachments` with the
+asset key, and the client immediately calls `rockSetRunsheetItemAttachments` with the
 updated array. There is no deferred or batched save and no dependence on the
 grid's own save button — closing the tab right after an upload loses nothing.
 Deletes persist the same way.
@@ -115,7 +115,7 @@ New component `src/components/runsheet/RunsheetAttachmentsCell.tsx`. The
 - **Panel:** the file list (name, size), a drop zone / file input with `accept=".pdf"`
   and `multiple`, and per-file delete with a confirm step.
 - **Viewer:** clicking a file name opens a modal that renders the PDF inline
-  from `GET /[guid]` in an `<iframe>`, with a **Download** button in the modal
+  from `GET /[key]` in an `<iframe>`, with a **Download** button in the modal
   header hitting the same route with `?download=1`. Browsers that cannot render
   the PDF inline fall back to a download prompt with a visible message.
 - **Upload feedback:** files upload one at a time with a per-file progress row.
