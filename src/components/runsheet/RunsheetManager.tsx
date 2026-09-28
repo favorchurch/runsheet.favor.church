@@ -39,6 +39,7 @@ type PendingNavigationAction =
   | { type: 'toggleCreateForm' }
   | { type: 'selectEmptyChannel' }
   | { type: 'browserBack' }
+  | { type: 'setViewMode' }
   | null;
 
 export function RunsheetManager({
@@ -132,10 +133,21 @@ export function RunsheetManager({
     }
   }, [showCreateForm, canEdit]);
 
+  const isEditMode = canEdit && editorMode === 'edit';
+
+  /*
+   * Only edit mode can hold unsaved work. In view mode nothing is editable, so
+   * a prompt there has nothing to offer — Save is refused and Discard throws
+   * away changes the user never made. Leaving edit mode while dirty is guarded
+   * separately in handleModeChange, so anything still pending has already been
+   * dealt with by the time view mode is reached.
+   */
+  const hasUnsavedWork = isEditorDirty && isEditMode;
+
   // Lock browser back button (< button) when edits are unsaved
   useEffect(() => {
     const handlePopState = () => {
-      if (isEditorDirty) {
+      if (hasUnsavedWork) {
         window.history.pushState(null, '', window.location.href);
         setPendingAction({ type: 'browserBack' });
         setShowUnsavedModal(true);
@@ -144,7 +156,7 @@ export function RunsheetManager({
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [isEditorDirty]);
+  }, [hasUnsavedWork]);
 
   /**
    * Dynamic route pages can remain mounted while Next supplies a new server
@@ -171,7 +183,7 @@ export function RunsheetManager({
       ? { type: 'selectChannel', id: initialChannelId }
       : { type: 'selectEmptyChannel' };
 
-    if (isEditorDirty) {
+    if (hasUnsavedWork) {
       setPendingAction(pendingRouteAction);
       setShowUnsavedModal(true);
       restoredRouteRef.current = activeChannelIdRef.current;
@@ -183,7 +195,7 @@ export function RunsheetManager({
     setSelectedChannelId(initialChannelId);
     setEditorMode('view');
     if (initialChannelId !== null) setShowCreateForm(false);
-  }, [initialChannelId, isEditorDirty, updateUrl]);
+  }, [initialChannelId, hasUnsavedWork, updateUrl]);
 
   const loadChannelDetails = React.useCallback((id: number) => {
     localRouteTargetRef.current = id;
@@ -198,10 +210,19 @@ export function RunsheetManager({
       setEditorMode('view');
       return;
     }
+    /*
+     * Ask before dropping out of edit mode with unsaved work. View mode is
+     * read-only, so once the switch has happened handleSave refuses and the
+     * edits are stranded — reachable only by discarding them. Prompting here,
+     * while still in edit mode, is the one moment Save is genuinely available.
+     */
+    if (nextMode === 'view' && isEditorDirty) {
+      setPendingAction({ type: 'setViewMode' });
+      setShowUnsavedModal(true);
+      return;
+    }
     setEditorMode(nextMode);
   };
-
-  const isEditMode = canEdit && editorMode === 'edit';
 
   useEffect(() => {
     if (!canEdit) setEditorMode('view');
@@ -237,6 +258,8 @@ export function RunsheetManager({
       }
       setShowCreateForm(nextShow);
       if (nextShow) updateUrl('/create');
+    } else if (action.type === 'setViewMode') {
+      setEditorMode('view');
     } else if (action.type === 'selectEmptyChannel') {
       localRouteTargetRef.current = null;
       activeChannelIdRef.current = null;
@@ -254,7 +277,7 @@ export function RunsheetManager({
 
     const action: PendingNavigationAction = id ? { type: 'selectChannel', id } : { type: 'selectEmptyChannel' };
 
-    if (isEditorDirty) {
+    if (hasUnsavedWork) {
       setPendingAction(action);
       setShowUnsavedModal(true);
     } else {
@@ -279,7 +302,7 @@ export function RunsheetManager({
 
   const handleToggleCreateForm = () => {
     const action: PendingNavigationAction = { type: 'toggleCreateForm' };
-    if (isEditorDirty) {
+    if (hasUnsavedWork) {
       setPendingAction(action);
       setShowUnsavedModal(true);
     } else {
@@ -291,7 +314,7 @@ export function RunsheetManager({
     if (!selectedChannelId && !showCreateForm && !loading) return;
 
     const action: PendingNavigationAction = { type: 'selectEmptyChannel' };
-    if (isEditorDirty) {
+    if (hasUnsavedWork) {
       setPendingAction(action);
       setShowUnsavedModal(true);
     } else {
@@ -613,7 +636,9 @@ export function RunsheetManager({
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-200">
             <h3 className="text-lg font-bold text-slate-900">Unsaved Changes</h3>
             <p className="mt-2 text-sm text-slate-600">
-              You have unsaved changes on the current runsheet. What would you like to do before leaving?
+              {pendingAction?.type === 'setViewMode'
+                ? 'You have unsaved changes. View mode is read-only, so they cannot be saved once you switch.'
+                : 'You have unsaved changes on the current runsheet. What would you like to do before leaving?'}
             </p>
             <div className="mt-6 flex flex-col gap-2">
               {/*
@@ -628,7 +653,11 @@ export function RunsheetManager({
                   disabled={isSavingModal}
                   className="w-full rounded-lg bg-pink-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-pink-800 cursor-pointer disabled:opacity-50"
                 >
-                  {isSavingModal ? 'Saving to Rock...' : '1. Save & Leave'}
+                  {isSavingModal
+                    ? 'Saving to Rock...'
+                    : pendingAction?.type === 'setViewMode'
+                      ? '1. Save & Switch'
+                      : '1. Save & Leave'}
                 </button>
               )}
 
@@ -638,7 +667,7 @@ export function RunsheetManager({
                 disabled={isSavingModal}
                 className="w-full rounded-lg bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-rose-700 cursor-pointer disabled:opacity-50"
               >
-                {isEditMode ? '2. ' : ''}Discard &amp; Leave
+                {isEditMode ? '2. ' : ''}Discard &amp; {pendingAction?.type === 'setViewMode' ? 'Switch' : 'Leave'}
               </button>
 
               <button
@@ -650,7 +679,7 @@ export function RunsheetManager({
                 disabled={isSavingModal}
                 className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
               >
-                {isEditMode ? '3. ' : ''}Cancel &amp; Stay
+                {isEditMode ? '3. ' : ''}Cancel &amp; Keep Editing
               </button>
             </div>
           </div>
