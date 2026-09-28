@@ -249,6 +249,34 @@ export function RunsheetTableEditor({
   // Always enabled: the roster is shown in read-only mode too.
   const rosterQuery = useRosterAssignments(channelName, true, accessScope);
 
+  /**
+   * Rock owns this runsheet's roster but has no roster for it at all — e.g. an
+   * MNL service on a schedule (CIW) that none of the five Group Scheduler teams
+   * carry. There is nothing to show and nothing to attach, so the card is hidden
+   * and the auto-injected `Roster:` rows are dropped below.
+   *
+   * Deliberately requires `success`: a Rock read that *failed* must fall back to
+   * the stored values (fail-soft), not hide a roster the team is about to use.
+   */
+  const rosterUnavailable =
+    rosterQuery.data?.rockManaged === true &&
+    rosterQuery.data?.success === true &&
+    rosterQuery.data?.linked === false;
+
+  // Drop the placeholder `Roster:` rows `ensureRosterItems` injects on mount, so
+  // a runsheet with no findable roster saves no roster rows to Rock at all.
+  useEffect(() => {
+    if (!rosterUnavailable) return;
+    setItems((previous) => {
+      const kept = previous.filter(
+        (item) => !(item.isNew && typeof item.id === 'string' && item.title?.startsWith('Roster:')),
+      );
+      // Same length means nothing to strip; returning `previous` keeps the
+      // reference stable so this never re-renders in a loop.
+      return kept.length === previous.length ? previous : kept;
+    });
+  }, [rosterUnavailable]);
+
   // Keep the stored `Roster:` items in step with Rock, so propagate/compare/print
   // never disagree with the card. Rock is the source of truth; these rows are a mirror.
   useEffect(() => {
@@ -1995,6 +2023,7 @@ export function RunsheetTableEditor({
   return (
     <div className="flex w-full max-w-full min-w-0 flex-col gap-2.5">
       {/* Event Team Roster Card */}
+      {!rosterUnavailable && (
       <EventTeamRosterCard
         items={items}
         columns={dynamicAttrCols}
@@ -2063,6 +2092,7 @@ export function RunsheetTableEditor({
           );
         }}
       />
+      )}
 
       <div className="flex w-full max-w-full min-w-0 flex-col gap-2.5 rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:p-3">
         {/* Sticky Locked Header & Toolbar Container — sits just below the app's own sticky nav header (stickyTopOffset), not also at top:0, or the two would overlap. */}

@@ -104,6 +104,36 @@ describe('rockGetRosterAssignments', () => {
     expect(res.roles).toEqual([{ roleTitle: 'Roster: Service Director', people: [] }]);
   });
 
+  it('marks a non-MNL runsheet as not Rock-managed, so it keeps its free-text card', async () => {
+    const res = await rockGetRosterAssignments('BNE Service // September 27, 2026 // 10AM');
+    expect(res).toMatchObject({ success: true, rockManaged: false, linked: false });
+  });
+
+  it('is Rock-managed but unlinked when no Group Scheduler team carries the schedule', async () => {
+    // A CIW-style service: MNL, but none of the five teams roster it, so there
+    // is no roster to show and none to attach.
+    mockRockGet
+      .mockResolvedValueOnce([
+        { GroupId: 19100, LocationId: 475, Schedules: [{ Id: 565, Name: 'MNL Crowne 3PM' }] },
+      ] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any);
+
+    const res = await rockGetRosterAssignments('MNL CIW // September 27, 2026 // 3PM');
+
+    expect(res).toMatchObject({ success: true, rockManaged: true, linked: false, roles: [] });
+  });
+
+  it('stays Rock-managed but not "no roster" when the Rock read fails', async () => {
+    // success:false is what keeps the card visible on a transient Rock error —
+    // hiding a roster the team is about to use would be the worse failure.
+    mockRockGet.mockRejectedValue(new Error('Rock API error: 500'));
+    const res = await rockGetRosterAssignments('MNL Crowne // September 27, 2026 // 3PM');
+    expect(res).toMatchObject({ success: false, rockManaged: true, linked: false });
+  });
+
   it('fails soft when Rock throws', async () => {
     mockRockGet.mockRejectedValue(new Error('Rock API error: 500'));
     const res = await rockGetRosterAssignments('MNL Crowne // September 27, 2026 // 3PM');

@@ -22,6 +22,13 @@ export interface RosterRoleAssignment {
 
 export interface RockRosterAssignmentsResult {
   success: boolean;
+  /**
+   * True when this runsheet is one Rock is supposed to roster (an MNL service).
+   * `rockManaged && !linked` is the "Rock owns this runsheet but has no roster
+   * for it" case — the card is hidden and no `Roster:` rows are attached.
+   * `!rockManaged` is BNE/SEL, which keep the free-text card they always had.
+   */
+  rockManaged: boolean;
   linked: boolean;
   scheduleId: number | null;
   isoDate: string | null;
@@ -31,16 +38,20 @@ export interface RockRosterAssignmentsResult {
 
 const UNLINKED: RockRosterAssignmentsResult = {
   success: true,
+  rockManaged: true,
   linked: false,
   scheduleId: null,
   isoDate: null,
   roles: [],
 };
 
+/** A campus Rock does not roster from here at all. */
+const NOT_ROCK_MANAGED: RockRosterAssignmentsResult = { ...UNLINKED, rockManaged: false };
+
 export async function rockGetRosterAssignments(
   channelName: string,
 ): Promise<RockRosterAssignmentsResult> {
-  if (!isRockLinkedCampus(channelName)) return UNLINKED;
+  if (!isRockLinkedCampus(channelName)) return NOT_ROCK_MANAGED;
 
   const session = await getRockSession();
   const access = assertRunsheetViewAccess(session);
@@ -140,6 +151,7 @@ export async function rockGetRosterAssignments(
 
     return {
       success: true,
+      rockManaged: true,
       linked: true,
       scheduleId: occurrence.scheduleId,
       isoDate: occurrence.isoDate,

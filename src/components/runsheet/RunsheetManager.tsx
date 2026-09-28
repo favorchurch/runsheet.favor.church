@@ -582,7 +582,14 @@ export function RunsheetManager({
                 <div
                   role="status"
                   aria-label="Updating runsheet"
-                  className="absolute inset-0 z-45 flex items-start justify-center pt-24 bg-white/60 backdrop-blur-[1px] rounded-xl transition-all duration-200"
+                  /*
+                   * `pointer-events-none` is load-bearing: this covers the whole
+                   * editor, so without it any background refetch makes the grid
+                   * and the roster card unclickable, and a fetch that never
+                   * settles locks the runsheet up entirely. It is a progress
+                   * indicator, not a modal — it must never swallow clicks.
+                   */
+                  className="pointer-events-none absolute inset-0 z-45 flex items-start justify-center pt-24 bg-white/60 backdrop-blur-[1px] rounded-xl transition-all duration-200"
                 >
                   <div className="sticky top-28 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-900/90 text-white shadow-lg backdrop-blur text-xs font-semibold">
                     <span
