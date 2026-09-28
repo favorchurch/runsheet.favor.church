@@ -46,7 +46,8 @@ import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvaila
 import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDetailsBatch';
 import { PropagateReviewPanel } from './PropagateReviewPanel';
 import { PeopleSearchDropdown, parsePeopleString } from './PeopleSearchDropdown';
-import { useRosterAssignments } from './runsheetQueries';
+import { RockRosterRolePicker } from './RockRosterRolePicker';
+import { runsheetQueryKeys, useRosterAssignments, useSafeQueryClient } from './runsheetQueries';
 
 function extractChannelDateLabel(name: string): string {
   const parts = name.split('//');
@@ -241,6 +242,7 @@ export function RunsheetTableEditor({
     ensureRosterItems(initialTemplate ? initialTemplate.templateRows : initialItems)
   );
 
+  const queryClient = useSafeQueryClient();
   const rosterQuery = useRosterAssignments(channelName, !readOnly || true);
 
   // Keep the stored `Roster:` items in step with Rock, so propagate/compare/print
@@ -2014,8 +2016,40 @@ export function RunsheetTableEditor({
           const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
           const targetItem = items.find((item) => item.title === roleTitle);
           if (!targetItem) return null;
-          const currentVal = readRunsheetCellValue(targetItem, personKey);
 
+          const roster = rosterQuery.data;
+          const linkedRole =
+            roster?.linked && roster.success
+              ? roster.roles.find((r) => r.roleTitle === roleTitle)
+              : undefined;
+
+          if (linkedRole) {
+            return (
+              <RockRosterRolePicker
+                channelName={channelName}
+                roleTitle={roleTitle}
+                initialPeople={linkedRole.people}
+                onSaved={(people) => {
+                  handleAttrValueChange(targetItem.id, personKey, people.map((p) => p.name).join(', '));
+                  queryClient?.setQueryData(
+                    runsheetQueryKeys.rosterAssignments(channelName),
+                    (current: any) =>
+                      current
+                        ? {
+                            ...current,
+                            roles: current.roles.map((r: any) =>
+                              r.roleTitle === roleTitle ? { ...r, people } : r,
+                            ),
+                          }
+                        : current,
+                  );
+                }}
+                onClose={() => closeCell(targetItem.id, personKey)}
+              />
+            );
+          }
+
+          const currentVal = readRunsheetCellValue(targetItem, personKey);
           return (
             <PeopleSearchDropdown
               initialValue={currentVal}

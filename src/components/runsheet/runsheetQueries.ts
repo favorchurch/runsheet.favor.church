@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery, type QueryClient } from 'react-query';
+import { useQuery, useQueryClient, type QueryClient } from 'react-query';
 import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
 import { rockGetRosterAssignments } from '@/server-actions/rockGetRosterAssignments';
@@ -132,4 +132,12 @@ export function useRosterAssignments(channelName: string, enabled: boolean) {
       retry: false,
     },
   );
+}
+
+export function useSafeQueryClient(): QueryClient | undefined {
+  try {
+    return useQueryClient();
+  } catch {
+    return undefined;
+  }
 }
