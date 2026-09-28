@@ -27,6 +27,8 @@
 | Security Lead | 19144 | 748 |
 
 - Multi-slot roles merge into one cell for display (slot order, empty slots contribute nothing) and write back positionally. More names than slots → reject the whole write with a message naming the limit. Never truncate.
+- **Linkage is per role, not per runsheet.** A role is linked only when its own Location actually carries the matched Schedule in Rock (`GroupLocationSchedule`). Group 19096 (Host) and 19144 (Security) do not carry `MNL Family Night`, so on that runsheet Host Core Cap and Security Lead are **unlinked** and behave exactly as they did before this feature: free text, `PeopleSearchDropdown`, stored `Roster:` value, no write-back. The rest of the card is still linked. For a multi-slot role, only the slots that carry the schedule count — a role with one of its two slots available is linked with one slot.
+- A linked role with nobody rostered is still **linked**: it shows empty and is editable through the Rock picker. Empty is not the same as unlinked.
 - Rostered = RSVP **Yes (2)** or **Unknown (0)**. Declined (**1**) is excluded. (Matches roster *access* behaviour since 1.18.1.)
 - New assignments are created **confirmed (RSVP Yes)**. Removals **unschedule** (remove the assignment). A person present before and after the edit is left completely untouched.
 - Only the edited role is ever written. The other nine are never touched by a write.
@@ -139,6 +141,7 @@ git commit -m "docs: record Rock scheduler REST write-action findings"
   - `getRockRosterRole(roleTitle: string): RockRosterRole | null`
   - `ROCK_ROSTER_GROUP_IDS: readonly number[]`
   - `isRockLinkedCampus(channelName: string): boolean`
+  - `usableRoleLocationIds(role: RockRosterRole, scheduleIdsByLocation: Map<number, Set<number>>, scheduleId: number): number[]`
 
 `roleTitle` is the full runsheet item title, e.g. `'Roster: Service Director'` — that is what the
 card and the editor pass around.
@@ -153,6 +156,7 @@ import {
   isRockLinkedCampus,
   ROCK_ROSTER_GROUP_IDS,
   ROCK_ROSTER_ROLES,
+  usableRoleLocationIds,
 } from './rockRosterRoles';
 
 describe('ROCK_ROSTER_ROLES', () => {
@@ -197,6 +201,37 @@ describe('isRockLinkedCampus', () => {
     expect(isRockLinkedCampus('MNL Crowne // September 27, 2026 // 3PM')).toBe(true);
     expect(isRockLinkedCampus('BNE Service // September 27, 2026 // 10AM')).toBe(false);
     expect(isRockLinkedCampus('SEL Service // September 27, 2026 // 10AM')).toBe(false);
+  });
+});
+
+describe('usableRoleLocationIds', () => {
+  const worshipLeaders = getRockRosterRole('Roster: Worship Leaders')!;
+  const securityLead = getRockRosterRole('Roster: Security Lead')!;
+
+  it('keeps the slots whose location carries the schedule', () => {
+    const byLocation = new Map([
+      [799, new Set([35, 565])],
+      [800, new Set([35, 565])],
+    ]);
+    expect(usableRoleLocationIds(worshipLeaders, byLocation, 565)).toEqual([799, 800]);
+  });
+
+  it('drops a slot whose location does not carry the schedule, keeping fill order', () => {
+    const byLocation = new Map([
+      [799, new Set([565])],
+      [800, new Set([27])],
+    ]);
+    expect(usableRoleLocationIds(worshipLeaders, byLocation, 565)).toEqual([799]);
+  });
+
+  it('returns nothing for a role Rock does not schedule for this service', () => {
+    // Security (748) carries no MNL Family Night (35) schedule in Rock.
+    const byLocation = new Map([[748, new Set([27, 565])]]);
+    expect(usableRoleLocationIds(securityLead, byLocation, 35)).toEqual([]);
+  });
+
+  it('returns nothing when the location is absent entirely', () => {
+    expect(usableRoleLocationIds(securityLead, new Map(), 565)).toEqual([]);
   });
 });
 ```
@@ -254,6 +289,25 @@ export function getRockRosterRole(roleTitle: string): RockRosterRole | null {
 /** Rock-linked rostering is MNL-only for now. */
 export function isRockLinkedCampus(channelName: string): boolean {
   return extractRunsheetCampus(channelName) === 'MNL';
+}
+
+/**
+ * The slots this role actually has for one service, in fill order.
+ *
+ * Not every team schedules every service: group 19096 (Host) and 19144
+ * (Security) carry no `MNL Family Night` schedule, so on that runsheet those
+ * roles have no slot at all. An empty result means the role is **unlinked** for
+ * this service and must behave exactly as it did before this feature — free
+ * text, stored value, no write-back.
+ *
+ * @param scheduleIdsByLocation Rock `Location` id → the Schedule ids attached to it.
+ */
+export function usableRoleLocationIds(
+  role: RockRosterRole,
+  scheduleIdsByLocation: Map<number, Set<number>>,
+  scheduleId: number,
+): number[] {
+  return role.locationIds.filter((id) => scheduleIdsByLocation.get(id)?.has(scheduleId));
 }
 ```
 
@@ -828,18 +882,23 @@ export async function rockGetRosterAssignments(
 ```
 
 Rock calls, in order:
-1. `GET /Schedules` restricted to the ids attached to the five groups — fetched as
-   `GET /GroupLocations?$filter=GroupId eq {id}&$expand=Schedules,Location` per group, which
-   yields both the group's services and its locations in one pass. Cache-friendly (`rockGet`
-   default caching is fine; these change rarely).
+1. `GET /GroupLocations?$filter=GroupId eq {id}&$expand=Schedules,Location` per group, which
+   yields both the group's services and which schedules hang off each location, in one pass.
+   Cache-friendly (`rockGet` default caching is fine; these change rarely).
 2. `matchRockSchedule` against the union of those services → `{ scheduleId, isoDate }` or unlinked.
-3. `GET /AttendanceOccurrences` filtered to the mapped groups/locations and that schedule+date,
+3. `usableRoleLocationIds` per role against the same data. **A role with no usable slot is left
+   out of `roles` entirely**, which is what makes the card fall back to its pre-feature behaviour
+   for that one role.
+4. `GET /AttendanceOccurrences` filtered to the usable groups/locations and that schedule+date,
    `$select=Id,GroupId,LocationId`.
-4. `GET /Attendances` for those occurrence ids with `$expand=PersonAlias/Person`,
+5. `GET /Attendances` for those occurrence ids with `$expand=PersonAlias/Person`,
    `$select=Id,OccurrenceId,RSVP,PersonAlias/PersonId,PersonAlias/Person/NickName,PersonAlias/Person/LastName`.
 
 Filter to `RSVP` 0 (Unknown/pending) or 2 (Yes/confirmed); exclude 1 (No/declined). Display name is
 `NickName LastName`.
+
+A role that is linked but empty still appears in `roles`, with `people: []`. Present-and-empty and
+absent mean different things to the card, and the difference is the whole point of this task.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -917,6 +976,39 @@ describe('rockGetRosterAssignments', () => {
     ]);
   });
 
+  it('omits roles whose location does not carry this schedule', async () => {
+    // Only Service Director (475) is attached to schedule 565 here, so the other
+    // nine roles must not appear at all — the card falls back to free text for them.
+    mockRockGet
+      .mockResolvedValueOnce(groupLocations() as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any) // no occurrences
+      .mockResolvedValueOnce([] as any);
+
+    const res = await rockGetRosterAssignments('MNL Crowne // September 27, 2026 // 3PM');
+
+    expect(res.roles.map((r) => r.roleTitle)).toEqual(['Roster: Service Director']);
+  });
+
+  it('keeps a linked role that simply has nobody rostered', async () => {
+    mockRockGet
+      .mockResolvedValueOnce(groupLocations() as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any);
+
+    const res = await rockGetRosterAssignments('MNL Crowne // September 27, 2026 // 3PM');
+
+    // Present with an empty list — linked but unfilled, not unlinked.
+    expect(res.roles).toEqual([{ roleTitle: 'Roster: Service Director', people: [] }]);
+  });
+
   it('fails soft when Rock throws', async () => {
     mockRockGet.mockRejectedValue(new Error('Rock API error: 500'));
     const res = await rockGetRosterAssignments('MNL Crowne // September 27, 2026 // 3PM');
@@ -946,10 +1038,10 @@ Expected: FAIL — `Cannot find module './rockGetRosterAssignments'`
 
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import {
-  getRockRosterRole,
   isRockLinkedCampus,
   ROCK_ROSTER_GROUP_IDS,
   ROCK_ROSTER_ROLES,
+  usableRoleLocationIds,
 } from '@/lib/rockRosterRoles';
 import { mergeRosterOccupants, type RosterOccupant } from '@/lib/rockRosterSlots';
 import { matchRockSchedule, type RockServiceCandidate } from '@/lib/rockServiceSchedule';
@@ -1004,10 +1096,17 @@ export async function rockGetRosterAssignments(
     );
 
     const services = new Map<number, RockServiceCandidate>();
+    const scheduleIdsByLocation = new Map<number, Set<number>>();
     for (const rows of perGroup) {
       for (const row of rows || []) {
+        const locationId = row.LocationId ?? row.Location?.Id;
         for (const schedule of row.Schedules || []) {
-          if (schedule?.Id) services.set(schedule.Id, { scheduleId: schedule.Id, name: schedule.Name });
+          if (!schedule?.Id) continue;
+          services.set(schedule.Id, { scheduleId: schedule.Id, name: schedule.Name });
+          if (locationId === undefined) continue;
+          const set = scheduleIdsByLocation.get(locationId) ?? new Set<number>();
+          set.add(schedule.Id);
+          scheduleIdsByLocation.set(locationId, set);
         }
       }
     }
@@ -1015,7 +1114,16 @@ export async function rockGetRosterAssignments(
     const occurrence = matchRockSchedule(channelName, [...services.values()]);
     if (!occurrence) return UNLINKED;
 
-    const locationIds = ROCK_ROSTER_ROLES.flatMap((r) => r.locationIds);
+    // A role Rock does not schedule for this service has no slot to read or
+    // write, so it is dropped here and the card falls back to free text for it.
+    const linkedRoles = ROCK_ROSTER_ROLES.map((role) => ({
+      role,
+      locationIds: usableRoleLocationIds(role, scheduleIdsByLocation, occurrence.scheduleId),
+    })).filter((entry) => entry.locationIds.length > 0);
+
+    if (linkedRoles.length === 0) return UNLINKED;
+
+    const locationIds = linkedRoles.flatMap((entry) => entry.locationIds);
     const occurrences = ((await rockGet('/AttendanceOccurrences', {
       $filter: [
         `ScheduleId eq ${occurrence.scheduleId}`,
@@ -1053,11 +1161,11 @@ export async function rockGetRosterAssignments(
       });
     }
 
-    const roles = ROCK_ROSTER_ROLES.map((role) => ({
-      roleTitle: role.roleTitle,
+    const roles = linkedRoles.map((entry) => ({
+      roleTitle: entry.role.roleTitle,
       people: mergeRosterOccupants(
-        occupants.filter((o) => role.locationIds.includes(o.locationId)),
-        role.locationIds,
+        occupants.filter((o) => entry.locationIds.includes(o.locationId)),
+        entry.locationIds,
       ).map((o) => ({ personId: o.personId, name: o.name })),
     }));
 
@@ -1076,9 +1184,6 @@ export async function rockGetRosterAssignments(
   }
 }
 ```
-
-`getRockRosterRole` is imported for the write action's benefit in Task 6; if the linter flags it as
-unused here, drop it from this file's imports.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1127,9 +1232,10 @@ Order of operations:
 2. Reject if `extractChannelDate(channelName)` is before today.
 3. Reject if the role is unmapped or the channel is unlinked.
 4. Read the role's current occupants (same queries as Task 5, narrowed to this role's group and locations).
-5. `planRosterSlots` → reject the whole write if `error` is set. **Nothing is applied on rejection.**
-6. Apply `removes` first, then `adds` — freeing a slot before filling it.
-7. Read back and return Rock's actual post-write state.
+5. Reject if `usableRoleLocationIds` is empty — Rock does not schedule this role for this service, so there is nothing to write to. The UI will not have offered the Rock picker in that case, but the server must not rely on the UI.
+6. `planRosterSlots` against the **usable** slots only, so the overflow message reflects the slots that really exist for this service. Reject the whole write if `error` is set. **Nothing is applied on rejection.**
+7. Apply `removes` first, then `adds` — freeing a slot before filling it.
+8. Read back and return Rock's actual post-write state.
 
 An `add` needs the `AttendanceOccurrence` for `{ groupId, locationId, scheduleId, isoDate }`. If it
 does not exist yet, create it with `POST /AttendanceOccurrences`.
@@ -1199,12 +1305,42 @@ describe('rockSyncRosterRole', () => {
     expect(mockRockPut).not.toHaveBeenCalled();
   });
 
+  it('refuses a role Rock does not schedule for this service', async () => {
+    // The runsheet is a Family Night (schedule 35), which the Service Director's
+    // team carries but Security (19144, location 748) does not.
+    jest.mocked(rockGet)
+      .mockResolvedValueOnce([
+        { GroupId: 19100, LocationId: 475, Schedules: [{ Id: 35, Name: 'MNL Family Night' }] },
+      ] as any) // 19100
+      .mockResolvedValueOnce([] as any) // 19109
+      .mockResolvedValueOnce([] as any) // 19095
+      .mockResolvedValueOnce([] as any) // 19096
+      .mockResolvedValueOnce([
+        { GroupId: 19144, LocationId: 748, Schedules: [{ Id: 565, Name: 'MNL Crowne 3PM' }] },
+      ] as any); // 19144
+
+    const res = await rockSyncRosterRole({
+      channelName: 'MNL Family Night // December 27, 2099 // 7PM',
+      roleTitle: 'Roster: Security Lead',
+      personIds: [10],
+    });
+
+    expect(res.success).toBe(false);
+    expect(res.error).toBe('Rock does not schedule this role for this service.');
+    expect(mockRockPut).not.toHaveBeenCalled();
+    expect(jest.mocked(rockPost)).not.toHaveBeenCalled();
+  });
+
   it('writes nothing when more people are assigned than the role has slots', async () => {
-    // 1 group-locations read, 1 occurrences read, 1 attendances read; then the plan rejects.
+    // Five group-locations reads, 1 occurrences read, 1 attendances read; then the plan rejects.
     jest.mocked(rockGet)
       .mockResolvedValueOnce([
         { GroupId: 19100, LocationId: 475, Schedules: [{ Id: 565, Name: 'MNL Crowne 3PM' }] },
       ] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
       .mockResolvedValueOnce([] as any)
       .mockResolvedValueOnce([] as any);
 
@@ -1234,7 +1370,12 @@ Expected: FAIL — `Cannot find module './rockSyncRosterRole'`
 
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { canUserEditRunsheet } from '@/lib/permissions';
-import { getRockRosterRole, isRockLinkedCampus } from '@/lib/rockRosterRoles';
+import {
+  getRockRosterRole,
+  isRockLinkedCampus,
+  ROCK_ROSTER_GROUP_IDS,
+  usableRoleLocationIds,
+} from '@/lib/rockRosterRoles';
 import { planRosterSlots, type RosterOccupant } from '@/lib/rockRosterSlots';
 import { matchRockSchedule, type RockServiceCandidate } from '@/lib/rockServiceSchedule';
 import { extractChannelDate } from '@/lib/runsheetDate';
@@ -1288,27 +1429,54 @@ export async function rockSyncRosterRole(input: {
   }
 
   try {
-    const groupLocations = ((await rockGet('/GroupLocations', {
-      $filter: `GroupId eq ${role.groupId}`,
-      $expand: 'Schedules,Location',
-    })) || []) as any[];
+    // Resolve the occurrence from every linked group, exactly as the read does,
+    // so a role whose own team does not carry the schedule reports *that* rather
+    // than "no such service".
+    const perGroup = await Promise.all(
+      ROCK_ROSTER_GROUP_IDS.map((groupId) =>
+        rockGet('/GroupLocations', {
+          $filter: `GroupId eq ${groupId}`,
+          $expand: 'Schedules,Location',
+        }) as Promise<any[] | null>,
+      ),
+    );
 
     const services = new Map<number, RockServiceCandidate>();
-    for (const row of groupLocations) {
-      for (const schedule of row.Schedules || []) {
-        if (schedule?.Id) services.set(schedule.Id, { scheduleId: schedule.Id, name: schedule.Name });
+    const scheduleIdsByLocation = new Map<number, Set<number>>();
+    for (const rows of perGroup) {
+      for (const row of rows || []) {
+        const locationId = row.LocationId ?? row.Location?.Id;
+        for (const schedule of row.Schedules || []) {
+          if (!schedule?.Id) continue;
+          services.set(schedule.Id, { scheduleId: schedule.Id, name: schedule.Name });
+          if (locationId === undefined) continue;
+          const set = scheduleIdsByLocation.get(locationId) ?? new Set<number>();
+          set.add(schedule.Id);
+          scheduleIdsByLocation.set(locationId, set);
+        }
       }
     }
 
     const occurrence = matchRockSchedule(channelName, [...services.values()]);
     if (!occurrence) return fail('This runsheet does not match a Rock service.');
 
+    // Only the slots this role really has for this service. Empty means Rock has
+    // nowhere to put anyone, so the role stays free text and nothing is written.
+    const usableLocationIds = usableRoleLocationIds(
+      role,
+      scheduleIdsByLocation,
+      occurrence.scheduleId,
+    );
+    if (usableLocationIds.length === 0) {
+      return fail('Rock does not schedule this role for this service.');
+    }
+
     const occurrenceRows = ((await rockGet('/AttendanceOccurrences', {
       $filter: [
         `ScheduleId eq ${occurrence.scheduleId}`,
         `OccurrenceDate eq datetime'${occurrence.isoDate}T00:00:00'`,
         `GroupId eq ${role.groupId}`,
-        `(${role.locationIds.map((id) => `LocationId eq ${id}`).join(' or ')})`,
+        `(${usableLocationIds.map((id) => `LocationId eq ${id}`).join(' or ')})`,
       ].join(' and '),
       $select: 'Id,LocationId',
     }, true)) || []) as any[];
@@ -1343,7 +1511,7 @@ export async function rockSyncRosterRole(input: {
       });
     }
 
-    const plan = planRosterSlots(occupants, personIds, role.locationIds);
+    const plan = planRosterSlots(occupants, personIds, usableLocationIds);
     if (plan.error) return fail(plan.error);
 
     // Removals first, so a swap frees the slot before it is refilled.
@@ -1457,6 +1625,22 @@ describe('EventTeamRosterCard with Rock roster', () => {
     );
     expect(screen.getByText('Juan Dela Cruz')).toBeInTheDocument();
     expect(screen.queryByText('Stale Name')).not.toBeInTheDocument();
+  });
+
+  it('falls back to the stored value for a role Rock does not schedule here', () => {
+    // Rock is linked for this runsheet, but this particular role has no slot in
+    // it — that role must look exactly as it did before this feature existed.
+    render(
+      <EventTeamRosterCard
+        items={items}
+        columns={columns}
+        rockLinked
+        rockRoles={[{ roleTitle: 'Roster: Music Director', people: [{ personId: 99, name: 'Ana Reyes' }] }]}
+        onOpenRolePicker={() => {}}
+      />,
+    );
+    expect(screen.getByText('Stale Name')).toBeInTheDocument();
+    expect(screen.getByText('Ana Reyes')).toBeInTheDocument();
   });
 
   it('falls back to the stored value when Rock could not be read', () => {
@@ -1648,7 +1832,14 @@ export function RockRosterRolePicker(props: {
 }): JSX.Element;
 ```
 
-Behaviour: names are only ever added by choosing a Rock search result, so every chip carries a
+Behaviour: this picker is used **only** for roles present in `rosterQuery.data.roles`. A role Rock
+does not schedule for this service is absent from that array, so the existing `PeopleSearchDropdown`
+is rendered for it and that role keeps its pre-feature behaviour in full — free text, Guest toggle,
+stored value, no write-back. The `linkedRole` lookup in `renderPeoplePicker` below is what enforces
+this; do not replace it with a `getRockRosterRole` check, which would wrongly treat every mapped
+role as linked everywhere.
+
+Names are only ever added by choosing a Rock search result, so every chip carries a
 `personId`. There is no free-text add and no Guest toggle — those are what make a name
 unaddressable in Rock. Saving calls `rockSyncRosterRole`; on success it calls `onSaved` with Rock's
 post-write state and closes; on failure it keeps the picker open, shows the error, and reverts the
@@ -2104,6 +2295,9 @@ Expected: PASS. Do not claim completion on a partial run — paste the actual ou
 - Edit one role in the runsheet, check Group Scheduler: the person is scheduled confirmed, and the
   person removed is gone. Confirm the other nine roles are untouched.
 - Open a BNE runsheet: the card is unchanged free text.
+- Open an `MNL Family Night` runsheet: Host Core Cap and Security Lead are plain free-text cells
+  with the Guest toggle, because groups 19096 and 19144 carry no Family Night schedule — while the
+  roles whose teams do carry it still autofill from Rock.
 - Tick **Show Archived** on the landing page: the most recent past runsheet is at the top of the
   archived block.
 
@@ -2122,6 +2316,9 @@ Spec coverage check, run after writing this plan:
 
 - Role mapping → Task 1. Occurrence resolution → Task 2. Slot fill and overflow rejection → Task 3.
 - Reading, RSVP filter, fail-soft → Task 5 and Task 7.
+- Per-role fallback when Rock has no slot for that role on that service → `usableRoleLocationIds`
+  in Task 1, role filtering in Task 5, the write guard in Task 6, the card fallback in Task 7, and
+  the picker choice in Task 8.
 - Writing, confirmed adds, unschedule removes, untouched stayers, edit permission, past-date guard,
   single-role scope → Task 6.
 - Rock-only person identity, non-persisted IDs, fail-closed revert → Task 8.

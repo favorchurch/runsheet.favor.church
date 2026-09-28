@@ -57,6 +57,22 @@ A channel resolves only when exactly one schedule matches. If nothing matches, m
 matches, or the campus is not MNL, the runsheet is **unlinked**: the roster card behaves exactly
 as it does today and says so quietly.
 
+### Linkage is per role, not per runsheet
+
+Not every team schedules every service. Group 19096 (Host) and 19144 (Security) carry no
+`MNL Family Night` schedule at all, so on a Family Night runsheet Host Core Cap and Security Lead
+have no Rock slot to read from or write to.
+
+A role is linked only when its own `Location` carries the matched `Schedule`
+(`GroupLocationSchedule`). A role that does not **behaves exactly as it did before this feature**:
+free text, the existing people picker with its Guest affordance, the stored `Roster:` value, and no
+write-back. The rest of the card stays linked. For a multi-slot role only the slots that carry the
+schedule count, so a role with one of its two slots available is linked with one slot, and its
+overflow message reflects that.
+
+A linked role with nobody rostered is still linked — it shows empty and stays editable through the
+Rock picker. Empty and unlinked are different states and must not be collapsed into one.
+
 ### Reading
 
 Rock is the source of display truth for the ten linked roles. On page load the app fetches the
