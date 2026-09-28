@@ -8,12 +8,11 @@ import {
   ROCK_ROSTER_GROUP_IDS,
   usableRoleLocationIds,
 } from '@/lib/rockRosterRoles';
-import { planRosterSlots, type RosterOccupant } from '@/lib/rockRosterSlots';
+import { planRosterSlots } from '@/lib/rockRosterSlots';
 import { matchRockSchedule, type RockServiceCandidate } from '@/lib/rockServiceSchedule';
 import { extractChannelDate } from '@/lib/runsheetDate';
 import { rockGet, rockPost, rockPut } from '@/server-actions/internal/rockFetch';
-
-const ROSTERED_RSVP = new Set([0, 2]);
+import { fetchRosterOccupants } from '@/server-actions/internal/rockRosterQueries';
 
 export interface RockSyncRosterRoleResult {
   success: boolean;
@@ -107,45 +106,33 @@ export async function rockSyncRosterRole(input: {
       return fail('Rock does not schedule this role for this service.');
     }
 
-    const occurrenceRows = ((await rockGet('/AttendanceOccurrences', {
-      $filter: [
-        `ScheduleId eq ${occurrence.scheduleId}`,
-        `OccurrenceDate eq datetime'${occurrence.isoDate}T00:00:00'`,
-        `GroupId eq ${role.groupId}`,
-        `(${usableLocationIds.map((id) => `LocationId eq ${id}`).join(' or ')})`,
-      ].join(' and '),
-      $select: 'Id,LocationId',
-    }, true)) || []) as any[];
+    // Same shared reader the card uses, so the two can never disagree about who
+    // is currently in the role (or about Rock's RSVP encoding).
+    const occupants = (
+      await fetchRosterOccupants({
+        scheduleId: occurrence.scheduleId,
+        isoDate: occurrence.isoDate,
+        locationIds: usableLocationIds,
+      })
+    ).filter((o) => o.groupId === role.groupId);
 
     const occurrenceIdByLocation = new Map<number, number>(
-      occurrenceRows.map((o) => [o.LocationId, o.Id]),
+      (
+        ((await rockGet(
+          '/AttendanceOccurrences',
+          {
+            $filter: [
+              `ScheduleId eq ${occurrence.scheduleId}`,
+              `OccurrenceDate eq datetime'${occurrence.isoDate}T00:00:00'`,
+              `GroupId eq ${role.groupId}`,
+              `(${usableLocationIds.map((id) => `LocationId eq ${id}`).join(' or ')})`,
+            ].join(' and '),
+            $select: 'Id,LocationId',
+          },
+          true,
+        )) || []) as any[]
+      ).map((o) => [o.LocationId, o.Id]),
     );
-    const locationByOccurrenceId = new Map<number, number>(
-      occurrenceRows.map((o) => [o.Id, o.LocationId]),
-    );
-
-    const attendances = occurrenceRows.length
-      ? (((await rockGet('/Attendances', {
-          $filter: occurrenceRows.map((o) => `OccurrenceId eq ${o.Id}`).join(' or '),
-          $expand: 'PersonAlias/Person',
-          $select:
-            'Id,OccurrenceId,RSVP,PersonAlias/PersonId,PersonAlias/Person/NickName,PersonAlias/Person/LastName',
-        }, true)) || []) as any[])
-      : [];
-
-    const occupants: RosterOccupant[] = [];
-    for (const a of attendances) {
-      if (!ROSTERED_RSVP.has(a.RSVP)) continue;
-      const locationId = locationByOccurrenceId.get(a.OccurrenceId);
-      const person = a.PersonAlias?.Person;
-      if (locationId === undefined || !a.PersonAlias?.PersonId || !person) continue;
-      occupants.push({
-        attendanceId: a.Id,
-        personId: a.PersonAlias.PersonId,
-        name: `${person.NickName || ''} ${person.LastName || ''}`.trim(),
-        locationId,
-      });
-    }
 
     const plan = planRosterSlots(occupants, personIds, usableLocationIds);
     if (plan.error) return fail(plan.error);
@@ -176,23 +163,15 @@ export async function rockSyncRosterRole(input: {
 
     // Read back rather than trusting the plan: Rock is the source of truth, and
     // a partially-applied write must surface as what actually happened.
-    // With no occurrences the filter would be empty, and an empty `$filter` is
-    // sent as-is — that fetches every Attendance in Rock, so skip the read.
-    const after = occurrenceIdByLocation.size
-      ? (((await rockGet('/Attendances', {
-          $filter: [...occurrenceIdByLocation.values()].map((id) => `OccurrenceId eq ${id}`).join(' or '),
-          $expand: 'PersonAlias/Person',
-          $select:
-            'Id,OccurrenceId,RSVP,PersonAlias/PersonId,PersonAlias/Person/NickName,PersonAlias/Person/LastName',
-        }, true)) || []) as any[])
-      : [];
-
-    const people = after
-      .filter((a) => ROSTERED_RSVP.has(a.RSVP) && a.PersonAlias?.Person)
-      .map((a) => ({
-        personId: a.PersonAlias.PersonId,
-        name: `${a.PersonAlias.Person.NickName || ''} ${a.PersonAlias.Person.LastName || ''}`.trim(),
-      }));
+    const people = (
+      await fetchRosterOccupants({
+        scheduleId: occurrence.scheduleId,
+        isoDate: occurrence.isoDate,
+        locationIds: usableLocationIds,
+      })
+    )
+      .filter((o) => o.groupId === role.groupId)
+      .map((o) => ({ personId: o.personId, name: o.name }));
 
     return { success: true, people };
   } catch (err) {

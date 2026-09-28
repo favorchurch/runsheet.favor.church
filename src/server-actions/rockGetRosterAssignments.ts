@@ -7,13 +7,11 @@ import {
   ROCK_ROSTER_ROLES,
   usableRoleLocationIds,
 } from '@/lib/rockRosterRoles';
-import { mergeRosterOccupants, type RosterOccupant } from '@/lib/rockRosterSlots';
+import { mergeRosterOccupants } from '@/lib/rockRosterSlots';
 import { matchRockSchedule, type RockServiceCandidate } from '@/lib/rockServiceSchedule';
 import { rockGet } from '@/server-actions/internal/rockFetch';
+import { fetchRosterOccupants } from '@/server-actions/internal/rockRosterQueries';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
-
-/** Rock `Attendance.RSVP`: 0 Unknown (pending), 1 No (declined), 2 Yes (confirmed). */
-const ROSTERED_RSVP = new Set([0, 2]);
 
 export interface RosterRoleAssignment {
   roleTitle: string;
@@ -98,44 +96,11 @@ export async function rockGetRosterAssignments(
 
     if (linkedRoles.length === 0) return UNLINKED;
 
-    const locationIds = linkedRoles.flatMap((entry) => entry.locationIds);
-    const occurrences = ((await rockGet('/AttendanceOccurrences', {
-      $filter: [
-        `ScheduleId eq ${occurrence.scheduleId}`,
-        `OccurrenceDate eq datetime'${occurrence.isoDate}T00:00:00'`,
-        `(${ROCK_ROSTER_GROUP_IDS.map((id) => `GroupId eq ${id}`).join(' or ')})`,
-        `(${locationIds.map((id) => `LocationId eq ${id}`).join(' or ')})`,
-      ].join(' and '),
-      $select: 'Id,GroupId,LocationId',
-    })) || []) as any[];
-
-    const byOccurrenceId = new Map<number, { groupId: number; locationId: number }>(
-      occurrences.map((o) => [o.Id, { groupId: o.GroupId, locationId: o.LocationId }]),
-    );
-
-    const attendances = byOccurrenceId.size
-      ? (((await rockGet('/Attendances', {
-          $filter: [...byOccurrenceId.keys()].map((id) => `OccurrenceId eq ${id}`).join(' or '),
-          $expand: 'PersonAlias/Person',
-          $select:
-            'Id,OccurrenceId,RSVP,PersonAlias/PersonId,PersonAlias/Person/NickName,PersonAlias/Person/LastName',
-        })) || []) as any[])
-      : [];
-
-    const occupants: (RosterOccupant & { groupId: number })[] = [];
-    for (const a of attendances) {
-      if (!ROSTERED_RSVP.has(a.RSVP)) continue;
-      const slot = byOccurrenceId.get(a.OccurrenceId);
-      const person = a.PersonAlias?.Person;
-      if (!slot || !a.PersonAlias?.PersonId || !person) continue;
-      occupants.push({
-        attendanceId: a.Id,
-        personId: a.PersonAlias.PersonId,
-        name: `${person.NickName || ''} ${person.LastName || ''}`.trim(),
-        locationId: slot.locationId,
-        groupId: slot.groupId,
-      });
-    }
+    const occupants = await fetchRosterOccupants({
+      scheduleId: occurrence.scheduleId,
+      isoDate: occurrence.isoDate,
+      locationIds: linkedRoles.flatMap((entry) => entry.locationIds),
+    });
 
     const roles = linkedRoles.map((entry) => ({
       roleTitle: entry.role.roleTitle,

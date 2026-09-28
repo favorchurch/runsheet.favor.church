@@ -177,34 +177,28 @@ describe('rockSyncRosterRole', () => {
   });
 
   it('performs removes first then adds and returns updated people', async () => {
+    const groupLocations = [
+      { GroupId: 19100, LocationId: 475, Schedules: [{ Id: 565, Name: 'MNL Crowne 3PM' }] },
+    ];
     jest.mocked(rockGet)
-      .mockResolvedValueOnce([
-        { GroupId: 19100, LocationId: 475, Schedules: [{ Id: 565, Name: 'MNL Crowne 3PM' }] },
-      ] as any)
-      .mockResolvedValueOnce([] as any)
-      .mockResolvedValueOnce([] as any)
-      .mockResolvedValueOnce([] as any)
-      .mockResolvedValueOnce([] as any)
-      // occurrenceRows
+      .mockResolvedValueOnce(groupLocations as any) // 19100
+      .mockResolvedValueOnce([] as any) // 19109
+      .mockResolvedValueOnce([] as any) // 19095
+      .mockResolvedValueOnce([] as any) // 19096
+      .mockResolvedValueOnce([] as any) // 19144
+      // --- current occupants, via fetchRosterOccupants ---
+      .mockResolvedValueOnce([{ Id: 100, GroupId: 19100, LocationId: 475 }] as any) // occurrences
+      // RSVP 1 = Yes (confirmed). personId 10 currently holds the role.
+      .mockResolvedValueOnce([{ Id: 55, OccurrenceId: 100, RSVP: 1, PersonAliasId: 5010 }] as any)
+      .mockResolvedValueOnce([{ Id: 5010, PersonId: 10 }] as any)
+      .mockResolvedValueOnce([{ Id: 10, NickName: 'Old', LastName: 'Person' }] as any)
+      // --- occurrenceIdByLocation, for the add ---
       .mockResolvedValueOnce([{ Id: 100, LocationId: 475 }] as any)
-      // current attendances: personId 10 currently assigned
-      .mockResolvedValueOnce([
-        {
-          Id: 55,
-          OccurrenceId: 100,
-          RSVP: 2,
-          PersonAlias: { PersonId: 10, Person: { NickName: 'Old', LastName: 'Person' } },
-        },
-      ] as any)
-      // read-back attendances: personId 20 now assigned
-      .mockResolvedValueOnce([
-        {
-          Id: 56,
-          OccurrenceId: 100,
-          RSVP: 2,
-          PersonAlias: { PersonId: 20, Person: { NickName: 'New', LastName: 'Volunteer' } },
-        },
-      ] as any);
+      // --- read-back after the write: personId 20 now holds it ---
+      .mockResolvedValueOnce([{ Id: 100, GroupId: 19100, LocationId: 475 }] as any)
+      .mockResolvedValueOnce([{ Id: 56, OccurrenceId: 100, RSVP: 1, PersonAliasId: 5020 }] as any)
+      .mockResolvedValueOnce([{ Id: 5020, PersonId: 20 }] as any)
+      .mockResolvedValueOnce([{ Id: 20, NickName: 'New', LastName: 'Volunteer' }] as any);
 
     mockRockPut.mockResolvedValue({} as any);
 

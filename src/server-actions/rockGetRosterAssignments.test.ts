@@ -45,21 +45,14 @@ describe('rockGetRosterAssignments', () => {
       .mockResolvedValueOnce([] as any) // 19095
       .mockResolvedValueOnce([] as any) // 19096
       .mockResolvedValueOnce([] as any) // 19144
-      .mockResolvedValueOnce([{ Id: 900, GroupId: 19100, LocationId: 475 }] as any)
+      .mockResolvedValueOnce([{ Id: 900, GroupId: 19100, LocationId: 475 }] as any) // occurrences
       .mockResolvedValueOnce([
-        {
-          Id: 1,
-          OccurrenceId: 900,
-          RSVP: 2,
-          PersonAlias: { PersonId: 10, Person: { NickName: 'Juan', LastName: 'Dela Cruz' } },
-        },
-        {
-          Id: 2,
-          OccurrenceId: 900,
-          RSVP: 1,
-          PersonAlias: { PersonId: 20, Person: { NickName: 'Declined', LastName: 'Person' } },
-        },
-      ] as any);
+        // RSVP 1 = Yes (confirmed), 3 = Unknown (pending), 0 = No (declined).
+        { Id: 1, OccurrenceId: 900, RSVP: 1, PersonAliasId: 5010 },
+        { Id: 2, OccurrenceId: 900, RSVP: 0, PersonAliasId: 5020 },
+      ] as any) // attendances
+      .mockResolvedValueOnce([{ Id: 5010, PersonId: 10 }] as any) // person aliases
+      .mockResolvedValueOnce([{ Id: 10, NickName: 'Juan', LastName: 'Dela Cruz' }] as any); // people
 
     const res = await rockGetRosterAssignments('MNL Crowne // September 27, 2026 // 3PM');
 
@@ -69,6 +62,30 @@ describe('rockGetRosterAssignments', () => {
     expect(res.roles.find((r) => r.roleTitle === 'Roster: Service Director')?.people).toEqual([
       { personId: 10, name: 'Juan Dela Cruz' },
     ]);
+  });
+
+  it('never asks Rock for a filter long enough to trip the 100-node OData limit', async () => {
+    mockRockGet
+      .mockResolvedValueOnce(groupLocations() as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any);
+
+    await rockGetRosterAssignments('MNL Crowne // September 27, 2026 // 3PM');
+
+    const occurrenceCalls = mockRockGet.mock.calls.filter(
+      (c) => c[0] === '/AttendanceOccurrences',
+    );
+    expect(occurrenceCalls.length).toBeGreaterThan(0);
+    for (const call of occurrenceCalls) {
+      const filter = String((call[1] as any).$filter);
+      // The group OR-chain on top of the location chain is what blew the limit.
+      expect(filter).not.toContain('GroupId eq');
+      expect((filter.match(/ or /g) || []).length).toBeLessThan(10);
+    }
   });
 
   it('omits roles whose location does not carry this schedule', async () => {
