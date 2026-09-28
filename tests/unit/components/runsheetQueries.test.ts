@@ -7,6 +7,9 @@ jest.mock('@/server-actions/rockGetAvailableRunsheetChannels', () => ({
 jest.mock('@/server-actions/rockGetRunsheetDetails', () => ({
   rockGetRunsheetDetails: jest.fn(),
 }));
+jest.mock('@/server-actions/rockGetRosterAssignments', () => ({
+  rockGetRosterAssignments: jest.fn(),
+}));
 
 import { getRunsheetAccessScope, runsheetQueryKeys } from '@/components/runsheet/runsheetQueries';
 

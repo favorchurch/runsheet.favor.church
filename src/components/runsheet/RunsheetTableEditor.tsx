@@ -46,6 +46,7 @@ import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvaila
 import { rockGetRunsheetDetailsBatch } from '@/server-actions/rockGetRunsheetDetailsBatch';
 import { PropagateReviewPanel } from './PropagateReviewPanel';
 import { PeopleSearchDropdown, parsePeopleString } from './PeopleSearchDropdown';
+import { useRosterAssignments } from './runsheetQueries';
 
 function extractChannelDateLabel(name: string): string {
   const parts = name.split('//');
@@ -239,6 +240,25 @@ export function RunsheetTableEditor({
   const [items, setItems] = useState<RunsheetItemRow[]>(() =>
     ensureRosterItems(initialTemplate ? initialTemplate.templateRows : initialItems)
   );
+
+  const rosterQuery = useRosterAssignments(channelName, !readOnly || true);
+
+  // Keep the stored `Roster:` items in step with Rock, so propagate/compare/print
+  // never disagree with the card. Rock is the source of truth; these rows are a mirror.
+  useEffect(() => {
+    const roster = rosterQuery.data;
+    if (!roster?.linked || !roster.success) return;
+    const personKey = columns.find(isPersonColumn)?.key || columns[0]?.key || 'PLATFORM';
+    setItems((previous) =>
+      previous.map((item) => {
+        const fromRock = roster.roles.find((r) => r.roleTitle === item.title);
+        if (!fromRock) return item;
+        const next = fromRock.people.map((p) => p.name).join(', ');
+        if ((item.attributeValues?.[personKey] || '') === next) return item;
+        return { ...item, attributeValues: { ...item.attributeValues, [personKey]: next } };
+      }),
+    );
+  }, [rosterQuery.data, columns]);
   const [deletedIds, setDeletedIds] = useState<(number | string)[]>([]);
   const [startTime, setStartTime] = useState(initialStartTime);
   const { drag: rowDrag, getHandleProps: getRowDragHandleProps } = usePointerReorder(
@@ -1973,6 +1993,9 @@ export function RunsheetTableEditor({
         items={items}
         columns={dynamicAttrCols}
         readOnly={readOnly}
+        rockLinked={rosterQuery.data?.linked ?? false}
+        rockRoles={rosterQuery.data?.roles ?? []}
+        rockReadFailed={rosterQuery.data?.success === false}
         editingRoleTitle={
           editingCell
             ? items.find((it) => it.id === editingCell.itemId)?.title?.startsWith('Roster:')

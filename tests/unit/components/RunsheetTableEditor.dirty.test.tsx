@@ -25,6 +25,10 @@ jest.mock('@/server-actions/rockBulkSaveRunsheetItems');
 jest.mock('@/server-actions/rockDeleteServiceRunsheet');
 jest.mock('@/server-actions/getRockContentChannelOptions');
 jest.mock('@/server-actions/rockGetScheduleOptions');
+jest.mock('@/components/runsheet/runsheetQueries', () => ({
+  ...jest.requireActual('@/components/runsheet/runsheetQueries'),
+  useRosterAssignments: () => ({ data: undefined }),
+}));
 jest.mock('@/lib/richText', () => ({
   htmlToPlainText: (s: string) => s,
   legacyValueToHtml: (s: string) => s,

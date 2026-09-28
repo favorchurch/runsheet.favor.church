@@ -3,6 +3,7 @@
 import { useQuery, type QueryClient } from 'react-query';
 import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
+import { rockGetRosterAssignments } from '@/server-actions/rockGetRosterAssignments';
 import {
   RUNSHEET_QUERY_CACHE_TIME_MS,
   RUNSHEET_QUERY_STALE_TIME_MS,
@@ -61,6 +62,8 @@ export const runsheetQueryKeys = {
     ['runsheet', 'channels', accessScope, includeArchived] as const,
   details: (channelId: number, accessScope: string = 'anonymous') =>
     ['runsheet', 'details', accessScope, channelId] as const,
+  rosterAssignments: (channelName: string) =>
+    ['runsheet', 'rosterAssignments', channelName] as const,
 };
 
 const queryBehavior = {
@@ -108,5 +111,25 @@ export async function prefetchRunsheetDetails(
     runsheetQueryKeys.details(channelId, accessScope),
     async () => throwOnFailedRead(await rockGetRunsheetDetails(channelId)),
     queryBehavior,
+  );
+}
+
+/**
+ * Rock Group Scheduler roster for this runsheet's occurrence.
+ *
+ * Refresh-driven by decision: fetched on mount, never polled, never refetched on
+ * focus. A Group Scheduler change appears on the next page load.
+ */
+export function useRosterAssignments(channelName: string, enabled: boolean) {
+  return useQuery(
+    runsheetQueryKeys.rosterAssignments(channelName),
+    () => rockGetRosterAssignments(channelName),
+    {
+      enabled: enabled && !!channelName,
+      staleTime: 0,
+      refetchOnWindowFocus: false,
+      refetchOnMount: 'always',
+      retry: false,
+    },
   );
 }

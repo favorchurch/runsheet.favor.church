@@ -97,6 +97,9 @@ interface EventTeamRosterCardProps {
   editingRoleTitle?: string | null;
   onOpenRolePicker: (roleTitle: string) => void;
   renderPeoplePicker?: (roleTitle: string) => React.ReactNode;
+  rockRoles?: { roleTitle: string; people: { personId: number; name: string }[] }[];
+  rockLinked?: boolean;
+  rockReadFailed?: boolean;
 }
 
 interface RosterModalData {
@@ -113,6 +116,9 @@ export function EventTeamRosterCard({
   editingRoleTitle = null,
   onOpenRolePicker,
   renderPeoplePicker,
+  rockRoles = [],
+  rockLinked = false,
+  rockReadFailed = false,
 }: EventTeamRosterCardProps) {
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [activeModalData, setActiveModalData] = useState<RosterModalData | null>(null);
@@ -155,8 +161,17 @@ export function EventTeamRosterCard({
     };
   }, [activeModalData]);
 
+  /**
+   * Rock is the source of display truth for linked roles. The stored
+   * `Roster: <role>` item stays as a mirror for propagate / compare / print, and
+   * is what we fall back to when Rock could not be read.
+   */
   const getRosterValue = (role: string) => {
     const title = `Roster: ${role}`;
+    if (rockLinked && !rockReadFailed) {
+      const fromRock = rockRoles.find((r) => r.roleTitle === title);
+      if (fromRock) return fromRock.people.map((p) => p.name).join(', ');
+    }
     const row = items.find((item) => item.title === title);
     return row?.attributeValues?.[personCol.key] || '';
   };
@@ -202,6 +217,11 @@ export function EventTeamRosterCard({
         <div className="space-y-2">
           {/* Vital Event Roles Grid */}
           <div>
+            {rockReadFailed && (
+              <p className="mb-1 text-[10px] font-semibold text-amber-800">
+                Couldn&apos;t reach Rock — showing the last saved roster.
+              </p>
+            )}
             <span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-700 mb-1">
               Service Roles
             </span>
