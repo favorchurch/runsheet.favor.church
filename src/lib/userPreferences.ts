@@ -80,7 +80,7 @@ export function setRosterCollapsedPreference(collapsed: boolean): void {
 
 export const STORAGE_KEY_RUNSHEET_KIND = 'runsheet_pref_kind';
 
-const RUNSHEET_KIND_VALUES = ['all', 'sunday', 'youth', 'grow', 'other'] as const;
+const RUNSHEET_KIND_VALUES = ['all', 'sunday', 'youth', 'kids', 'grow', 'other'] as const;
 export type RunsheetKindPreference = (typeof RUNSHEET_KIND_VALUES)[number];
 
 /** The last runsheet list kind filter; defaults to 'all'. */

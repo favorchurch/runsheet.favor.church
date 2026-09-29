@@ -36,10 +36,10 @@ describe('rockSyncGrowRunsheets', () => {
     expect(mockGet).not.toHaveBeenCalled();
   });
 
-  it('creates only the missing occurrence in category 338', async () => {
+  it('creates only the missing occurrence in MNL | ALL EVENTS (590)', async () => {
     mockSession.mockResolvedValue({ rolesMap: { growEditor: ['19108'] } } as any);
     expect(await rockSyncGrowRunsheets()).toEqual({ success: true, created: 1 });
-    expect(mockCreate).toHaveBeenCalledWith('MNL Grow - Bible Essentials // October 13, 2099 // 7PM', 13, 338);
+    expect(mockCreate).toHaveBeenCalledWith('MNL Grow - Bible Essentials // October 13, 2099 // 7PM', 13, 590);
   });
 
   it('skips while another sync holds the lock', async () => {

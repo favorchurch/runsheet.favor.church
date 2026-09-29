@@ -38,6 +38,26 @@ describe('buildRosteredViewerKeys', () => {
   });
 });
 
+describe('Kids roster keys', () => {
+  it('prefixes Kids attendances so they never match a Sunday runsheet', () => {
+    expect(
+      buildRosteredViewerKeys(
+        [
+          { campusId: 1, startDateTime: '2026-09-27T09:00:00', scheduleId: 566 },
+          { campusId: 1, startDateTime: '2026-09-27T09:00:00', scheduleId: 564 },
+        ],
+        new Set(),
+        new Set([566]),
+      ),
+    ).toEqual(['kids:MNL:2026-09-27:09:00:00', 'MNL:2026-09-27:09:00:00']);
+  });
+
+  it('prefixes Kids runsheet titles the same way', () => {
+    expect(channelRosterKey('MNL Crowne - Kids // September 27, 2026 // 9AM')).toBe('kids:MNL:2026-09-27:09:00:00');
+    expect(channelRosterKey('MNL Crowne // September 27, 2026 // 9AM')).toBe('MNL:2026-09-27:09:00:00');
+  });
+});
+
 describe('channelRosterKey', () => {
   it('derives the key from a service title', () => {
     expect(channelRosterKey('MNL Crowne // September 27, 2026 // 3PM')).toBe('MNL:2026-09-27:15:00:00');

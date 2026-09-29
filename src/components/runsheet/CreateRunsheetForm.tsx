@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { getRockContentChannelOptions, ContentChannelCategoryOption } from '@/server-actions/getRockContentChannelOptions';
 import { rockGetScheduleOptions, ScheduleOption } from '@/server-actions/rockGetScheduleOptions';
 import { rockCreateServiceRunsheet } from '@/server-actions/rockCreateServiceRunsheet';
-import { buildGrowRunsheetTitle, GROW_CONTENT_CHANNEL_CATEGORY_ID } from '@/lib/growRunsheets';
+import { buildGrowRunsheetTitle, GROW_CONTENT_CHANNEL_CATEGORY_ID, GROW_SCHEDULE_CATEGORY_ID } from '@/lib/growRunsheets';
 import type { RockRosterAssignmentsResult } from '@/server-actions/rockGetRosterAssignments';
 import toast from 'react-hot-toast';
 
@@ -146,7 +146,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
             });
           }
 
-          // A Grow-only editor may create Grow Class runsheets only.
+          // A Grow-only editor may create Grow runsheets only (under MNL | ALL EVENTS).
           if (growOnly) {
             filteredCats = filteredCats.filter((cat) => cat.id === GROW_CONTENT_CHANNEL_CATEGORY_ID);
           }
@@ -214,7 +214,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
     if (userEditedDateRef.current) return;
     const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
     const isYouth = /youth/i.test(selectedCategory?.name || '');
-    const isGrow = selectedCategoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID;
+    const isGrow = schedules.find((s) => s.name === session)?.categoryId === GROW_SCHEDULE_CATEGORY_ID;
     if (!isGrow && !isYouth) return;
 
     const next = schedules.find((s) => s.name === session)?.nextDate || schedules[0]?.nextDate;
@@ -225,7 +225,8 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
   useEffect(() => {
     const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
     const selectedSchedule = schedules.find((s) => s.name === session);
-    if (selectedCategoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID && selectedSchedule) {
+    // Grow titles must match the Grow sync's format, or the sync would duplicate them.
+    if (selectedSchedule?.categoryId === GROW_SCHEDULE_CATEGORY_ID) {
       setTitle(buildGrowRunsheetTitle(selectedSchedule.name, date, selectedSchedule.timeLabel));
       return;
     }

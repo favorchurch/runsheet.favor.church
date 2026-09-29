@@ -11,6 +11,11 @@ describe('getRunsheetKind', () => {
     expect(getRunsheetKind('MNL Family Night // September 30, 2026 // 7PM')).toBe('other');
   });
 
+  it('classifies Kids runsheets ahead of Sunday', () => {
+    expect(getRunsheetKind('MNL Crowne - Kids // September 27, 2026 // 9AM')).toBe('kids');
+    expect(getRunsheetKind('BNE Kids Service // September 27, 2026 // 10AM')).toBe('kids');
+  });
+
   it('does not treat "growth" as Grow', () => {
     expect(getRunsheetKind('MNL Growth Summit // September 30, 2026 // 7PM')).toBe('other');
   });

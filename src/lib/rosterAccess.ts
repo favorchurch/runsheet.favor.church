@@ -2,7 +2,9 @@
  * Rostered-only runsheet view. A volunteer's Group Scheduler attendances
  * become `<campus>:<YYYY-MM-DD>:<HH:MM:SS>` keys; a runsheet is visible to
  * them when its title yields the same key. The key has no venue, so every
- * same-campus runsheet in that date/time slot matches.
+ * same-campus runsheet in that date/time slot matches. Kids services run
+ * alongside Sunday services, so Kids keys carry a `kids:` prefix and never
+ * match a Sunday runsheet (or the other way round).
  */
 import { extractRunsheetCampus, type RunsheetCampusCode } from './runsheetCampus';
 import { extractChannelDate, extractChannelTime, parseTimeToSortSignature } from './runsheetDate';
@@ -17,6 +19,8 @@ export interface RosteredAttendance {
   scheduleId: number | null;
 }
 
+export const KIDS_ROSTER_KEY_PREFIX = 'kids:';
+
 export function rosterKey(campus: RunsheetCampusCode, isoDate: string, timeSignature: string): string {
   return `${campus}:${isoDate}:${timeSignature}`;
 }
@@ -24,6 +28,7 @@ export function rosterKey(campus: RunsheetCampusCode, isoDate: string, timeSigna
 export function buildRosteredViewerKeys(
   attendances: RosteredAttendance[],
   growScheduleIds: ReadonlySet<number>,
+  kidsScheduleIds: ReadonlySet<number> = new Set(),
 ): string[] {
   const keys = new Set<string>();
   for (const a of attendances) {
@@ -33,7 +38,8 @@ export function buildRosteredViewerKeys(
     const campus = a.campusId !== null ? ROCK_CAMPUS_CODES[a.campusId] : undefined;
     const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}):?(\d{2})?/.exec(a.startDateTime || '');
     if (!campus || !m) continue;
-    keys.add(rosterKey(campus, m[1], `${m[2]}:${m[3] || '00'}`));
+    const isKids = a.scheduleId !== null && kidsScheduleIds.has(a.scheduleId);
+    keys.add(`${isKids ? KIDS_ROSTER_KEY_PREFIX : ''}${rosterKey(campus, m[1], `${m[2]}:${m[3] || '00'}`)}`);
   }
   return [...keys];
 }
@@ -45,10 +51,11 @@ function toIsoLocal(date: Date): string {
 }
 
 export function channelRosterKey(channelName: string): string | null {
-  if (!channelName || getRunsheetKind(channelName) === 'grow') return null;
+  const kind = channelName ? getRunsheetKind(channelName) : null;
+  if (!kind || kind === 'grow') return null;
   const campus = extractRunsheetCampus(channelName);
   const date = extractChannelDate(channelName);
   const time = parseTimeToSortSignature(extractChannelTime(channelName));
   if (!campus || !date || !time) return null;
-  return rosterKey(campus, toIsoLocal(date), time);
+  return `${kind === 'kids' ? KIDS_ROSTER_KEY_PREFIX : ''}${rosterKey(campus, toIsoLocal(date), time)}`;
 }

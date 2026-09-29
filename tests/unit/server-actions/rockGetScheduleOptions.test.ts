@@ -28,6 +28,22 @@ const SCHEDULE_CATEGORIES = [
   { Id: 479, ParentCategoryId: 475 }, // MNL
   { Id: 478, ParentCategoryId: 475 }, // BNE
   { Id: 480, ParentCategoryId: 475 }, // SEL
+  // 470 KIDS SERVICES
+  { Id: 470, ParentCategoryId: null },
+  { Id: 472, ParentCategoryId: 470 }, // MNL
+  { Id: 471, ParentCategoryId: 470 }, // BNE
+  { Id: 473, ParentCategoryId: 470 }, // SEL
+  { Id: 476, ParentCategoryId: 472 }, // MNL Crowne
+  // Grow Courses
+  { Id: 483, ParentCategoryId: 305 },
+];
+
+const WEEKLY_SUNDAY = (time: string) =>
+  `BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART:20260816T${time}\r\nRRULE:FREQ=WEEKLY;UNTIL=20991221T000000;BYDAY=SU\r\nEND:VEVENT\r\nEND:VCALENDAR`;
+
+const KIDS_MANILA_SCHEDULES = [
+  { Id: 566, Name: 'MNL Crowne 9AM - Kids', CategoryId: 476, iCalendarContent: WEEKLY_SUNDAY('090000') },
+  { Id: 559, Name: 'MNL Crowne 11:30AM - Kids', CategoryId: 476, iCalendarContent: WEEKLY_SUNDAY('113000') },
 ];
 
 const SUNDAY_CROWNE_SCHEDULES = [
@@ -233,5 +249,68 @@ describe('rockGetScheduleOptions - Sunday services schedule resolution', () => {
     expect(capturedFilter).toContain('CategoryId eq 479');
     expect(res.schedules).toHaveLength(2);
     expect(res.schedules[0].name).toBe('MNL 1PM Saturday Youth');
+  });
+});
+
+describe('rockGetScheduleOptions - Kids and ALL EVENTS categories', () => {
+  const editor = { rolesMap: { editor: ['true'] }, access: { runsheetCampuses: ['MNL'] } } as any;
+  const growOnly = { rolesMap: { growEditor: ['19108'] }, access: { runsheetCampuses: [] } } as any;
+
+  function route(categoryId: number, categoryName: string, schedules: any[]) {
+    const filters: string[] = [];
+    mockRockGet.mockImplementation(async (url: string, params?: any) => {
+      if (url === '/Categories') return SCHEDULE_CATEGORIES as any;
+      if (url === `/Categories/${categoryId}`) return { Id: categoryId, Name: categoryName } as any;
+      if (url === '/Schedules') {
+        filters.push(params?.$filter || '');
+        return schedules as any;
+      }
+      return null;
+    });
+    return filters;
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetRockSession.mockResolvedValue(editor);
+  });
+
+  it('lists Manila Kids schedules for MNL | Kids Service (586)', async () => {
+    const filters = route(586, 'MNL | Kids Service', KIDS_MANILA_SCHEDULES);
+
+    const res = await rockGetScheduleOptions(586, '2026-10-04');
+
+    expect(filters[0]).toContain('CategoryId eq 472');
+    expect(filters[0]).toContain('CategoryId eq 476');
+    expect(filters[0]).not.toContain('CategoryId eq 302');
+    expect(res.schedules.map((s) => s.name)).toEqual(['MNL Crowne 9AM - Kids', 'MNL Crowne 11:30AM - Kids']);
+  });
+
+  it('keeps Kids schedules out of a Sunday Service list', async () => {
+    route(336, 'MNL | Sunday Service', [...SUNDAY_CROWNE_SCHEDULES, ...KIDS_MANILA_SCHEDULES]);
+
+    const res = await rockGetScheduleOptions(336, '2026-10-04');
+
+    expect(res.schedules.map((s) => s.name)).toEqual(['MNL Crowne 9AM', 'MNL Crowne 11:30AM']);
+  });
+
+  it('gives a full editor the whole Manila events tree for MNL | ALL EVENTS (590)', async () => {
+    const filters = route(590, 'MNL | ALL EVENTS', []);
+
+    await rockGetScheduleOptions(590, '2026-10-04');
+
+    expect(filters[0]).toContain('IsActive eq true and (');
+    expect(filters[0]).toContain('CategoryId eq 305');
+    expect(filters[0]).toContain('CategoryId eq 481');
+    expect(filters[0]).toContain('CategoryId eq 483');
+  });
+
+  it('gives a Grow-only editor just the Grow Courses list for MNL | ALL EVENTS (590)', async () => {
+    mockGetRockSession.mockResolvedValue(growOnly);
+    const filters = route(590, 'MNL | ALL EVENTS', []);
+
+    await rockGetScheduleOptions(590, '2026-10-04');
+
+    expect(filters).toEqual(['CategoryId eq 483 and IsActive eq true']);
   });
 });
