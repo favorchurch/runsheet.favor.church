@@ -4,6 +4,7 @@ import {
   GROUP_TYPE_23_LEADER_ROLE_IDS,
   resolveRunsheetAccessPolicy,
 } from './runsheetAccessPolicy';
+import type { RunsheetCampusCode } from './runsheetCampus';
 
 describe('runsheet access policy', () => {
   it.each([
@@ -35,6 +36,37 @@ describe('runsheet access policy', () => {
     expect(result.editorGroupIds).toEqual([]);
     expect(result.viewerGroupIds).toEqual(['19109']);
     expect(result.runsheetCampuses).toEqual(['MNL']);
+  });
+
+  it.each<[string, number, RunsheetCampusCode, number, string, number]>([
+    ['Unit Head', 55, 'MNL', 19109, 'MNL Events Team', 57],
+    ['Unit Head', 55, 'BNE', 19120, 'BNE Events Team', 59],
+    ['Unit Head', 55, 'SEL', 19130, 'SEL Events Team', 58],
+    ['Overall Head', 20, 'MNL', 19109, 'MNL Events Team', 57],
+    ['Overall Head', 20, 'BNE', 19120, 'BNE Events Team', 59],
+    ['Overall Head', 20, 'SEL', 19130, 'SEL Events Team', 58],
+  ])('lets an Events Team %s (role %i) edit its own %s campus', (_role, groupRoleId, campus, groupId, name, rootId) => {
+    const result = resolveRunsheetAccessPolicy(
+      [{ groupId, groupTypeId: 23, groupRoleId }],
+      new Map([[groupId, { groupId, groupTypeId: 23, name, parentGroupId: rootId }]]),
+      new Map([[rootId, { groupId: rootId, groupTypeId: 23, parentGroupId: null, campus }]]),
+      new Set([20, 55, 69]),
+    );
+
+    expect(result.editorGroupIds).toEqual([String(groupId)]);
+    expect(result.viewerGroupIds).toEqual([String(groupId)]);
+    expect(result.runsheetCampuses).toEqual([campus]);
+  });
+
+  it.each([20, 55])('does not let role %i of a non-Events Ministry Team edit', (groupRoleId) => {
+    const result = resolveRunsheetAccessPolicy(
+      [{ groupId: 19110, groupTypeId: 23, groupRoleId }],
+      new Map([[19110, { groupId: 19110, groupTypeId: 23, name: 'MNL Worship Team', parentGroupId: 57 }]]),
+      new Map([[57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' }]]),
+      new Set([20, 55]),
+    );
+
+    expect(result).toMatchObject({ editorGroupIds: [], viewerGroupIds: [], runsheetCampuses: [] });
   });
 
   it('keeps a YTH Events Team leader view-only for its MNL campus', () => {
@@ -140,7 +172,7 @@ describe('runsheet access policy', () => {
 
   it('uses the approved leader-role fallback only when the Rock role lookup failed', () => {
     const result = resolveRunsheetAccessPolicy(
-      [{ groupId: 19109, groupTypeId: 23, groupRoleId: GROUP_TYPE_23_LEADER_ROLE_IDS[0] }],
+      [{ groupId: 19109, groupTypeId: 23, groupRoleId: GROUP_TYPE_23_LEADER_ROLE_IDS[2] }],
       new Map([[19109, { groupId: 19109, groupTypeId: 23, name: 'MNL Events Team', parentGroupId: 57 }]]),
       new Map([[57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' }]]),
       new Set(),
