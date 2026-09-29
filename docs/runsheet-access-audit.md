@@ -16,8 +16,9 @@ read-only audit shipped in `scripts/audit-runsheet-access.ts`. Figures labelled
 | Staff in the Org Chart (GroupType 28) | Edit on the campus resolved from group ancestry | `editor` + `viewer`, own-campus scope |
 | `GLB \| Dashboard Creator` (group 32879) | Edit on every campus | `editor` + `viewer`, `runsheetCampuses: ['ALL']` |
 | Web Developer (`WEB - Administration` group 4 and `WEB - General Editor` group 5) | Edit on every campus | `editor` + `viewer`, `runsheetCampuses: ['ALL']` |
-| Leader of a `* Events Team` (GroupType 23) | Edit on the team's resolved campus | `editor` + `viewer`, own-campus scope; leader status comes from live `GroupTypeRole.IsLeader` |
-| Any other Ministry Team member (GroupType 23) | View only on the team's resolved campus | `viewer`, own-campus scope |
+| Overall Head (role 20) or Unit Head (role 55) of a `* Events Team` (GroupType 23), any campus | Edit on the team's resolved campus | `editor` + `viewer`, own-campus scope |
+| Any other `* Events Team` member (GroupType 23) | View only on the team's resolved campus | `viewer`, own-campus scope |
+| Other Ministry Team members (GroupType 23) | Only the runsheets they are rostered on | `rosteredViewer` |
 | Everyone else, including authenticated users without a Rock membership | Denied on every runsheet server action | empty runsheet roles and campus scope |
 
 Every global group match adds `ALL` scope, including groups 32879, 4, and 5.
