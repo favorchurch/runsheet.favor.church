@@ -8,7 +8,7 @@ interface HasRolesMap {
 export const GROW_EDITOR_ROLE = 'growEditor';
 /** Rostered Grow volunteers: values are `scheduleId:YYYY-MM-DD` occurrence keys. */
 export const GROW_VIEWER_ROLE = 'growViewer';
-/** Rostered volunteers: values are `<campus>:<YYYY-MM-DD>:<HH:MM:SS>` roster keys. */
+/** Rostered volunteers: values are `[kids:]<campus>:<YYYY-MM-DD>:<HH:MM:SS>` roster keys. */
 export const ROSTERED_VIEWER_ROLE = 'rosteredViewer';
 
 function hasRole(user: HasRolesMap | AuthUser | null | undefined, role: string): boolean {

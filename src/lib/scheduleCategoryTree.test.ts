@@ -9,6 +9,7 @@ import {
   CAMPUS_SUNDAY_SCHEDULE_ROOT_IDS,
   CAMPUS_EVENT_SCHEDULE_ROOT_IDS,
   CAMPUS_YOUTH_SCHEDULE_ROOT_IDS,
+  CAMPUS_KIDS_SCHEDULE_ROOT_IDS,
 } from './scheduleCategoryTree';
 
 const tree = [
@@ -97,6 +98,20 @@ describe('scheduleRootsForCategory', () => {
     expect(scheduleRootsForCategory({ campus: 'MNL', categoryName: 'MNL | Youth Service' })).toEqual([479]);
     expect(scheduleRootsForCategory({ campus: 'BNE', categoryName: 'BNE | Youth Service' })).toEqual([478]);
     expect(scheduleRootsForCategory({ categoryName: 'Youth Services' })).toEqual([475]);
+  });
+
+  it('routes Kids content channel categories to Kids schedule roots (470 / 472 / 471 / 473)', () => {
+    expect(scheduleRootsForCategory({ campus: 'MNL', categoryName: 'MNL | Kids Service', categoryId: 586 })).toEqual([472]);
+    expect(scheduleRootsForCategory({ campus: 'BNE', categoryName: 'BNE | Kids Service', categoryId: 587 })).toEqual([471]);
+    expect(scheduleRootsForCategory({ campus: 'SEL', categoryName: 'SEL | Kids Service', categoryId: 588 })).toEqual([473]);
+    expect(scheduleRootsForCategory({ categoryName: 'Kids Services' })).toEqual([470]);
+    expect(CAMPUS_KIDS_SCHEDULE_ROOT_IDS).toEqual({ MNL: 472, BNE: 471, SEL: 473 });
+  });
+
+  it('routes each campus ALL EVENTS category to its Event schedule root', () => {
+    expect(scheduleRootsForCategory({ campus: 'MNL', categoryName: 'MNL | ALL EVENTS', categoryId: 590 })).toEqual([305]);
+    expect(scheduleRootsForCategory({ campus: 'BNE', categoryName: 'BNE | ALL EVENTS', categoryId: 591 })).toEqual([306]);
+    expect(scheduleRootsForCategory({ campus: 'SEL', categoryName: 'SEL | ALL EVENTS', categoryId: 592 })).toEqual([307]);
   });
 
   it('routes generic Event content channel categories to Event schedule roots (171 / 305 / 306 / 307)', () => {

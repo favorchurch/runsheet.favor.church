@@ -26,7 +26,7 @@ export async function getRockContentChannelOptions() {
     const types = (await rockGet("/ContentChannelTypes?$filter=Id eq 13 or Name eq 'Service Runsheet'&$select=Id,Name&$orderby=Name asc")) as Array<{ Id: number; Name: string }>;
 
     // 2. Fetch Categories for ContentChannels (EntityTypeId eq 209), excluding External Website & Internal
-    const categories = (await rockGet('/Categories?$filter=EntityTypeId eq 209&$select=Id,Name&$orderby=Name asc')) as Array<{ Id: number; Name: string }>;
+    const categories = (await rockGet('/Categories?$filter=EntityTypeId eq 209&$select=Id,Name&$orderby=Order asc,Name asc')) as Array<{ Id: number; Name: string }>;
 
     const filteredCategories = (categories || []).filter((c) => {
       const nameLower = c.Name.toLowerCase().trim();

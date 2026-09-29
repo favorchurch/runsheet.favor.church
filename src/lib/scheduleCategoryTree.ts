@@ -23,12 +23,21 @@
  *    ├── 🇵🇭 Manila (479)
  *    ├── 🇦🇺 Brisbane (478)
  *    └── 🇰🇷 Seoul (480)
+ *
+ * 4. KIDS SERVICES (Category 470)
+ *    ├── 🇵🇭 Manila (472)
+ *    │   ├── Shang (311)
+ *    │   ├── Crowne (476)
+ *    │   └── Podium (477)
+ *    ├── 🇦🇺 Brisbane (471)
+ *    └── 🇰🇷 Seoul (473)
  */
 import type { RunsheetCampusCode } from './runsheetCampus';
 
 export const SUNDAY_SERVICES_CATEGORY_ID = 50;
 export const ALL_EVENTS_CATEGORY_ID = 171;
 export const YOUTH_SERVICES_CATEGORY_ID = 475;
+export const KIDS_SERVICES_CATEGORY_ID = 470;
 export const SCHEDULE_CATEGORY_ENTITY_TYPE_ID = 54;
 
 export const CAMPUS_SUNDAY_SCHEDULE_ROOT_IDS: Record<RunsheetCampusCode, number> = {
@@ -47,6 +56,12 @@ export const CAMPUS_YOUTH_SCHEDULE_ROOT_IDS: Record<RunsheetCampusCode, number> 
   MNL: 479,
   BNE: 478,
   SEL: 480,
+};
+
+export const CAMPUS_KIDS_SCHEDULE_ROOT_IDS: Record<RunsheetCampusCode, number> = {
+  MNL: 472,
+  BNE: 471,
+  SEL: 473,
 };
 
 /** Backward compatibility alias for event schedule roots */
@@ -83,6 +98,10 @@ export function isYouthCategoryName(name?: string | null): boolean {
   return /youth/i.test(name || '');
 }
 
+export function isKidsCategoryName(name?: string | null): boolean {
+  return /\bkids\b/i.test(name || '');
+}
+
 export function scheduleRootsForCategory({
   campus,
   categoryName,
@@ -106,7 +125,15 @@ export function scheduleRootsForCategory({
     if (categoryId === YOUTH_SERVICES_CATEGORY_ID && campus) {
       return [CAMPUS_YOUTH_SCHEDULE_ROOT_IDS[campus]];
     }
+    if (categoryId === KIDS_SERVICES_CATEGORY_ID && campus) {
+      return [CAMPUS_KIDS_SCHEDULE_ROOT_IDS[campus]];
+    }
     return [categoryId];
+  }
+
+  // (e.g. "MNL | Kids Service", "KIDS SERVICES", or categoryId 470)
+  if (isKidsCategoryName(categoryName) || categoryId === KIDS_SERVICES_CATEGORY_ID) {
+    return [campus ? CAMPUS_KIDS_SCHEDULE_ROOT_IDS[campus] : KIDS_SERVICES_CATEGORY_ID];
   }
 
   // Youth is tested first: it is the narrower label, and both tests are bare
@@ -123,7 +150,7 @@ export function scheduleRootsForCategory({
     return [campus ? CAMPUS_SUNDAY_SCHEDULE_ROOT_IDS[campus] : SUNDAY_SERVICES_CATEGORY_ID];
   }
 
-  // If categoryId was passed but not Sunday or Youth, it's an event (e.g. Family Night, Movement Night)
+  // Any other category is an event (e.g. "MNL | ALL EVENTS")
   if (categoryId != null) {
     return [campus ? CAMPUS_EVENT_SCHEDULE_ROOT_IDS[campus] : ALL_EVENTS_CATEGORY_ID];
   }

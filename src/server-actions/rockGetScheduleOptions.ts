@@ -5,9 +5,12 @@ import { rockGet } from '@/server-actions/internal/rockFetch';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 import { extractRunsheetCampus } from '@/lib/runsheetCampus';
 import { GROW_CONTENT_CHANNEL_CATEGORY_ID } from '@/lib/growRunsheets';
+import { hasFullEditorRole } from '@/lib/permissions';
 import { expandIcalOccurrences } from '@/lib/scheduleOccurrences';
 import {
   descendantCategoryIds,
+  isKidsCategoryName,
+  KIDS_SERVICES_CATEGORY_ID,
   scheduleRootsForCategory,
   SCHEDULE_CATEGORY_ENTITY_TYPE_ID,
   YOUTH_SERVICES_CATEGORY_ID,
@@ -54,9 +57,11 @@ export async function rockGetScheduleOptions(
     const access = assertRunsheetViewAccess(session);
     if (!access.allowed) return { success: false, schedules: [], error: access.error };
 
-    // Grow Class runsheets are one per Grow Courses topic occurrence; the
-    // form autofills the topic's next date from `nextDate`.
-    if (categoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID) {
+    // A Grow-only editor (Grow Course Head) creates Grow runsheets only, one
+    // per Grow Courses topic occurrence; the form autofills the topic's next
+    // date from `nextDate`. Full editors see the whole MNL | ALL EVENTS list,
+    // Grow Courses included.
+    if (categoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID && !hasFullEditorRole(session)) {
       const today = manilaToday();
       const schedules: ScheduleOption[] = [];
       for (const s of await fetchGrowSchedules()) {
@@ -114,16 +119,22 @@ export async function rockGetScheduleOptions(
       EffectiveEndDate?: string;
     }> | null;
 
-    // 1. Exclude Kids services
-    let list = (rawSchedules || []).filter(
-      (s) => !s.Name.toLowerCase().includes('kids')
-    );
-
-    // 2. Youth Category vs Non-Youth Category filtering
     const categoryTree = (categoryRows || []).map((c) => ({
       id: Number(c.Id),
       parentId: c.ParentCategoryId ?? null,
     }));
+
+    // 1. Kids schedules belong to Kids categories only, and vice versa.
+    const kidsCategoryIds = new Set(descendantCategoryIds(categoryTree, KIDS_SERVICES_CATEGORY_ID));
+    const isKidsCategory =
+      isKidsCategoryName(contentCategory?.Name) ||
+      (categoryId != null && kidsCategoryIds.has(categoryId));
+    let list = (rawSchedules || []).filter((s) => {
+      const isKidsSchedule = s.Name.toLowerCase().includes('kids') || kidsCategoryIds.has(s.CategoryId);
+      return isKidsCategory ? isKidsSchedule : !isKidsSchedule;
+    });
+
+    // 2. Youth Category vs Non-Youth Category filtering
     const youthCategoryIds = new Set(
       descendantCategoryIds(categoryTree, YOUTH_SERVICES_CATEGORY_ID)
     );

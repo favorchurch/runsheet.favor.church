@@ -16,6 +16,7 @@ import { GROW_EDITOR_ROLE, GROW_VIEWER_ROLE, ROSTERED_VIEWER_ROLE } from '@/lib/
 import { GROW_TEAM_GROUP_ID } from '@/lib/growRunsheets';
 import { buildRosteredViewerKeys, type RosteredAttendance } from '@/lib/rosterAccess';
 import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
+import { fetchKidsScheduleIds } from '@/server-actions/internal/rockKidsSchedules';
 
 const ROCK_RECORD_STATUS_ACTIVE = 3;
 
@@ -465,10 +466,11 @@ export async function rockResolveAccess(personIds: number[], fallbackEmail?: str
     // session.
     try {
       const inGrowTeam = memberships.some((m: any) => Number(m.GroupId) === GROW_TEAM_GROUP_ID);
-      const [roleNamesById, roster, growSchedules] = await Promise.all([
+      const [roleNamesById, roster, growSchedules, kidsScheduleIds] = await Promise.all([
         inGrowTeam ? fetchGroupType23RoleNames() : Promise.resolve(new Map<number, string>()),
         fetchRosteredOccurrences(membershipPersonIds),
         fetchGrowSchedules(),
+        fetchKidsScheduleIds(),
       ]);
       const growScheduleIds = new Set(growSchedules.map((s) => s.id));
       const grow = resolveGrowAccess({
@@ -483,7 +485,7 @@ export async function rockResolveAccess(personIds: number[], fallbackEmail?: str
       if (grow.growEditor) rolesMap[GROW_EDITOR_ROLE] = [String(GROW_TEAM_GROUP_ID)];
       if (grow.growViewer.length > 0) rolesMap[GROW_VIEWER_ROLE] = grow.growViewer;
 
-      const rosteredKeys = buildRosteredViewerKeys(roster.attendances, growScheduleIds);
+      const rosteredKeys = buildRosteredViewerKeys(roster.attendances, growScheduleIds, kidsScheduleIds);
       if (rosteredKeys.length > 0) rolesMap[ROSTERED_VIEWER_ROLE] = rosteredKeys;
     } catch (error) {
       console.warn('[runsheet-access] roster/Grow access lookup failed; granting no roster or Grow access', error);

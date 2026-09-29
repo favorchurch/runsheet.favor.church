@@ -40,7 +40,7 @@ describe('CreateRunsheetForm Grow course creation', () => {
     (getRockContentChannelOptions as jest.Mock).mockResolvedValue({
       success: true,
       types: [{ id: 13, name: 'Service Runsheet' }],
-      categories: [{ id: 338, name: 'Grow Class' }],
+      categories: [{ id: 590, name: 'MNL | ALL EVENTS' }],
     });
     (rockGetScheduleOptions as jest.Mock).mockImplementation(async () => ({
       success: true,
@@ -117,17 +117,17 @@ describe('CreateRunsheetForm Grow course creation', () => {
     expect(rockCreateServiceRunsheet).toHaveBeenCalledWith(
       expect.stringContaining('October 4, 2026'),
       13,
-      338
+      590
     );
     expect(rockCreateServiceRunsheet).toHaveBeenCalledWith(
       expect.stringContaining('October 11, 2026'),
       13,
-      338
+      590
     );
     expect(rockCreateServiceRunsheet).toHaveBeenCalledWith(
       expect.stringContaining('October 18, 2026'),
       13,
-      338
+      590
     );
     expect(onCreated).toHaveBeenCalledTimes(1);
   });
@@ -154,7 +154,7 @@ describe('CreateRunsheetForm Grow course creation', () => {
     // this edit), and a count would only pass if waitFor happened to sample
     // between the second and third.
     await waitFor(() => {
-      expect(rockGetScheduleOptions).toHaveBeenLastCalledWith(338, '2026-09-30');
+      expect(rockGetScheduleOptions).toHaveBeenLastCalledWith(590, '2026-09-30');
     });
 
     // Ensure the date is NOT reverted to 2026-10-04
@@ -171,7 +171,7 @@ describe('CreateRunsheetForm Grow course creation', () => {
       expect(rockCreateServiceRunsheet).toHaveBeenCalledWith(
         'MNL Grow - Build x FDNA // September 30, 2026 // 3PM',
         13,
-        338
+        590
       );
     });
   });

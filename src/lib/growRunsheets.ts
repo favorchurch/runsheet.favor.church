@@ -9,7 +9,8 @@ import { extractChannelDate } from './runsheetDate';
 import { expandIcalOccurrences, type ScheduleOccurrence } from './scheduleOccurrences';
 
 export const GROW_SCHEDULE_CATEGORY_ID = 483;
-export const GROW_CONTENT_CHANNEL_CATEGORY_ID = 338;
+/** Grow runsheets are filed under "MNL | ALL EVENTS" (the old "MNL | Grow Class", 338, was retired). */
+export const GROW_CONTENT_CHANNEL_CATEGORY_ID = 590;
 export const GROW_TEAM_GROUP_ID = 19108;
 export const GROW_EDITOR_ROLE_NAMES = ['overall head', 'unit head'];
 export const GROW_SYNC_CAP = 50;
