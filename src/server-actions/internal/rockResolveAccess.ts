@@ -15,7 +15,12 @@ import { AuthAccess, AuthContact, AuthRolesMap } from '@/types/AuthUser';
 import { resolveGrowAccess } from '@/lib/growAccessPolicy';
 import { GROW_EDITOR_ROLE, GROW_VIEWER_ROLE, ROSTERED_VIEWER_ROLE } from '@/lib/permissions';
 import { GROW_TEAM_GROUP_ID } from '@/lib/growRunsheets';
-import { buildRosteredViewerKeys, type RosteredAttendance } from '@/lib/rosterAccess';
+import {
+  buildRosteredViewerKeys,
+  rosteredAttendanceFromOccurrence,
+  type RosteredAttendance,
+} from '@/lib/rosterAccess';
+import { icalStartTime } from '@/lib/scheduleOccurrences';
 import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
 import { fetchKidsScheduleIds } from '@/server-actions/internal/rockKidsSchedules';
 
@@ -256,22 +261,46 @@ async function fetchRosteredOccurrences(personIds: number[]): Promise<{
 
   const occurrences = ((await rawRockGet('/AttendanceOccurrences', {
     $filter: orFilter('Id', occurrenceIds),
-    $select: 'Id,ScheduleId,OccurrenceDate',
+    $select: 'Id,ScheduleId,OccurrenceDate,GroupId',
     $top: 500,
   })) || []) as any[];
-  const scheduleByOccurrence = new Map<number, number>(
-    occurrences.filter((o) => o.ScheduleId != null).map((o) => [Number(o.Id), Number(o.ScheduleId)]),
+  const occurrenceById = new Map<number, any>(occurrences.map((o) => [Number(o.Id), o]));
+
+  // Check-in overwrites the attendance's start time and clears its campus, so
+  // the service time comes from the schedule and the campus from the team.
+  const scheduleIds = [...new Set(occurrences.map((o) => Number(o.ScheduleId)).filter((id) => id > 0))];
+  const groupIds = [...new Set(occurrences.map((o) => Number(o.GroupId)).filter((id) => id > 0))];
+  const [schedules, groups] = await Promise.all([
+    scheduleIds.length
+      ? (rawRockGet('/Schedules', { $filter: orFilter('Id', scheduleIds), $select: 'Id,iCalendarContent', $top: 500 }) as Promise<any[] | null>)
+      : Promise.resolve([]),
+    groupIds.length
+      ? (rawRockGet('/Groups', { $filter: orFilter('Id', groupIds), $select: 'Id,CampusId', $top: 500 }) as Promise<any[] | null>)
+      : Promise.resolve([]),
+  ]);
+  const startTimeBySchedule = new Map<number, string | null>(
+    (schedules || []).map((sc) => [Number(sc.Id), icalStartTime(String(sc.iCalendarContent || ''))]),
+  );
+  const campusByGroup = new Map<number, number | null>(
+    (groups || []).map((g) => [Number(g.Id), g.CampusId != null ? Number(g.CampusId) : null]),
   );
 
   return {
     grow: occurrences
       .filter((o) => o.ScheduleId != null && o.OccurrenceDate)
       .map((o) => ({ scheduleId: Number(o.ScheduleId), occurrenceDate: String(o.OccurrenceDate) })),
-    attendances: rawAttendances.map((a) => ({
-      campusId: a.CampusId != null ? Number(a.CampusId) : null,
-      startDateTime: String(a.StartDateTime || ''),
-      scheduleId: scheduleByOccurrence.get(Number(a.OccurrenceId)) ?? null,
-    })),
+    attendances: rawAttendances.map((a) => {
+      const occ = occurrenceById.get(Number(a.OccurrenceId));
+      const scheduleId = occ?.ScheduleId != null ? Number(occ.ScheduleId) : null;
+      return rosteredAttendanceFromOccurrence({
+        attendanceCampusId: a.CampusId != null ? Number(a.CampusId) : null,
+        attendanceStartDateTime: String(a.StartDateTime || ''),
+        occurrenceDate: occ?.OccurrenceDate ? String(occ.OccurrenceDate) : null,
+        scheduleId,
+        scheduleStartTime: scheduleId !== null ? startTimeBySchedule.get(scheduleId) ?? null : null,
+        groupCampusId: occ?.GroupId != null ? campusByGroup.get(Number(occ.GroupId)) ?? null : null,
+      });
+    }),
   };
 }
 

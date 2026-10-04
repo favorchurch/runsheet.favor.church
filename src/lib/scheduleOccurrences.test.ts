@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { expandIcalOccurrences, formatIcalTime } from './scheduleOccurrences';
+import { expandIcalOccurrences, formatIcalTime, icalStartTime } from './scheduleOccurrences';
 
 const wrap = (body: string) =>
   `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n${body}\r\nEND:VEVENT\r\nEND:VCALENDAR`;
@@ -59,5 +59,16 @@ describe('expandIcalOccurrences', () => {
 
   it('returns [] for content with no DTSTART', () => {
     expect(expandIcalOccurrences('', '2026-01-01')).toEqual([]);
+  });
+});
+
+describe('icalStartTime', () => {
+  it('reads DTSTART as HH:MM:SS', () => {
+    expect(icalStartTime('BEGIN:VEVENT\r\nDTSTART:20260816T113000\r\nRRULE:FREQ=WEEKLY;BYDAY=SU\r\nEND:VEVENT')).toBe('11:30:00');
+  });
+
+  it('returns null for a date-only or missing DTSTART', () => {
+    expect(icalStartTime('DTSTART:20260816')).toBeNull();
+    expect(icalStartTime('')).toBeNull();
   });
 });
