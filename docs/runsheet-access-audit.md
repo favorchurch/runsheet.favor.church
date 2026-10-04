@@ -19,10 +19,17 @@ read-only audit shipped in `scripts/audit-runsheet-access.ts`. Figures labelled
 | Overall Head (role 20) or Unit Head (role 55) of a `* Events Team` (GroupType 23), any campus | Edit on the team's resolved campus | `editor` + `viewer`, own-campus scope |
 | Any other `* Events Team` member (GroupType 23) | View only on the team's resolved campus | `viewer`, own-campus scope |
 | Overall Head (role 20) or Unit Head (role 55) of a `* Deaf Ministry` (GroupType 23) | View only on the team's resolved campus | `viewer`, own-campus scope |
+| `MNL/BNE/SEL Department Admins` (groups 57919/57920/57921, GroupType 28 "Access" tree) | View only on that campus | `viewer`, own-campus view scope |
+| `GLB Department Admins` (group 103375) | View only on every campus | `viewer`, `runsheetCampuses: ['ALL']` |
+| Any other GroupType 28 group outside the Org Chart campus roots (e.g. Favor Calls Admins) | Nothing | no runsheet role |
 | Other Ministry Team members (GroupType 23) | Only the runsheets they are rostered on | `rosteredViewer` |
 | Everyone else, including authenticated users without a Rock membership | Denied on every runsheet server action | empty runsheet roles and campus scope |
 
 Every global group match adds `ALL` scope, including groups 32879, 4, and 5.
+View and edit scopes are separate: `runsheetCampuses` is what a user may
+view and `runsheetEditCampuses` what they may edit, so a view-only grant
+(Events Team member, Deaf Ministry head, Department Admin) never widens a
+campus editor's edit rights.
 GroupType 28 and 23 campus scope is resolved through the existing ancestry
 roots. GroupType 23 leadership uses Rock's live `IsLeader` values; the app's
 documented fallback role ids are used only when that Rock lookup fails.

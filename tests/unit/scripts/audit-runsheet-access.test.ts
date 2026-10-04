@@ -61,11 +61,13 @@ describe('runsheet access audit', () => {
     expect(byName.get('Events Member')?.rolesMap.editor).toBeUndefined();
     expect(byName.get('Events Captain')?.rolesMap.editor).toBeUndefined();
     expect(byName.get('Potential Captain')?.rolesMap.editor).toBeUndefined();
-    expect(byName.get('Orphan Leader')?.rolesMap.viewer).toContain('912');
+    // A team with no resolvable campus grants nothing, not an empty-scope role.
+    expect(byName.get('Orphan Leader')?.rolesMap.viewer).toBeUndefined();
+    expect(byName.get('Orphan Leader')?.rolesMap.editor).toBeUndefined();
     expect(byName.get('Orphan Leader')?.runsheetCampuses).toEqual([]);
     expect(report.leaderRoles.find((role) => role.id === 69)?.isLeader).toBe(false);
     expect(report.eventsTeamGroupsWithoutCampus).toEqual([{ groupId: 912, name: 'Orphan Events Team' }]);
-    expect(report.summary.editorCount).toBe(7);
+    expect(report.summary.editorCount).toBe(6);
     expect(report.summary.allCampusEditorCount).toBe(3);
   });
 

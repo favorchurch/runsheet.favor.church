@@ -8,7 +8,7 @@ import type { AuthAccess, AuthRolesMap } from '@/types/AuthUser';
 
 type RunsheetSession = {
   rolesMap?: AuthRolesMap;
-  access?: Pick<AuthAccess, 'runsheetCampuses'>;
+  access?: Pick<AuthAccess, 'runsheetCampuses' | 'runsheetEditCampuses'>;
 } | null | undefined;
 
 export interface RunsheetAccessDecision {

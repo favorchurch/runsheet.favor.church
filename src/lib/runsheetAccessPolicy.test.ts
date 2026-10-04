@@ -93,6 +93,57 @@ describe('runsheet access policy', () => {
     expect(result).toMatchObject({ editorGroupIds: [], viewerGroupIds: [], runsheetCampuses: [] });
   });
 
+  it.each([
+    [57919, 'MNL Department Admins', 103377, 'MNL'],
+    [57920, 'BNE Department Admins', 103378, 'BNE'],
+    [57921, 'SEL Department Admins', 103379, 'SEL'],
+    [103375, 'GLB Department Admins', 103374, ALL_CAMPUSES],
+  ])('gives %s (%s) a view-only %s scope', (groupId, name, parentGroupId, campus) => {
+    const result = resolveRunsheetAccessPolicy(
+      [{ groupId, groupTypeId: 28, groupRoleId: 1 }],
+      new Map([[groupId, { groupId, groupTypeId: 28, name, parentGroupId }]]),
+      new Map([[32893, { groupId: 32893, groupTypeId: 28, parentGroupId: null, campus: 'MNL' }]]),
+    );
+
+    expect(result.editorGroupIds).toEqual([]);
+    expect(result.viewerGroupIds).toEqual([String(groupId)]);
+    expect(result.runsheetCampuses).toEqual([campus]);
+    expect(result.runsheetEditCampuses).toEqual([]);
+  });
+
+  it('grants nothing to other Access-tree groups such as Favor Calls Admins', () => {
+    const result = resolveRunsheetAccessPolicy(
+      [{ groupId: 133453, groupTypeId: 28, groupRoleId: 1 }],
+      new Map([[133453, { groupId: 133453, groupTypeId: 28, name: 'MNL Favor Calls Admins', parentGroupId: 103377 }]]),
+      new Map([[32893, { groupId: 32893, groupTypeId: 28, parentGroupId: null, campus: 'MNL' }]]),
+    );
+
+    expect(result).toMatchObject({ editorGroupIds: [], viewerGroupIds: [], runsheetCampuses: [], runsheetEditCampuses: [] });
+  });
+
+  it('keeps view-only campuses out of the edit campuses', () => {
+    const result = resolveRunsheetAccessPolicy(
+      [
+        { groupId: 7001, groupTypeId: 28, groupRoleId: 1 },
+        { groupId: 103375, groupTypeId: 28, groupRoleId: 1 },
+        { groupId: 19109, groupTypeId: 23, groupRoleId: 19 },
+      ],
+      new Map([
+        [7001, { groupId: 7001, groupTypeId: 28, name: 'BNE Staff', parentGroupId: 32898 }],
+        [103375, { groupId: 103375, groupTypeId: 28, name: 'GLB Department Admins', parentGroupId: 103374 }],
+        [19109, { groupId: 19109, groupTypeId: 23, name: 'MNL Events Team', parentGroupId: 57 }],
+      ]),
+      new Map([
+        [32898, { groupId: 32898, groupTypeId: 28, parentGroupId: null, campus: 'BNE' }],
+        [57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' }],
+      ]),
+    );
+
+    expect(result.editorGroupIds).toEqual(['7001']);
+    expect(result.runsheetCampuses).toEqual(['BNE', ALL_CAMPUSES, 'MNL']);
+    expect(result.runsheetEditCampuses).toEqual(['BNE']);
+  });
+
   it('keeps a YTH Events Team leader view-only for its MNL campus', () => {
     const result = resolveRunsheetAccessPolicy(
       [{ groupId: 32929, groupTypeId: 23, groupRoleId: 69 }],
@@ -190,7 +241,8 @@ describe('runsheet access policy', () => {
       new Map([[57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' }]]),
     );
 
-    expect(result.editorGroupIds).toEqual(['7003']);
+    // An Org Unit group with no resolvable campus grants nothing.
+    expect(result.editorGroupIds).toEqual([]);
     expect(result.runsheetCampuses).toEqual([]);
   });
 

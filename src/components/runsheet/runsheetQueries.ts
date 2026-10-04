@@ -49,6 +49,7 @@ export function getRunsheetAccessScope(user?: AuthUser | null): string {
       campusIds: sortedNumbers(access?.campusIds),
       connectLeaderGroupIds: sortedNumbers(access?.connectLeaderGroupIds),
       runsheetCampuses: sortedStrings(access?.runsheetCampuses),
+      runsheetEditCampuses: sortedStrings(access?.runsheetEditCampuses),
       sections,
     },
     roles: sortedRoles(user?.rolesMap),

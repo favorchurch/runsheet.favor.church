@@ -6,14 +6,23 @@ import { canAccessRunsheetChannel } from './runsheetCampus';
 import { growOccurrenceKey, matchGrowRunsheet, type GrowSchedule } from './growRunsheets';
 import { GROW_EDITOR_ROLE, GROW_VIEWER_ROLE, ROSTERED_VIEWER_ROLE } from './permissions';
 import { channelRosterKey } from './rosterAccess';
-import { getRunsheetKind } from './runsheetKind';
+import { getRunsheetKind, isGrowRunsheetTitle } from './runsheetKind';
 
 export type ChannelAccessSession = {
   rolesMap?: AuthRolesMap;
-  access?: { runsheetCampuses?: string[] };
+  access?: { runsheetCampuses?: string[]; runsheetEditCampuses?: string[] };
 } | null | undefined;
 
 const has = (s: ChannelAccessSession, role: string) => Boolean(s?.rolesMap?.[role]?.length);
+
+/**
+ * Campuses the session may edit. View-only campuses (Events Team members,
+ * Deaf Ministry heads, Department Admins) never widen this. Sessions cached
+ * before the split carry only `runsheetCampuses`.
+ */
+export function runsheetEditCampuses(session: ChannelAccessSession): string[] {
+  return session?.access?.runsheetEditCampuses ?? session?.access?.runsheetCampuses ?? [];
+}
 
 export function canViewRunsheetChannel(
   session: ChannelAccessSession,
@@ -42,8 +51,21 @@ export function canEditRunsheetChannel(
   channelName: string,
   growSchedules: GrowSchedule[],
 ): boolean {
-  if (has(session, 'editor') && canAccessRunsheetChannel(session?.access?.runsheetCampuses, channelName)) {
+  if (has(session, 'editor') && canAccessRunsheetChannel(runsheetEditCampuses(session), channelName)) {
     return true;
   }
   return has(session, GROW_EDITOR_ROLE) && matchGrowRunsheet(channelName, growSchedules) !== null;
+}
+
+/**
+ * Client-side hint for whether the open runsheet is editable, so a user who
+ * edits one campus but only views another does not get edit controls there.
+ * The server's `assertRunsheetEditAccess` remains the authority (it matches
+ * Grow titles against live schedules; here a Grow-looking title suffices).
+ */
+export function canEditRunsheetTitle(session: ChannelAccessSession, channelName: string): boolean {
+  if (has(session, 'editor') && canAccessRunsheetChannel(runsheetEditCampuses(session), channelName)) {
+    return true;
+  }
+  return has(session, GROW_EDITOR_ROLE) && isGrowRunsheetTitle(channelName);
 }
