@@ -32,6 +32,45 @@ function visibleColumns(columns: DynamicAttributeColumn[] | undefined, order: st
   return [...filtered].sort((a, b) => (rank.get(a.key) ?? 9999) - (rank.get(b.key) ?? 9999));
 }
 
+const START_WIDTH = 88;
+const DURATION_WIDTH = 78;
+const TITLE_WIDTH = 140;
+const WIDE_COLUMN_WIDTH = 150;
+const DEFAULT_COLUMN_WIDTH = 100;
+
+/**
+ * Width for one dynamic diff column, mirroring `getColumnStyle` in RunsheetTableEditor
+ * so a column is not one width in the editor and another in the diff beside it.
+ * Description / Notes / Main Instrument are the wide ones there; everything else
+ * falls back to the default.
+ */
+function diffColumnWidth(column: DynamicAttributeColumn, widths?: Record<string, number>): number {
+  // A user-resized column is persisted in initialColumnMetadata.widths and honoured
+  // first by getColumnStyle; honour it here too, or a 220px Notes column in the
+  // editor renders 150px in the diff beside it.
+  const persisted = widths?.[column.key];
+  if (persisted) return persisted;
+  const upperKey = column.key.toUpperCase();
+  const lowerName = (column.name || '').toLowerCase();
+  const isWide =
+    upperKey === 'DESCRIPTION' || upperKey === 'DETIAL' ||
+    lowerName.includes('description') || lowerName.includes('detail') ||
+    upperKey === 'MAININSTRUMENT' || upperKey === 'MAIN_INSTRUMENT' ||
+    lowerName.includes('main instrument') || lowerName.includes('instrument') ||
+    upperKey === 'PROGRAMNOTES' || upperKey === 'PROGRAM_NOTES' || upperKey === 'PROGRAM NOTES' ||
+    upperKey === 'NOTES' || lowerName.includes('program note') || lowerName.includes('notes');
+  return isWide ? WIDE_COLUMN_WIDTH : DEFAULT_COLUMN_WIDTH;
+}
+
+/** Total width the diff table needs before it is allowed to compress. */
+function diffTableMinWidth(columns: DynamicAttributeColumn[], widths?: Record<string, number>): number {
+  const start = widths?.start || widths?.START || START_WIDTH;
+  const duration = widths?.duration || widths?.DURATION || DURATION_WIDTH;
+  const title = widths?.title || widths?.ACTIVITYTITLE || TITLE_WIDTH;
+  return start + duration + title +
+    columns.reduce((total, column) => total + diffColumnWidth(column, widths), 0);
+}
+
 function Cell({ cell, mono = false }: { cell: InlineDiffCell; mono?: boolean }) {
   const render = (value: string) => mono ? <span className="font-mono font-semibold">{value}</span> : <RichTextContent value={value} />;
   if (cell.status === 'same') return <div data-diff-status="same" className="min-h-6 px-2 py-1">{render(cell.sourceValue)}</div>;
@@ -53,6 +92,7 @@ function Cell({ cell, mono = false }: { cell: InlineDiffCell; mono?: boolean }) 
 
 function DiffTable({ source, target, targetLabel }: { source: Props; target: RunsheetDetails; targetLabel: string }) {
   const columns = useMemo(() => visibleColumns(source.columns, source.initialColumnMetadata?.order), [source.columns, source.initialColumnMetadata?.order]);
+  const widths = source.initialColumnMetadata?.widths;
   const rows = useMemo(() => buildInlineDiffRows({
     sourceRows: source.initialItems,
     targetRows: target.items,
@@ -68,13 +108,23 @@ function DiffTable({ source, target, targetLabel }: { source: Props; target: Run
         <div className="font-bold text-slate-900">Diff: {label(source.channelName)} → {targetLabel}</div>
         <div className="mt-0.5 text-[10px] font-semibold text-slate-500">CURRENT is muted in parentheses · DIFF additions are yellow · comparison is read-only</div>
       </div>
-      <div className="w-full overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-xs">
-        <table className="w-full min-w-full table-fixed border-collapse text-[11px] text-slate-900">
+      <div className="w-full overflow-x-auto overscroll-x-contain rounded-xl border border-slate-300 bg-white shadow-xs">
+        {/* `table-fixed w-full` alone caps the table at the wrapper width, so the
+            overflow-x-auto above never engages and the per-column widths below are
+            ignored — on a phone the columns just compress. An explicit min-width
+            equal to the sum of the column widths makes the table overflow and scroll
+            instead. */}
+        <table
+          className="w-full table-fixed border-collapse text-[11px] text-slate-900"
+          style={{ minWidth: `${diffTableMinWidth(columns, widths)}px` }}
+        >
           <thead className="bg-slate-900 text-white"><tr>
-            <th className="w-[88px] border-r border-slate-700 p-1">Start</th>
-            <th className="w-[78px] border-r border-slate-700 p-1">Duration</th>
-            <th className="w-[140px] border-r border-slate-700 p-1">Activity Title</th>
-            {columns.map((column) => <th key={column.key} className="min-w-[100px] border-r border-slate-700 p-1">{column.name}</th>)}
+            <th className="border-r border-slate-700 p-1" style={{ width: `${widths?.start || widths?.START || START_WIDTH}px` }}>Start</th>
+            <th className="border-r border-slate-700 p-1" style={{ width: `${widths?.duration || widths?.DURATION || DURATION_WIDTH}px` }}>Duration</th>
+            <th className="border-r border-slate-700 p-1" style={{ width: `${widths?.title || widths?.ACTIVITYTITLE || TITLE_WIDTH}px` }}>Activity Title</th>
+            {columns.map((column) => (
+              <th key={column.key} className="border-r border-slate-700 p-1" style={{ width: `${diffColumnWidth(column, widths)}px` }}>{column.name}</th>
+            ))}
           </tr></thead>
           <tbody>
             {rows.map((row) => (
@@ -147,15 +197,15 @@ export function RunsheetTableEditor(props: Props) {
     <div className="flex w-full min-w-0 flex-col gap-2.5">
       {siblings.length > 0 || error ? (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 shadow-xs">
-          <div role="group" aria-label="Inline service diff" className="inline-flex overflow-hidden rounded-lg border border-slate-300">
-            <button type="button" aria-label="Clear inline diff" disabled={!targetId} onClick={clear} className="h-7 min-w-8 border-r border-slate-200 bg-rose-50 px-2 text-sm font-black text-rose-700 disabled:opacity-30">−</button>
-            <button type="button" disabled={dirty || siblings.length === 0} onClick={() => setPickerOpen((open) => !open)} className="h-7 bg-white px-3 text-[11px] font-extrabold text-slate-800 disabled:text-slate-400">Diff</button>
-            <button type="button" aria-label="Choose service to diff" disabled={dirty || siblings.length === 0} onClick={() => setPickerOpen((open) => !open)} className="h-7 min-w-8 border-l border-slate-200 bg-emerald-50 px-2 text-sm font-black text-emerald-700 disabled:opacity-30">+</button>
+          <div role="group" aria-label="Inline service diff" className="inline-flex gap-2 sm:gap-0 sm:overflow-hidden sm:rounded-lg sm:border sm:border-slate-300">
+            <button type="button" aria-label="Clear inline diff" disabled={!targetId} onClick={clear} className="h-11 min-w-11 rounded-lg border border-slate-300 bg-rose-50 px-2 sm:rounded-none sm:border-0 sm:border-r sm:border-slate-200 text-sm font-black text-rose-700 disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:h-7 sm:min-w-8">−</button>
+            <button type="button" disabled={dirty || siblings.length === 0} onClick={() => setPickerOpen((open) => !open)} className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-[11px] sm:rounded-none sm:border-0 font-extrabold text-slate-800 disabled:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:h-7 sm:px-3">Diff</button>
+            <button type="button" aria-label="Choose service to diff" disabled={dirty || siblings.length === 0} onClick={() => setPickerOpen((open) => !open)} className="h-11 min-w-11 rounded-lg border border-slate-300 bg-emerald-50 px-2 sm:rounded-none sm:border-0 sm:border-l sm:border-slate-200 text-sm font-black text-emerald-700 disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pink-600 sm:h-7 sm:min-w-8">+</button>
           </div>
           {loading ? <span className="text-[10px] font-semibold text-slate-500">Loading Diff…</span> : targetId && targetLabel ? <span className="rounded border border-yellow-300 bg-yellow-50 px-2 py-0.5 text-[10px] font-bold">Diff vs {targetLabel}</span> : null}
           {dirty ? <span className="text-[10px] font-semibold text-slate-500">Save changes before diffing.</span> : null}
           {error ? <span className="text-[10px] font-semibold text-rose-700">{error}</span> : null}
-          {pickerOpen ? <select aria-label="Diff against service" defaultValue="" onChange={(event) => { const id = Number(event.target.value); if (id) void choose(id); }} className="h-7 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-bold"><option value="" disabled>Choose service…</option>{siblings.map((sibling) => <option key={sibling.channelId} value={sibling.channelId}>{label(sibling.name, sibling.time)}</option>)}</select> : null}
+          {pickerOpen ? <select aria-label="Diff against service" defaultValue="" onChange={(event) => { const id = Number(event.target.value); if (id) void choose(id); }} className="h-11 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-600 sm:h-7"><option value="" disabled>Choose service…</option>{siblings.map((sibling) => <option key={sibling.channelId} value={sibling.channelId}>{label(sibling.name, sibling.time)}</option>)}</select> : null}
         </div>
       ) : null}
 
