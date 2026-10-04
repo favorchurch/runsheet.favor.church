@@ -3,6 +3,7 @@ import 'server-only';
 import { ROCK_API_URL, ROCK_API_KEY, ROCK_FETCH_REVALIDATE_SECONDS } from '@/constants/server';
 import { type RunsheetCampusCode } from '@/lib/runsheetCampus';
 import {
+  DEPARTMENT_ADMIN_VIEW_GROUPS,
   GLOBAL_EDIT_GROUP_IDS,
   GROUP_TYPE_23_LEADER_ROLE_IDS,
   resolveRunsheetAccessPolicy,
@@ -141,7 +142,8 @@ async function fetchTeamMemberships(personId: number) {
       typeId === 1 ||
       typeId === 23 ||
       typeId === 28 ||
-      (GLOBAL_EDIT_GROUP_IDS as readonly number[]).includes(groupId)
+      (GLOBAL_EDIT_GROUP_IDS as readonly number[]).includes(groupId) ||
+      groupId in DEPARTMENT_ADMIN_VIEW_GROUPS
     );
   });
 }
