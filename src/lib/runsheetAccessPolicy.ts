@@ -21,6 +21,18 @@ export const DEAF_MINISTRY_NAME_PATTERN = /deaf ministry$/i;
 /** GroupType 23 roles that may view their Deaf Ministry's campus runsheets (20 = Overall Head, 55 = Unit Head). */
 export const DEAF_MINISTRY_VIEWER_ROLE_IDS = [20, 55] as const;
 
+/**
+ * Department Admins live in Rock's "Access" tree (GroupType 28), outside the
+ * Org Chart campus roots. They get a view-only scope: their own campus, or
+ * every campus for GLB.
+ */
+export const DEPARTMENT_ADMIN_VIEW_GROUPS: Readonly<Record<number, RunsheetCampusCode | typeof ALL_CAMPUSES>> = {
+  57919: 'MNL',
+  57920: 'BNE',
+  57921: 'SEL',
+  103375: ALL_CAMPUSES,
+};
+
 /** Fallback only: Rock's GroupTypeRole.IsLeader lookup is authoritative. */
 export const GROUP_TYPE_23_LEADER_ROLE_IDS = [20, 55, 69, 75] as const;
 
@@ -41,7 +53,10 @@ export interface RunsheetPolicyGroup {
 export interface RunsheetAccessPolicyResult {
   editorGroupIds: string[];
   viewerGroupIds: string[];
+  /** Campuses the user may view. */
   runsheetCampuses: string[];
+  /** Campuses the user may edit; always a subset of `runsheetCampuses`. */
+  runsheetEditCampuses: string[];
   usedLeaderRoleFallback: boolean;
 }
 
@@ -98,44 +113,66 @@ export function resolveRunsheetAccessPolicy(
   const editorGroupIds: string[] = [];
   const viewerGroupIds: string[] = [];
   const runsheetCampuses: string[] = [];
+  const runsheetEditCampuses: string[] = [];
+  const addCampus = (target: string[], campus: string) => {
+    if (!target.includes(campus)) target.push(campus);
+  };
 
   for (const membership of memberships) {
     const group = groups.get(membership.groupId);
-    const isGlobal = isGlobalEditGroup(membership, group);
-    const isCampusEditor = (CAMPUS_EDIT_GROUP_TYPE_IDS as readonly number[]).includes(membership.groupTypeId);
+    const roleId = Number(membership.groupRoleId);
     const isMinistryMember = (CAMPUS_VIEW_GROUP_TYPE_IDS as readonly number[]).includes(membership.groupTypeId);
-    const isEventsTeam = Boolean(group?.name && EVENTS_TEAM_NAME_PATTERN.test(group.name.trim()));
-    // Ministry Teams no longer get blanket access: only Events Teams keep a
-    // campus-wide view, and only an Events Team Overall Head or Unit Head edits (own campus).
-    // Everyone else sees the runsheets they are rostered on (see lib/rosterAccess).
-    const isEventsTeamEditor =
-      isMinistryMember &&
-      isEventsTeam &&
-      (EVENTS_TEAM_EDITOR_ROLE_IDS as readonly number[]).includes(Number(membership.groupRoleId));
-    // Deaf Ministry Overall Heads and Unit Heads also get a campus-wide view.
-    const isDeafMinistryViewer =
-      isMinistryMember &&
-      Boolean(group?.name && DEAF_MINISTRY_NAME_PATTERN.test(group.name.trim())) &&
-      (DEAF_MINISTRY_VIEWER_ROLE_IDS as readonly number[]).includes(Number(membership.groupRoleId));
-    const canEdit = isGlobal || isCampusEditor || isEventsTeamEditor;
-    const canView = isGlobal || isCampusEditor || (isMinistryMember && isEventsTeam) || isDeafMinistryViewer;
+    const isOrgUnit = (CAMPUS_EDIT_GROUP_TYPE_IDS as readonly number[]).includes(membership.groupTypeId);
+    const groupName = group?.name?.trim() || '';
+    const isEventsTeam = isMinistryMember && EVENTS_TEAM_NAME_PATTERN.test(groupName);
+    const departmentAdminScope = isOrgUnit ? DEPARTMENT_ADMIN_VIEW_GROUPS[membership.groupId] : undefined;
 
-    if (!canView) continue;
+    let campus: string | null = null;
+    let canEdit = false;
 
-    if (isGlobal) {
+    if (isGlobalEditGroup(membership, group)) {
       // Every global match, including Dashboard Creator and WEB roles, must
       // carry the cross-campus scope or its edit role would see nothing.
-      if (!runsheetCampuses.includes(ALL_CAMPUSES)) runsheetCampuses.push(ALL_CAMPUSES);
-    } else if (isCampusEditor || isMinistryMember) {
-      const campus = resolveCampusFromAncestry(membership.groupId, membership.groupTypeId, groups, campusRoots);
-      if (campus && !runsheetCampuses.includes(campus)) runsheetCampuses.push(campus);
+      campus = ALL_CAMPUSES;
+      canEdit = true;
+    } else if (departmentAdminScope) {
+      campus = departmentAdminScope;
+    } else if (isOrgUnit) {
+      // Org Chart staff edit their own campus. A GroupType 28 group outside
+      // the campus roots (e.g. the "Access" tree) grants nothing.
+      campus = resolveCampusFromAncestry(membership.groupId, membership.groupTypeId, groups, campusRoots);
+      canEdit = true;
+    } else if (isMinistryMember) {
+      // Ministry Teams no longer get blanket access: Events Teams keep a
+      // campus-wide view (Overall/Unit Heads edit it), and Deaf Ministry
+      // Overall/Unit Heads get a campus-wide view. Everyone else sees the
+      // runsheets they are rostered on (see lib/rosterAccess).
+      const isDeafMinistryViewer =
+        DEAF_MINISTRY_NAME_PATTERN.test(groupName) &&
+        (DEAF_MINISTRY_VIEWER_ROLE_IDS as readonly number[]).includes(roleId);
+      if (isEventsTeam || isDeafMinistryViewer) {
+        campus = resolveCampusFromAncestry(membership.groupId, membership.groupTypeId, groups, campusRoots);
+        canEdit = isEventsTeam && (EVENTS_TEAM_EDITOR_ROLE_IDS as readonly number[]).includes(roleId);
+      }
     }
 
-    if (canEdit) addUnique(editorGroupIds, membership.groupId);
+    if (!campus) continue;
+
+    addCampus(runsheetCampuses, campus);
     addUnique(viewerGroupIds, membership.groupId);
+    if (canEdit) {
+      addCampus(runsheetEditCampuses, campus);
+      addUnique(editorGroupIds, membership.groupId);
+    }
   }
 
-  return { editorGroupIds, viewerGroupIds, runsheetCampuses, usedLeaderRoleFallback: leaderRoleLookupFailed };
+  return {
+    editorGroupIds,
+    viewerGroupIds,
+    runsheetCampuses,
+    runsheetEditCampuses,
+    usedLeaderRoleFallback: leaderRoleLookupFailed,
+  };
 }
 
 export { ALL_CAMPUSES };

@@ -9,6 +9,7 @@ import { HiArrowsRightLeft } from 'react-icons/hi2';
 import toast from 'react-hot-toast';
 import { ALL_CAMPUSES, RUNSHEET_CAMPUS_CODES, type RunsheetCampusCode } from '@/lib/runsheetCampus';
 import { canUserEditRunsheet, hasFullEditorRole } from '@/lib/permissions';
+import { canEditRunsheetTitle, runsheetEditCampuses } from '@/lib/runsheetChannelAccess';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
 import { extractChannelTime, sortRunsheetChannels } from '@/lib/runsheetDate';
 import { isGrowRunsheetTitle } from '@/lib/runsheetKind';
@@ -91,7 +92,8 @@ export function RunsheetManager({
   const router = useRouter();
   const queryClient = useQueryClient();
   const accessScope = getRunsheetAccessScope(user);
-  const userCampuses = user?.access?.runsheetCampuses || [];
+  // Templates and new runsheets follow the campuses the user may edit.
+  const userCampuses = runsheetEditCampuses(user);
   const templateCampuses: RunsheetCampusCode[] = userCampuses.includes(ALL_CAMPUSES)
     ? RUNSHEET_CAMPUS_CODES
     : RUNSHEET_CAMPUS_CODES.filter((code) => userCampuses.includes(code));
@@ -153,7 +155,9 @@ export function RunsheetManager({
     return () => clearTimeout(timer);
   }, [detailsQuery.isFetching]);
 
-  const isEditMode = canEdit && editorMode === 'edit';
+  // Per-runsheet: someone may edit one campus but only view another.
+  const canEditSelected = canEdit && (!runsheetData || canEditRunsheetTitle(user, runsheetData.name));
+  const isEditMode = canEditSelected && editorMode === 'edit';
 
   /*
    * Only edit mode can hold unsaved work. In view mode nothing is editable, so
@@ -245,8 +249,8 @@ export function RunsheetManager({
   };
 
   useEffect(() => {
-    if (!canEdit) setEditorMode('view');
-  }, [canEdit]);
+    if (!canEditSelected) setEditorMode('view');
+  }, [canEditSelected]);
 
   useEffect(() => {
     if (channelsQuery.error) console.error('Error loading channels:', channelsQuery.error);
@@ -579,7 +583,7 @@ export function RunsheetManager({
           {canEdit && showCreateForm && (
             <div className="mx-auto max-w-lg">
               <CreateRunsheetForm
-                runsheetCampuses={user?.access?.runsheetCampuses}
+                runsheetCampuses={userCampuses}
                 growOnly={!hasFullEditorRole(user)}
                 onCreated={handleRunsheetCreated}
                 onCancel={handleToggleCreateForm}
@@ -629,10 +633,10 @@ export function RunsheetManager({
                 initialSubtitle={runsheetData.subtitle}
                 stickyTopOffset={appHeaderHeight}
                 readOnly={!isEditMode}
-                canEdit={canEdit}
+                canEdit={canEditSelected}
                 editorMode={editorMode}
                 onModeChange={handleModeChange}
-                runsheetCampuses={user?.access?.runsheetCampuses}
+                runsheetCampuses={userCampuses}
                 accessScope={accessScope}
                 onCreated={handleRunsheetCreated}
                 onDeleted={() => handleRunsheetDeleted(runsheetData.channelId)}

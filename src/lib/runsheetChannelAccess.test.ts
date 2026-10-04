@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { canEditRunsheetChannel, canViewRunsheetChannel } from './runsheetChannelAccess';
+import { canEditRunsheetChannel, canEditRunsheetTitle, canViewRunsheetChannel } from './runsheetChannelAccess';
 import type { GrowSchedule } from './growRunsheets';
 
 const grow: GrowSchedule[] = [{ id: 477, name: 'MNL Grow - Bible Essentials', iCalendarContent: '' }];
@@ -76,5 +76,33 @@ describe('rostered-only view', () => {
     const events = { rolesMap: { viewer: ['19109'] }, access: { runsheetCampuses: ['MNL'] } };
     expect(canViewRunsheetChannel(events, 'MNL Crowne // October 4, 2026 // 5PM', grow)).toBe(true);
     expect(canEditRunsheetChannel(events, SUNDAY, grow)).toBe(false);
+  });
+});
+
+describe('separate edit and view campuses', () => {
+  const BNE_SUNDAY = 'BNE Chapel // September 27, 2026 // 10AM';
+  // MNL staff who is also a GLB Department Admin: views everywhere, edits MNL.
+  const mixed = {
+    rolesMap: { editor: ['900'], viewer: ['900', '103375'] },
+    access: { runsheetCampuses: ['MNL', 'ALL'], runsheetEditCampuses: ['MNL'] },
+  };
+
+  it('views every campus but edits only the edit campuses', () => {
+    expect(canViewRunsheetChannel(mixed, BNE_SUNDAY, grow)).toBe(true);
+    expect(canEditRunsheetChannel(mixed, SUNDAY, grow)).toBe(true);
+    expect(canEditRunsheetChannel(mixed, BNE_SUNDAY, grow)).toBe(false);
+    expect(canEditRunsheetTitle(mixed, SUNDAY)).toBe(true);
+    expect(canEditRunsheetTitle(mixed, BNE_SUNDAY)).toBe(false);
+  });
+
+  it('falls back to runsheetCampuses for sessions cached before the split', () => {
+    const legacy = { rolesMap: { editor: ['900'] }, access: { runsheetCampuses: ['MNL'] } };
+    expect(canEditRunsheetChannel(legacy, SUNDAY, grow)).toBe(true);
+  });
+
+  it('lets a Grow-only editor edit Grow-looking titles only', () => {
+    const s = { rolesMap: { growEditor: ['19108'] }, access: { runsheetCampuses: [] } };
+    expect(canEditRunsheetTitle(s, GROW_TITLE)).toBe(true);
+    expect(canEditRunsheetTitle(s, SUNDAY)).toBe(false);
   });
 });

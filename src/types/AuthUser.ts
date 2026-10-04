@@ -46,6 +46,11 @@ export interface AuthAccess {
    * Rock Administration, who bypass campus filtering entirely.
    */
   runsheetCampuses: string[];
+  /**
+   * Campuses the user may edit (subset of `runsheetCampuses`). Optional so
+   * sessions cached before it existed fall back to `runsheetCampuses`.
+   */
+  runsheetEditCampuses?: string[];
 }
 
 export type AuthRolesMap = Record<string, string[]>;

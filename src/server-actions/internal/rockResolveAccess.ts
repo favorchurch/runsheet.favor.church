@@ -388,6 +388,7 @@ export async function rockResolveAccess(personIds: number[], fallbackEmail?: str
 
   const rolesMap: AuthRolesMap = {};
   const runsheetCampuses = new Set<string>();
+  const runsheetEditCampuses = new Set<string>();
 
   if (membershipPersonIds.length > 0) {
     // The primary's membership fetch propagates (its failure is the signed-in
@@ -460,6 +461,7 @@ export async function rockResolveAccess(personIds: number[], fallbackEmail?: str
     if (policy.editorGroupIds.length > 0) rolesMap.editor = policy.editorGroupIds;
     if (policy.viewerGroupIds.length > 0) rolesMap.viewer = policy.viewerGroupIds;
     for (const campus of policy.runsheetCampuses) runsheetCampuses.add(campus);
+    for (const campus of policy.runsheetEditCampuses) runsheetEditCampuses.add(campus);
 
     // Grow Course and rostered-only access only ever add to the roles
     // above. Any Rock failure here grants neither, rather than failing the
@@ -507,6 +509,7 @@ export async function rockResolveAccess(personIds: number[], fallbackEmail?: str
       clusterHeadSections: [],
       departmentHeadSections: [],
       runsheetCampuses: Array.from(runsheetCampuses),
+      runsheetEditCampuses: Array.from(runsheetEditCampuses),
     },
     ...(partial ? { partial: true } : {}),
   };
