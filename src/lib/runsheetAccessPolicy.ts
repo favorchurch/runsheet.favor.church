@@ -15,6 +15,12 @@ export const EVENTS_TEAM_NAME_PATTERN = /events team$/i;
 /** GroupType 23 roles that may edit their Events Team's campus runsheets (20 = Overall Head, 55 = Unit Head). */
 export const EVENTS_TEAM_EDITOR_ROLE_IDS = [20, 55] as const;
 
+/** Deaf Ministry teams; their Overall Heads and Unit Heads get a campus-wide view (never edit). */
+export const DEAF_MINISTRY_NAME_PATTERN = /deaf ministry$/i;
+
+/** GroupType 23 roles that may view their Deaf Ministry's campus runsheets (20 = Overall Head, 55 = Unit Head). */
+export const DEAF_MINISTRY_VIEWER_ROLE_IDS = [20, 55] as const;
+
 /** Fallback only: Rock's GroupTypeRole.IsLeader lookup is authoritative. */
 export const GROUP_TYPE_23_LEADER_ROLE_IDS = [20, 55, 69, 75] as const;
 
@@ -106,8 +112,13 @@ export function resolveRunsheetAccessPolicy(
       isMinistryMember &&
       isEventsTeam &&
       (EVENTS_TEAM_EDITOR_ROLE_IDS as readonly number[]).includes(Number(membership.groupRoleId));
+    // Deaf Ministry Overall Heads and Unit Heads also get a campus-wide view.
+    const isDeafMinistryViewer =
+      isMinistryMember &&
+      Boolean(group?.name && DEAF_MINISTRY_NAME_PATTERN.test(group.name.trim())) &&
+      (DEAF_MINISTRY_VIEWER_ROLE_IDS as readonly number[]).includes(Number(membership.groupRoleId));
     const canEdit = isGlobal || isCampusEditor || isEventsTeamEditor;
-    const canView = isGlobal || isCampusEditor || (isMinistryMember && isEventsTeam);
+    const canView = isGlobal || isCampusEditor || (isMinistryMember && isEventsTeam) || isDeafMinistryViewer;
 
     if (!canView) continue;
 

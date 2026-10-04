@@ -69,6 +69,30 @@ describe('runsheet access policy', () => {
     expect(result).toMatchObject({ editorGroupIds: [], viewerGroupIds: [], runsheetCampuses: [] });
   });
 
+  it.each([20, 55])('gives a Deaf Ministry head (role %i) a view-only Manila scope', (groupRoleId) => {
+    const result = resolveRunsheetAccessPolicy(
+      [{ groupId: 19116, groupTypeId: 23, groupRoleId }],
+      new Map([[19116, { groupId: 19116, groupTypeId: 23, name: 'MNL Deaf Ministry', parentGroupId: 57 }]]),
+      new Map([[57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' }]]),
+      new Set([20, 55]),
+    );
+
+    expect(result.editorGroupIds).toEqual([]);
+    expect(result.viewerGroupIds).toEqual(['19116']);
+    expect(result.runsheetCampuses).toEqual(['MNL']);
+  });
+
+  it.each([19, 69, 75])('gives other Deaf Ministry roles (role %i) no blanket access', (groupRoleId) => {
+    const result = resolveRunsheetAccessPolicy(
+      [{ groupId: 19116, groupTypeId: 23, groupRoleId }],
+      new Map([[19116, { groupId: 19116, groupTypeId: 23, name: 'MNL Deaf Ministry', parentGroupId: 57 }]]),
+      new Map([[57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' }]]),
+      new Set([69]),
+    );
+
+    expect(result).toMatchObject({ editorGroupIds: [], viewerGroupIds: [], runsheetCampuses: [] });
+  });
+
   it('keeps a YTH Events Team leader view-only for its MNL campus', () => {
     const result = resolveRunsheetAccessPolicy(
       [{ groupId: 32929, groupTypeId: 23, groupRoleId: 69 }],
