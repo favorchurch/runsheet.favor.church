@@ -25,6 +25,10 @@ jest.mock('@/server-actions/rockBulkSaveRunsheetItems');
 jest.mock('@/server-actions/rockDeleteServiceRunsheet');
 jest.mock('@/server-actions/getRockContentChannelOptions');
 jest.mock('@/server-actions/rockGetScheduleOptions');
+jest.mock('@/components/runsheet/runsheetQueries', () => ({
+  ...jest.requireActual('@/components/runsheet/runsheetQueries'),
+  useRosterAssignments: () => ({ data: undefined }),
+}));
 jest.mock('@/lib/richText', () => ({
   htmlToPlainText: (s: string) => s,
   legacyValueToHtml: (s: string) => s,
@@ -47,11 +51,8 @@ import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
 /**
  * Table-view drag reordering.
  *
- * The pre-existing drag coverage in RunsheetTableEditor.dirty.test.tsx only ever
- * drags a row UPWARD, and its one downward case drives the Card-view swap button
- * (`handleMoveCard`), which is a different code path that deliberately bypasses
- * `moveItemById`. So the whole suite passed while downward table drags were broken.
- * These tests pin the direction that had no coverage.
+ * Pins both directions of a table-view row drag, including a non-adjacent downward
+ * move, and the `order` values actually shipped to Rock on save.
  */
 describe('RunsheetTableEditor table drag reordering', () => {
   beforeEach(() => {
@@ -87,22 +88,6 @@ describe('RunsheetTableEditor table drag reordering', () => {
     attributeValues: { ACTIVITYTITLE: name, DESCRIPTION: `${name} description` },
   }));
 
-  /**
-   * jsdom does not implement HTML5 drag-and-drop, so `fireEvent.dragStart` carries no
-   * `dataTransfer`. Supply one: `handleDragStart` calls `setDragImage` on it, and a test
-   * that silently skipped that branch would not be exercising the real handler.
-   */
-  function dataTransferStub() {
-    return {
-      setDragImage: jest.fn(),
-      setData: jest.fn(),
-      getData: jest.fn(() => ''),
-      effectAllowed: 'none',
-      dropEffect: 'none',
-      types: [] as string[],
-    };
-  }
-
   function renderEditor() {
     let saveFn: (() => Promise<boolean>) | undefined;
     const view = render(
@@ -121,12 +106,20 @@ describe('RunsheetTableEditor table drag reordering', () => {
     return { view, rows, handles, getSaveFn: () => saveFn };
   }
 
-  /** Drives the full HTML5 sequence, not just dragStart + drop. */
+  /**
+   * Drives the pointer-based row drag (mouse, touch or pen) from a handle onto a row.
+   * jsdom has no layout, so `elementFromPoint` is stubbed to report the target row.
+   */
   function dragRow(handles: Element[], rows: Element[], from: number, to: number) {
-    const dataTransfer = dataTransferStub();
-    fireEvent.dragStart(handles[from], { dataTransfer });
-    fireEvent.dragOver(rows[to], { dataTransfer });
-    fireEvent.drop(rows[to], { dataTransfer });
+    const original = document.elementFromPoint;
+    document.elementFromPoint = () => rows[to];
+    try {
+      fireEvent.pointerDown(handles[from], { pointerId: 1, pointerType: 'touch', button: 0 });
+      fireEvent.pointerMove(handles[from], { pointerId: 1, pointerType: 'touch' });
+      fireEvent.pointerUp(handles[from], { pointerId: 1, pointerType: 'touch' });
+    } finally {
+      document.elementFromPoint = original;
+    }
   }
 
   /** Visible row order, read from the Activity Title cell of each row. */
