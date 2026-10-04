@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { buildRosteredViewerKeys, channelRosterKey, rosterKey } from './rosterAccess';
+import { buildRosteredViewerKeys, channelRosterKey, rosterKey, rosteredAttendanceFromOccurrence } from './rosterAccess';
 
 describe('rosterKey', () => {
   it('joins campus, date and time signature', () => {
@@ -68,5 +68,40 @@ describe('channelRosterKey', () => {
     expect(channelRosterKey('MNL Grow - Build x FDNA // September 27, 2026 // 3PM')).toBeNull();
     expect(channelRosterKey('MNL Crowne // September 27, 2026')).toBeNull();
     expect(channelRosterKey('Crowne // September 27, 2026 // 3PM')).toBeNull();
+  });
+});
+
+describe('rosteredAttendanceFromOccurrence', () => {
+  // Live Rock, 2026-10-04: Bryan Opano checked in for MNL Crowne 9AM (schedule
+  // 564) with MNL Worship Team (campus 1). Check-in rewrote his attendance to
+  // StartDateTime 06:33:26 and CampusId null.
+  const checkedIn = {
+    attendanceCampusId: null,
+    attendanceStartDateTime: '2026-10-04T06:33:26',
+    occurrenceDate: '2026-10-04T00:00:00',
+    scheduleId: 564,
+    scheduleStartTime: '09:00:00',
+    groupCampusId: 1,
+  };
+
+  it('rebuilds a checked-in attendance from its occurrence, schedule and team', () => {
+    const attendance = rosteredAttendanceFromOccurrence(checkedIn);
+    expect(attendance).toEqual({ campusId: 1, startDateTime: '2026-10-04T09:00:00', scheduleId: 564 });
+    expect(buildRosteredViewerKeys([attendance], new Set())).toEqual([
+      channelRosterKey('MNL Crowne // October 4, 2026 // 9AM'),
+    ]);
+  });
+
+  it('falls back to the attendance row when the occurrence lacks a schedule or team campus', () => {
+    expect(
+      rosteredAttendanceFromOccurrence({
+        attendanceCampusId: 1,
+        attendanceStartDateTime: '2026-10-02T20:00:00',
+        occurrenceDate: '2026-10-02T00:00:00',
+        scheduleId: null,
+        scheduleStartTime: null,
+        groupCampusId: null,
+      }),
+    ).toEqual({ campusId: 1, startDateTime: '2026-10-02T20:00:00', scheduleId: null });
   });
 });

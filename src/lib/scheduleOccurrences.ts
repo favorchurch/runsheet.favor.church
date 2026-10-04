@@ -50,6 +50,12 @@ function parseStamp(value: string): { date: string; time: string } | null {
   return { date: toIsoDate(m[1]), time: formatIcalTime(m[2] || '000000') };
 }
 
+/** A schedule's start time as `HH:MM:SS` (from DTSTART), or null when it has none. */
+export function icalStartTime(ical: string): string | null {
+  const m = (readLines(ical || '', 'DTSTART')[0] || '').match(/^\d{8}T(\d{2})(\d{2})(\d{2})/);
+  return m ? `${m[1]}:${m[2]}:${m[3]}` : null;
+}
+
 function expandRrule(rule: string, start: { date: string; time: string }, lastDate: string): ScheduleOccurrence[] {
   const parts = Object.fromEntries(
     rule.split(';').map((p) => {
