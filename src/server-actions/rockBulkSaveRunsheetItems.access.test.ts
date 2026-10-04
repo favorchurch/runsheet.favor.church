@@ -94,13 +94,13 @@ describe('rockBulkSaveRunsheetItems access ordering', () => {
     expectNoRockWrites();
   });
 
-  it('fails closed when channel lookup throws before any Rock write', async () => {
+  it('fails closed when channel lookup keeps throwing before any Rock write', async () => {
     mockGetRockSession.mockResolvedValue(session('MNL', true));
     let channelLookups = 0;
     mockRockGet.mockImplementation(async (url) => {
       if (url.startsWith('/ContentChannels/')) {
         channelLookups += 1;
-        if (channelLookups === 1) throw new Error('Rock lookup failed');
+        if (channelLookups <= 2) throw new Error('Rock lookup failed');
         return { Name: 'MNL Service // August 16, 2026 // 10AM', ContentChannelTypeId: 13 };
       }
       if (url === '/ContentChannelItems') return [];
