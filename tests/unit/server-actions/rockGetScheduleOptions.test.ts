@@ -1,4 +1,4 @@
-import { describe, expect, it, jest, beforeEach } from '@jest/globals';
+import { describe, expect, it, jest, beforeEach, afterEach } from '@jest/globals';
 import { rockGetScheduleOptions } from '@/server-actions/rockGetScheduleOptions';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
@@ -312,5 +312,70 @@ describe('rockGetScheduleOptions - Kids and ALL EVENTS categories', () => {
     await rockGetScheduleOptions(590, '2026-10-04');
 
     expect(filters).toEqual(['CategoryId eq 483 and IsActive eq true']);
+  });
+});
+
+describe('rockGetScheduleOptions - date filtering reads RDATE lists', () => {
+  // Live Manila ALL EVENTS schedules as of 2026-10-04.
+  const ical = (body: string) => `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n${body}\r\nEND:VEVENT\r\nEND:VCALENDAR`;
+  const TUESDAY_SCHEDULES = [
+    {
+      Id: 513,
+      Name: 'MNL Tuesday Meeting',
+      CategoryId: 484,
+      iCalendarContent: ical('DTSTART:20260728T090000\r\nRRULE:FREQ=WEEKLY;BYDAY=TU'),
+    },
+    {
+      Id: 476,
+      Name: 'MNL Grow - Bible Masterclass',
+      CategoryId: 483,
+      iCalendarContent: ical('DTSTART:20260929T190000\r\nRDATE:20261006T190000,20261013T190000,20261020T190000'),
+      EffectiveEndDate: '2026-10-20T00:00:00',
+    },
+    {
+      Id: 477,
+      Name: 'MNL Grow - Bible Essentials',
+      CategoryId: 483,
+      iCalendarContent: ical('DTSTART:20260929T190000\r\nRDATE:20261006T190000,20261013T190000,20261020T190000'),
+      EffectiveEndDate: '2026-10-20T00:00:00',
+    },
+    {
+      Id: 660,
+      Name: 'MNL Wednesday Prayer',
+      CategoryId: 484,
+      iCalendarContent: ical('DTSTART:20260826T070000\r\nRRULE:FREQ=WEEKLY;BYDAY=WE'),
+    },
+  ];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-04T10:00:00+08:00'));
+    mockGetRockSession.mockResolvedValue({ rolesMap: { editor: ['true'] }, access: { runsheetCampuses: ['MNL'] } } as any);
+    mockRockGet.mockImplementation(async (url: string) => {
+      if (url === '/Categories') return SCHEDULE_CATEGORIES as any;
+      if (url === '/Categories/590') return { Id: 590, Name: 'MNL | ALL EVENTS' } as any;
+      if (url === '/Schedules') return TUESDAY_SCHEDULES as any;
+      return null;
+    });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('lists every schedule occurring on Tuesday 6 October, with its own start time', async () => {
+    const res = await rockGetScheduleOptions(590, '2026-10-06');
+
+    expect(res.schedules.map((s) => [s.name, s.timeLabel])).toEqual([
+      ['MNL Tuesday Meeting', '9AM'],
+      ['MNL Grow - Bible Masterclass', '7PM'],
+      ['MNL Grow - Bible Essentials', '7PM'],
+    ]);
+  });
+
+  it('drops an RDATE course after its last date', async () => {
+    const res = await rockGetScheduleOptions(590, '2026-10-27');
+
+    expect(res.schedules.map((s) => s.name)).toEqual(['MNL Tuesday Meeting']);
   });
 });

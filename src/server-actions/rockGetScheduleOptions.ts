@@ -34,10 +34,23 @@ export interface ScheduleOption {
 function formatScheduleTime(name: string): string {
   // Extract time pattern like 10AM, 11:30AM, 3PM, 4PM, 5:30PM, 9AM, 10:00 AM
   const timeMatch = name.match(/(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i);
-  if (timeMatch) {
-    return timeMatch[1].toUpperCase();
+  return timeMatch ? timeMatch[1].toUpperCase() : '';
+}
+
+const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+/** Whether a schedule has an occurrence on `isoDate` (YYYY-MM-DD). */
+function occursOn(
+  s: { Name: string; iCalendarContent?: string; EffectiveEndDate?: string },
+  isoDate: string,
+): boolean {
+  if (s.iCalendarContent) {
+    return expandIcalOccurrences(s.iCalendarContent, isoDate, s.EffectiveEndDate, 1)[0]?.date === isoDate;
   }
-  return name;
+  // No calendar at all: fall back to a weekday in the name, else Sundays.
+  const day = new Date(`${isoDate}T00:00:00Z`).getUTCDay();
+  const named = DAY_NAMES.findIndex((d) => s.Name.toLowerCase().includes(d));
+  return named >= 0 ? named === day : day === 0;
 }
 
 function manilaToday(): string {
@@ -163,94 +176,18 @@ export async function rockGetScheduleOptions(
       (s) => !s.iCalendarContent || expandIcalOccurrences(s.iCalendarContent, today, s.EffectiveEndDate, 1).length > 0,
     );
 
-    // 3. Active Schedule Filtering by chosen Date range & recurrence rules
-    if (dateStr) {
-      // Midnight target date comparison
-      const targetDate = new Date(`${dateStr}T00:00:00`);
-      if (!isNaN(targetDate.getTime())) {
-        const targetTime = targetDate.getTime();
-        const dayOfWeek = targetDate.getDay(); // 0 = Sun, 1 = Mon, ... 6 = Sat
-        const dayMap: Record<number, string> = {
-          0: 'SU', 1: 'MO', 2: 'TU', 3: 'WE', 4: 'TH', 5: 'FR', 6: 'SA',
-        };
-        const dayCode = dayMap[dayOfWeek];
+    // 3. Keep the schedules that actually occur on the chosen date. Rock
+    // stores both repeating rules (RRULE) and explicit date lists (RDATE);
+    // expandIcalOccurrences reads both, so a course set up as "specific
+    // dates" shows on every one of its dates, not just the first.
+    if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const dateFilteredList = list.filter((s) => occursOn(s, dateStr));
 
-        const dateFilteredList = list.filter((s) => {
-          const ical = s.iCalendarContent || '';
-          const icalUpper = ical.toUpperCase();
-          const nameLower = s.Name.toLowerCase();
-
-          // A. Parse Start Date
-          let startDate: Date | null = s.EffectiveStartDate ? new Date(s.EffectiveStartDate) : null;
-          const dtStartMatch = icalUpper.match(/DTSTART:(\d{4})(\d{2})(\d{2})/);
-          if (dtStartMatch) {
-            startDate = new Date(`${dtStartMatch[1]}-${dtStartMatch[2]}-${dtStartMatch[3]}T00:00:00`);
-          }
-
-          if (startDate && !isNaN(startDate.getTime())) {
-            // Set to midnight
-            const startTime = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime();
-            if (targetTime < startTime) {
-              // Target date is before schedule effective start date!
-              return false;
-            }
-          }
-
-          // B. Parse End Date / UNTIL Date
-          let endDate: Date | null = s.EffectiveEndDate ? new Date(s.EffectiveEndDate) : null;
-          const untilMatch = icalUpper.match(/UNTIL=(\d{4})(\d{2})(\d{2})/);
-          if (untilMatch) {
-            endDate = new Date(`${untilMatch[1]}-${untilMatch[2]}-${untilMatch[3]}T23:59:59`);
-          }
-
-          if (endDate && !isNaN(endDate.getTime())) {
-            const endTime = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59).getTime();
-            if (targetTime > endTime) {
-              // Target date is after schedule effective end date!
-              return false;
-            }
-          }
-
-          // C. One-time Event Check (No RRULE)
-          const hasRrule = icalUpper.includes('RRULE:');
-          if (!hasRrule && startDate && !isNaN(startDate.getTime())) {
-            const sameDay =
-              targetDate.getFullYear() === startDate.getFullYear() &&
-              targetDate.getMonth() === startDate.getMonth() &&
-              targetDate.getDate() === startDate.getDate();
-            if (!sameDay) {
-              // One-time event only occurs on its start date!
-              return false;
-            }
-          }
-
-          // D. Day of Week Verification
-          let schedDay: string | null = null;
-          if (icalUpper.includes('BYDAY=SU') || nameLower.includes('sunday')) schedDay = 'SU';
-          else if (icalUpper.includes('BYDAY=SA') || nameLower.includes('saturday')) schedDay = 'SA';
-          else if (icalUpper.includes('BYDAY=FR') || nameLower.includes('friday') || /\bfy\b/i.test(nameLower)) schedDay = 'FR';
-          else if (icalUpper.includes('BYDAY=TH') || nameLower.includes('thursday')) schedDay = 'TH';
-          else if (icalUpper.includes('BYDAY=WE') || nameLower.includes('wednesday')) schedDay = 'WE';
-          else if (icalUpper.includes('BYDAY=TU') || nameLower.includes('tuesday')) schedDay = 'TU';
-          else if (icalUpper.includes('BYDAY=MO') || nameLower.includes('monday')) schedDay = 'MO';
-
-          if (schedDay) {
-            return schedDay === dayCode;
-          }
-
-          if (dayOfWeek === 0) {
-            return true;
-          }
-          return false;
-        });
-
-        // If date-filtering produced matches, keep them.
-        // If it produced 0 matches (e.g. form date was initialized to Sunday, but
-        // Youth schedules occur on Saturday/Friday), keep the active list so schedules
-        // remain selectable and can jump the form date via nextDate.
-        if (dateFilteredList.length > 0) {
-          list = dateFilteredList;
-        }
+      // If date-filtering produced 0 matches (e.g. form date was initialized to
+      // Sunday, but Youth schedules occur on Saturday/Friday), keep the active
+      // list so schedules remain selectable and can jump the form date via nextDate.
+      if (dateFilteredList.length > 0) {
+        list = dateFilteredList;
       }
     }
 
@@ -259,11 +196,14 @@ export async function rockGetScheduleOptions(
         ? expandIcalOccurrences(s.iCalendarContent, today, s.EffectiveEndDate)
         : [];
       const next = occurrences[0];
+      const onDate = dateStr ? occurrences.find((o) => o.date === dateStr) : undefined;
       return {
         id: s.Id,
         name: s.Name,
         categoryId: s.CategoryId,
-        timeLabel: formatScheduleTime(s.Name),
+        // The schedule's own start time; names such as "MNL Tuesday Meeting"
+        // carry none.
+        timeLabel: onDate?.time || next?.time || formatScheduleTime(s.Name),
         nextDate: next?.date,
         upcomingOccurrences: occurrences.map((o) => ({ date: o.date, time: o.time })),
       };

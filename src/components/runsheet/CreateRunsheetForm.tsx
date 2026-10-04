@@ -115,6 +115,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
     () => schedules.find((s) => s.name === session),
     [schedules, session]
   );
+  const isGrowSchedule = selectedSchedule?.categoryId === GROW_SCHEDULE_CATEGORY_ID;
 
   const isGlobalStaffOrAdmin = React.useMemo(
     () => !runsheetCampuses || runsheetCampuses.includes(ALL_CAMPUSES),
@@ -269,7 +270,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
 
     setStatus({ type: 'loading' });
 
-    if (batchCreateCourse && selectedSchedule && (selectedSchedule.upcomingOccurrences?.length ?? 0) > 1) {
+    if (batchCreateCourse && isGrowSchedule && selectedSchedule && (selectedSchedule.upcomingOccurrences?.length ?? 0) > 1) {
       const occurrences = selectedSchedule.upcomingOccurrences!;
       let firstId: number | null = null;
       let firstTitle = '';
@@ -441,7 +442,8 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
             </select>
           </div>
 
-          {selectedSchedule && (selectedSchedule.upcomingOccurrences?.length ?? 0) > 1 && (
+          {/* Batch creation is for Grow courses only; a weekly meeting would create a year of runsheets. */}
+          {isGrowSchedule && (selectedSchedule?.upcomingOccurrences?.length ?? 0) > 1 && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
               <label className="flex items-start gap-2.5 cursor-pointer">
                 <input
