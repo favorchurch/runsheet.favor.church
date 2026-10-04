@@ -111,6 +111,23 @@ describe('runsheet access policy', () => {
     expect(result.runsheetEditCampuses).toEqual([]);
   });
 
+  it('matches a Department Admin whose membership row carries a stale GroupTypeId', () => {
+    // Live Rock: Sey Gacusan's MNL Department Admins membership says GroupTypeId 1.
+    const result = resolveRunsheetAccessPolicy(
+      [
+        { groupId: 57919, groupTypeId: 1, groupRoleId: 1 },
+        { groupId: 24379, groupTypeId: 28, groupRoleId: 74 },
+      ],
+      new Map([[24379, { groupId: 24379, groupTypeId: 28, name: 'MNL Team Rosters', parentGroupId: 103377 }]]),
+      new Map([[32893, { groupId: 32893, groupTypeId: 28, parentGroupId: null, campus: 'MNL' }]]),
+    );
+
+    expect(result.editorGroupIds).toEqual([]);
+    expect(result.viewerGroupIds).toEqual(['57919']);
+    expect(result.runsheetCampuses).toEqual(['MNL']);
+    expect(result.runsheetEditCampuses).toEqual([]);
+  });
+
   it('grants nothing to other Access-tree groups such as Favor Calls Admins', () => {
     const result = resolveRunsheetAccessPolicy(
       [{ groupId: 133453, groupTypeId: 28, groupRoleId: 1 }],

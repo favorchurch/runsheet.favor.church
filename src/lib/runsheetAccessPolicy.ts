@@ -125,7 +125,9 @@ export function resolveRunsheetAccessPolicy(
     const isOrgUnit = (CAMPUS_EDIT_GROUP_TYPE_IDS as readonly number[]).includes(membership.groupTypeId);
     const groupName = group?.name?.trim() || '';
     const isEventsTeam = isMinistryMember && EVENTS_TEAM_NAME_PATTERN.test(groupName);
-    const departmentAdminScope = isOrgUnit ? DEPARTMENT_ADMIN_VIEW_GROUPS[membership.groupId] : undefined;
+    // Matched by group id alone: Rock can keep a stale GroupTypeId on the
+    // membership row (e.g. 1 instead of 28 for MNL Department Admins).
+    const departmentAdminScope = DEPARTMENT_ADMIN_VIEW_GROUPS[membership.groupId];
 
     let campus: string | null = null;
     let canEdit = false;
