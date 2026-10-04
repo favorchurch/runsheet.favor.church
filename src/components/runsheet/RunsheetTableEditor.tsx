@@ -872,13 +872,24 @@ export function RunsheetTableEditor({
   }, [isDirty]);
 
   const handleDeleteRunsheet = async () => {
+    if (isDeleting) return;
     setIsDeleting(true);
-    const res = await rockDeleteServiceRunsheet(channelId);
-    setIsDeleting(false);
+    let res: Awaited<ReturnType<typeof rockDeleteServiceRunsheet>>;
+    try {
+      res = await rockDeleteServiceRunsheet(channelId);
+    } catch {
+      // The server action itself failed (timeout, dropped connection): the
+      // delete may have partly run, so report it like any other failure.
+      res = { success: false, error: 'Could not reach the server to delete this runsheet. Please try again.' };
+    } finally {
+      setIsDeleting(false);
+    }
     if (res.success) {
       setShowDeleteModal(false);
       onDeleted?.();
     } else {
+      // A partial delete leaves rows missing in Rock; refetch so the editor shows the real state.
+      onSaveSettled?.(channelId);
       alert(res.error || 'Failed to delete runsheet.');
     }
   };

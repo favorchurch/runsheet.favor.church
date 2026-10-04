@@ -192,11 +192,12 @@ describe('server-action access enforcement', () => {
     const result = await rockDeleteServiceRunsheet(42);
 
     expect(result.success).toBe(true);
-    expect(mockRockGet).toHaveBeenCalledWith('/ContentChannelItems', {
-      $filter: 'ContentChannelId eq 42',
-      $select: 'Id',
-    });
-    expect(mockRockDelete).toHaveBeenCalledWith('/ContentChannels/42');
+    expect(mockRockGet).toHaveBeenCalledWith(
+      '/ContentChannelItems',
+      { $filter: 'ContentChannelId eq 42', $select: 'Id' },
+      true,
+    );
+    expect(mockRockDelete).toHaveBeenCalledWith('/ContentChannels/42', undefined, [404]);
   });
 
   it('does not return upstream errors from duplicate', async () => {
@@ -216,7 +217,54 @@ describe('server-action access enforcement', () => {
 
     const result = await rockDeleteServiceRunsheet(42);
 
-    expect(result).toEqual({ success: false, error: 'Failed to delete runsheet.' });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/^Failed to delete runsheet\./);
+    expect(result.error).not.toContain('Rock internal details');
+  });
+
+  it('treats delete of an already-deleted runsheet as success', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+    mockRockGet.mockRejectedValue(new Error('Rock API error: 404 '));
+
+    const result = await rockDeleteServiceRunsheet(42);
+
+    expect(result).toEqual({ success: true });
+    expectNoRockWrites();
+  });
+
+  it('reports a deleted runsheet on save instead of a campus denial', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+    mockRockGet.mockRejectedValue(new Error('Rock API error: 404 '));
+
+    const result = await rockBulkSaveRunsheetItems(42, [], []);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/no longer exists/);
+    expectNoRockWrites();
+  });
+
+  it('retries a transient channel lookup failure once before judging access', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+    mockRockGet
+      .mockRejectedValueOnce(new Error('terminated'))
+      .mockResolvedValueOnce({ Name: 'MNL Service // August 16, 2026 // 10AM', ContentChannelTypeId: 13 })
+      .mockResolvedValue([]);
+
+    const result = await rockDeleteServiceRunsheet(42);
+
+    expect(result.success).toBe(true);
+  });
+
+  it('reports a persistent lookup failure as a retryable error, not a campus denial', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+    mockRockGet.mockRejectedValue(new Error('terminated'));
+
+    const result = await rockBulkSaveRunsheetItems(42, [], []);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/try again/i);
+    expect(result.error).not.toMatch(/campus/i);
+    expectNoRockWrites();
   });
 
   it('rejects a forged string where delete expects a channel id', async () => {
