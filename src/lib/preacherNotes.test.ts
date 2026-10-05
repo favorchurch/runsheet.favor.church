@@ -2,13 +2,18 @@ import { describe, expect, it } from '@jest/globals';
 import {
   buildPreacherNotesFileName,
   buildPreacherNotesFolder,
+  computePreacherNotesQueryString,
   formatContentDisposition,
   isPdf,
   isValidNotePath,
   parsePreacherNotes,
   sanitizeStorageFileName,
   serializePreacherNotes,
+  PREACHER_NOTES_ATTRIBUTE_KEY,
   PREACHER_NOTES_MAX_BYTES,
+  PREACHER_NOTES_MAX_COUNT,
+  PREACHER_NOTES_MAX_NAME_LENGTH,
+  PREACHER_NOTES_MAX_QUERY_STRING_LENGTH,
 } from './preacherNotes';
 
 describe('parsePreacherNotes and serializePreacherNotes', () => {
@@ -329,22 +334,18 @@ describe('formatContentDisposition', () => {
 
 describe('PREACHER_NOTES_MAX_COUNT and query string limits', () => {
   it('is 10 to fit within IIS 2048 query string limit', () => {
-    const { PREACHER_NOTES_MAX_COUNT } = require('./preacherNotes');
     expect(PREACHER_NOTES_MAX_COUNT).toBe(10);
   });
 
   it('PREACHER_NOTES_MAX_QUERY_STRING_LENGTH is 1800 to protect IIS 2048 limit', () => {
-    const { PREACHER_NOTES_MAX_QUERY_STRING_LENGTH } = require('./preacherNotes');
     expect(PREACHER_NOTES_MAX_QUERY_STRING_LENGTH).toBe(1800);
   });
 
   it('PREACHER_NOTES_MAX_NAME_LENGTH is 100 to bound stored note name size', () => {
-    const { PREACHER_NOTES_MAX_NAME_LENGTH } = require('./preacherNotes');
     expect(PREACHER_NOTES_MAX_NAME_LENGTH).toBe(100);
   });
 
   it('computePreacherNotesQueryString builds URLSearchParams query string', () => {
-    const { computePreacherNotesQueryString, PREACHER_NOTES_ATTRIBUTE_KEY } = require('./preacherNotes');
     const notes = [{ name: 'Test.pdf', path: 'PreacherNotes/MNL/1/ab/test.pdf' }];
     const qs = computePreacherNotesQueryString(notes);
     expect(qs).toContain(`attributeKey=${PREACHER_NOTES_ATTRIBUTE_KEY}`);
