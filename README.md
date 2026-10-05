@@ -70,6 +70,14 @@ Person-backed columns (Rock field type 18, plus keys containing `PLATFORM`,
 `ANCHOR` or `PREACHER`) stay a people picker rather than a rich-text cell — the
 stored value has to remain a resolvable person name.
 
+## Preacher Notes
+
+Each runsheet supports attaching preacher notes (PDFs) uploaded to Rock RMS Asset Manager:
+- **Where files live in Rock**: Stored in Rock Asset Manager (Local Content) directly under `PreacherNotes/<CAMPUS>/`, named `YYYY-MM-DD <Service Time> <original name>.pdf` from the runsheet title (Rock stores spaces as `_`, e.g. `2026-10-06_7PM_Sermon.pdf`). A name Rock already holds gets `_2`, `_3`, … Each file is referenced in the channel's `PreacherNotes` attribute.
+- **Editors only**: Access is restricted to users with runsheet editor permissions for the given campus.
+- **4.4 MB cap**: File sizes are validated on both client and server to strictly enforce the 4.4 MB maximum limit per PDF.
+- **Unlink-only**: Removing a note removes its entry from the runsheet's attribute list, but the underlying file stays preserved in Rock's Asset Manager.
+
 ## Known gaps
 
 - **The runsheet list is hardcoded.** `RunsheetManager` lists a fixed set of

@@ -1,19 +1,32 @@
 import { NextResponse } from 'next/server';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import {
+  buildPreacherNotesFileName,
   buildPreacherNotesFolder,
+  computePreacherNotesQueryString,
   isPdf,
   isValidNotePath,
+  PREACHER_NOTES_COUNT_ERROR_MESSAGE,
+  PREACHER_NOTES_LENGTH_ERROR_MESSAGE,
   PREACHER_NOTES_MAX_BYTES,
-  sanitizeStorageFileName,
+  PREACHER_NOTES_MAX_COUNT,
+  PREACHER_NOTES_MAX_NAME_LENGTH,
+  PREACHER_NOTES_MAX_QUERY_STRING_LENGTH,
+  PreacherNotesCountLimitError,
+  PreacherNotesLengthLimitError,
 } from '@/lib/preacherNotes';
 import { extractRunsheetCampus } from '@/lib/runsheetCampus';
-import { uploadRockContent } from '@/server-actions/internal/rockContentUpload';
-import { mutatePreacherNotesAttribute } from '@/server-actions/internal/rockPreacherNotesAttribute';
+import { RockContentExistsError, uploadRockContent } from '@/server-actions/internal/rockContentUpload';
+import {
+  getPreacherNotesAttributeValue,
+  mutatePreacherNotesAttribute,
+} from '@/server-actions/internal/rockPreacherNotesAttribute';
 import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
 import type { PreacherNote } from '@/types/PreacherNotes';
 
 export const dynamic = 'force-dynamic';
+
+const MAX_NAME_ATTEMPTS = 10;
 
 export async function POST(request: Request) {
   try {
@@ -31,7 +44,12 @@ export async function POST(request: Request) {
     }
 
     // Call assertRunsheetEditAccess strictly before request.formData()
-    const session = await getRockSession();
+    let session;
+    try {
+      session = await getRockSession();
+    } catch {
+      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+    }
     const access = await assertRunsheetEditAccess(session, channelId);
     if (!access.allowed) {
       return NextResponse.json({ error: access.error }, { status: 403 });
@@ -68,14 +86,49 @@ export async function POST(request: Request) {
 
     // Determine campus and build folder path
     const campus = access.channelName ? extractRunsheetCampus(access.channelName) : null;
-    const folderPath = buildPreacherNotesFolder(campus, channelId);
+    const folderPath = buildPreacherNotesFolder(campus);
 
-    // Keep the original as the display name, and derive a safe storage name for Rock
+    // Named `YYYY-MM-DD <Service Time> <original name>.pdf`; the same name is shown in the panel.
     const originalFileName = (file as any).name || 'document.pdf';
-    const storageFileName = sanitizeStorageFileName(originalFileName);
+    const storageFileName = buildPreacherNotesFileName(access.channelName, originalFileName);
+    const displayName = storageFileName.slice(0, PREACHER_NOTES_MAX_NAME_LENGTH);
 
-    // Upload to Rock
-    const returnedPath = await uploadRockContent(folderPath, buffer, storageFileName);
+    // Fast-path 1: Enforce 10 notes maximum per runsheet before sending to Rock
+    const currentNotes = await getPreacherNotesAttributeValue(channelId);
+    if (currentNotes.length >= PREACHER_NOTES_MAX_COUNT) {
+      return NextResponse.json(
+        { error: PREACHER_NOTES_COUNT_ERROR_MESSAGE },
+        { status: 400 },
+      );
+    }
+
+    // Fast-path 2: Enforce query string length budget before sending to Rock
+    const candidatePath = `${folderPath}${storageFileName}`;
+    const candidateEntry: PreacherNote = {
+      name: displayName,
+      path: candidatePath,
+    };
+    const wouldBeNotes = [...currentNotes, candidateEntry];
+    const candidateQueryString = computePreacherNotesQueryString(wouldBeNotes);
+
+    if (candidateQueryString.length > PREACHER_NOTES_MAX_QUERY_STRING_LENGTH) {
+      return NextResponse.json(
+        { error: PREACHER_NOTES_LENGTH_ERROR_MESSAGE },
+        { status: 400 },
+      );
+    }
+
+    // Upload to Rock. Rock never overwrites, so a taken name retries as `<name>_2.pdf`, `_3`, ...
+    let returnedPath = '';
+    let uploadName = storageFileName;
+    for (let attempt = 1; !returnedPath; attempt++) {
+      uploadName = buildPreacherNotesFileName(access.channelName, originalFileName, attempt);
+      try {
+        returnedPath = await uploadRockContent(folderPath, buffer, uploadName);
+      } catch (uploadError) {
+        if (!(uploadError instanceof RockContentExistsError) || attempt >= MAX_NAME_ATTEMPTS) throw uploadError;
+      }
+    }
 
     // Validate the returned path against channelId
     if (!isValidNotePath(returnedPath, channelId)) {
@@ -88,17 +141,44 @@ export async function POST(request: Request) {
     // Read, append, and write serialized per channelId
     try {
       const updatedNotes = await mutatePreacherNotesAttribute(channelId, (currentNotes) => {
+        if (currentNotes.length >= PREACHER_NOTES_MAX_COUNT) {
+          throw new PreacherNotesCountLimitError(PREACHER_NOTES_COUNT_ERROR_MESSAGE);
+        }
+
         const newEntry: PreacherNote = {
-          name: originalFileName,
+          name: uploadName.slice(0, PREACHER_NOTES_MAX_NAME_LENGTH),
           path: returnedPath,
-          size: file.size,
-          uploadedAt: new Date().toISOString(),
         };
-        return [...currentNotes, newEntry];
+        const nextList = [...currentNotes, newEntry];
+        const queryString = computePreacherNotesQueryString(nextList);
+
+        if (queryString.length > PREACHER_NOTES_MAX_QUERY_STRING_LENGTH) {
+          throw new PreacherNotesLengthLimitError(PREACHER_NOTES_LENGTH_ERROR_MESSAGE);
+        }
+
+        return nextList;
       });
 
       return NextResponse.json({ success: true, notes: updatedNotes });
-    } catch (saveError) {
+    } catch (saveError: any) {
+      if (
+        saveError instanceof PreacherNotesCountLimitError ||
+        saveError?.name === 'PreacherNotesCountLimitError'
+      ) {
+        return NextResponse.json(
+          { error: saveError.message || PREACHER_NOTES_COUNT_ERROR_MESSAGE },
+          { status: 400 },
+        );
+      }
+      if (
+        saveError instanceof PreacherNotesLengthLimitError ||
+        saveError?.name === 'PreacherNotesLengthLimitError'
+      ) {
+        return NextResponse.json(
+          { error: saveError.message || PREACHER_NOTES_LENGTH_ERROR_MESSAGE },
+          { status: 400 },
+        );
+      }
       console.error('Failed to save preacher notes attribute after upload:', saveError);
       return NextResponse.json(
         { error: 'The file reached Rock but was not linked to the runsheet.' },

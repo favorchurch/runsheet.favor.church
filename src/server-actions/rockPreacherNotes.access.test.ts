@@ -94,6 +94,16 @@ describe('rockPreacherNotes server actions access control', () => {
       expectNoRockAttributeCalls();
     });
 
+    it('denies an unauthenticated caller (no session) returning success false without rejecting', async () => {
+      mockGetRockSession.mockRejectedValue(new Error('FORBIDDEN'));
+
+      const result = await rockGetPreacherNotes(42);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/Authentication required|Unauthorized/i);
+      expectNoRockAttributeCalls();
+    });
+
     it('allows an authorized editor to retrieve notes', async () => {
       mockGetRockSession.mockResolvedValue(session('MNL', true));
       mockGetAttributeValue.mockResolvedValueOnce([
@@ -134,6 +144,16 @@ describe('rockPreacherNotes server actions access control', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('not authorized for this runsheet campus');
+      expectNoRockAttributeCalls();
+    });
+
+    it('denies an unauthenticated caller (no session) returning success false without rejecting', async () => {
+      mockGetRockSession.mockRejectedValue(new Error('FORBIDDEN'));
+
+      const result = await rockUnlinkPreacherNote(42, targetPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/Authentication required|Unauthorized/i);
       expectNoRockAttributeCalls();
     });
 

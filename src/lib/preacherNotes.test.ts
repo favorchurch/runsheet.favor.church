@@ -1,13 +1,19 @@
 import { describe, expect, it } from '@jest/globals';
 import {
+  buildPreacherNotesFileName,
   buildPreacherNotesFolder,
+  computePreacherNotesQueryString,
   formatContentDisposition,
   isPdf,
   isValidNotePath,
   parsePreacherNotes,
   sanitizeStorageFileName,
   serializePreacherNotes,
+  PREACHER_NOTES_ATTRIBUTE_KEY,
   PREACHER_NOTES_MAX_BYTES,
+  PREACHER_NOTES_MAX_COUNT,
+  PREACHER_NOTES_MAX_NAME_LENGTH,
+  PREACHER_NOTES_MAX_QUERY_STRING_LENGTH,
 } from './preacherNotes';
 
 describe('parsePreacherNotes and serializePreacherNotes', () => {
@@ -43,24 +49,69 @@ describe('parsePreacherNotes and serializePreacherNotes', () => {
       {
         name: 'Valid Note',
         path: 'PreacherNotes/MNL/10/deadbeef/note.pdf',
-        size: 1024,
-        uploadedAt: '2026-10-06T00:00:00Z',
       },
     ]);
   });
 
-  it('serializes and roundtrips valid notes', () => {
+  it('drops size and uploadedAt to keep stored attribute minimal', () => {
+    const raw = [
+      {
+        name: 'Note with metadata',
+        path: 'PreacherNotes/MNL/42/deadbeef/note.pdf',
+        size: 12345,
+        uploadedAt: '2026-10-06T01:00:00.000Z',
+      },
+    ];
+    const parsed = parsePreacherNotes(JSON.stringify(raw));
+    expect(parsed).toEqual([
+      {
+        name: 'Note with metadata',
+        path: 'PreacherNotes/MNL/42/deadbeef/note.pdf',
+      },
+    ]);
+    expect((parsed[0] as any).size).toBeUndefined();
+    expect((parsed[0] as any).uploadedAt).toBeUndefined();
+  });
+
+  it('caps note name to PREACHER_NOTES_MAX_NAME_LENGTH', () => {
+    const veryLongName = 'a'.repeat(200);
+    const raw = [{ name: veryLongName, path: 'PreacherNotes/MNL/42/deadbeef/note.pdf' }];
+    const parsed = parsePreacherNotes(JSON.stringify(raw));
+    expect(parsed[0].name).toHaveLength(100);
+    expect(parsed[0].name).toBe('a'.repeat(100));
+  });
+
+  it('serializes and roundtrips valid notes without size or uploadedAt', () => {
     const notes = [
       {
         name: 'Sermon 1.pdf',
         path: 'PreacherNotes/MNL/42/1234abcd/sermon1.pdf',
-        size: 50000,
-        uploadedAt: '2026-10-06T01:00:00.000Z',
       },
     ];
 
     const json = serializePreacherNotes(notes);
     expect(parsePreacherNotes(json)).toEqual(notes);
+  });
+
+  it('serializePreacherNotes strips extraneous properties and caps name length', () => {
+    const notesWithExtra: any[] = [
+      {
+        name: 'b'.repeat(150),
+        path: 'PreacherNotes/MNL/42/abcd/test.pdf',
+        size: 9999,
+        uploadedAt: '2026-10-06T00:00:00Z',
+      },
+    ];
+    const json = serializePreacherNotes(notesWithExtra);
+    const parsed = JSON.parse(json);
+    expect(parsed).toEqual([
+      {
+        name: 'b'.repeat(100),
+        path: 'PreacherNotes/MNL/42/abcd/test.pdf',
+      },
+    ]);
+    expect(parsed[0].size).toBeUndefined();
+    expect(parsed[0].uploadedAt).toBeUndefined();
   });
 });
 
@@ -87,38 +138,59 @@ describe('isPdf', () => {
 });
 
 describe('buildPreacherNotesFolder', () => {
-  it('builds PreacherNotes/<CAMPUS|ALL>/<channelId>/<random>/', () => {
-    const folderMnl = buildPreacherNotesFolder('MNL', 42, 'abcd1234');
-    expect(folderMnl).toBe('PreacherNotes/MNL/42/abcd1234/');
-
-    const folderBne = buildPreacherNotesFolder('BNE', '101', 'fe45');
-    expect(folderBne).toBe('PreacherNotes/BNE/101/fe45/');
-
-    const folderSel = buildPreacherNotesFolder('SEL', 55, '0011');
-    expect(folderSel).toBe('PreacherNotes/SEL/55/0011/');
-
-    const folderAll = buildPreacherNotesFolder('ALL', 7, 'deadbeef');
-    expect(folderAll).toBe('PreacherNotes/ALL/7/deadbeef/');
+  it('builds one flat folder per campus: PreacherNotes/<CAMPUS|ALL>/', () => {
+    expect(buildPreacherNotesFolder('MNL')).toBe('PreacherNotes/MNL/');
+    expect(buildPreacherNotesFolder('BNE')).toBe('PreacherNotes/BNE/');
+    expect(buildPreacherNotesFolder('SEL')).toBe('PreacherNotes/SEL/');
+    expect(buildPreacherNotesFolder('ALL')).toBe('PreacherNotes/ALL/');
   });
 
   it('resolves campus from runsheet title marker or defaults to ALL', () => {
-    const fromTitle = buildPreacherNotesFolder('MNL Crowne // Oct 10 // 10AM', 12, '1122');
-    expect(fromTitle).toBe('PreacherNotes/MNL/12/1122/');
+    expect(buildPreacherNotesFolder('MNL Crowne // Oct 10 // 10AM')).toBe('PreacherNotes/MNL/');
+    expect(buildPreacherNotesFolder('Special Event Run // Oct 10')).toBe('PreacherNotes/ALL/');
+    expect(buildPreacherNotesFolder(null)).toBe('PreacherNotes/ALL/');
+  });
+});
 
-    const noMarker = buildPreacherNotesFolder('Special Event Run // Oct 10', 99, 'aabb');
-    expect(noMarker).toBe('PreacherNotes/ALL/99/aabb/');
-
-    const empty = buildPreacherNotesFolder(null, 5, 'ccdd');
-    expect(empty).toBe('PreacherNotes/ALL/5/ccdd/');
+describe('buildPreacherNotesFileName', () => {
+  it('prefixes the service date and time to the original name', () => {
+    expect(buildPreacherNotesFileName('MNL Crowne // October 12, 2026 // 10AM', 'Sermon notes.pdf')).toBe(
+      '2026-10-12 10AM Sermon notes.pdf',
+    );
+    expect(buildPreacherNotesFileName('MNL Grow - Bible Essentials // October 6, 2026 // 7PM', 'CS_140.pdf')).toBe(
+      '2026-10-06 7PM CS_140.pdf',
+    );
   });
 
-  it('generates random hex when randomHex is omitted', () => {
-    const folder = buildPreacherNotesFolder('MNL', 42);
-    expect(folder).toMatch(/^PreacherNotes\/MNL\/42\/[0-9a-fA-F]+\/$/);
+  it('replaces the colon in times like 11:30AM', () => {
+    expect(buildPreacherNotesFileName('BNE Service // Aug 9, 2026 // 11:30AM', 'notes.pdf')).toBe(
+      '2026-08-09 11.30AM notes.pdf',
+    );
+  });
+
+  it('leaves out a missing date or time', () => {
+    expect(buildPreacherNotesFileName('Special Event', 'notes.pdf')).toBe('notes.pdf');
+    expect(buildPreacherNotesFileName('MNL Retreat // October 12, 2026', 'notes.pdf')).toBe('2026-10-12 notes.pdf');
+  });
+
+  it('sanitizes the original name and appends a numbered suffix', () => {
+    expect(buildPreacherNotesFileName('MNL // October 12, 2026 // 10AM', '../evil..pdf')).toBe('2026-10-12 10AM evil.pdf');
+    expect(buildPreacherNotesFileName('MNL // October 12, 2026 // 10AM', 'notes', 2)).toBe('2026-10-12 10AM notes_2.pdf');
+    expect(buildPreacherNotesFileName('MNL // October 12, 2026 // 10AM', 'Q&A #1 (final) 100%.pdf')).toBe(
+      '2026-10-12 10AM QA 1 final 100.pdf',
+    );
+    expect(buildPreacherNotesFileName('MNL // October 12, 2026 // 10AM', 'notes.pdf', 1)).toBe('2026-10-12 10AM notes.pdf');
   });
 });
 
 describe('isValidNotePath', () => {
+  it('accepts flat campus paths regardless of channel', () => {
+    expect(isValidNotePath('PreacherNotes/MNL/2026-10-06_7PM_CS_140.pdf', 42)).toBe(true);
+    expect(isValidNotePath('PreacherNotes/ALL/notes.pdf', 7)).toBe(true);
+    expect(isValidNotePath('PreacherNotes/XYZ/notes.pdf', 42)).toBe(false);
+    expect(isValidNotePath('PreacherNotes/MNL/notes.txt', 42)).toBe(false);
+  });
+
   it('accepts valid paths matching channelId and allowed campuses', () => {
     expect(isValidNotePath('PreacherNotes/MNL/42/a1b2c3d4/notes.pdf', 42)).toBe(true);
     expect(isValidNotePath('PreacherNotes/BNE/42/0123456789abcdef/sermon_final.pdf', 42)).toBe(true);
@@ -235,6 +307,50 @@ describe('formatContentDisposition', () => {
     expect(/^[\x20-\x7E]+$/.test(disp)).toBe(true);
     expect(disp).toContain('inline; filename="__ __.pdf"');
     expect(disp).toContain(`filename*=UTF-8''${encodeURIComponent(koreanName)}`);
+  });
+
+  it('ensures .pdf extension is appended when missing from raw filename', () => {
+    const disp = formatContentDisposition('notes', true);
+    expect(disp).toBe('attachment; filename="notes.pdf"; filename*=UTF-8\'\'notes.pdf');
+  });
+
+  it('safely handles lone surrogates without throwing URIError', () => {
+    const invalidSurrogate = 'notes_\uD800_test';
+    expect(() => formatContentDisposition(invalidSurrogate, true)).not.toThrow();
+    const disp = formatContentDisposition(invalidSurrogate, true);
+    expect(disp).toContain('attachment;');
+    expect(disp).toContain('.pdf');
+    expect(/^[\x20-\x7E]+$/.test(disp)).toBe(true);
+  });
+
+  it('percent-encodes RFC 5987 special characters like single quotes, parens, and asterisks', () => {
+    const complexName = "Pastor's (Sunday)* Notes.pdf";
+    const disp = formatContentDisposition(complexName, false);
+    expect(disp).toContain("filename*=UTF-8''Pastor%27s%20%28Sunday%29%2A%20Notes.pdf");
+    const encodedValue = disp.split("filename*=UTF-8''")[1];
+    expect(encodedValue).not.toMatch(/['()*]/);
+  });
+});
+
+describe('PREACHER_NOTES_MAX_COUNT and query string limits', () => {
+  it('is 10 to fit within IIS 2048 query string limit', () => {
+    expect(PREACHER_NOTES_MAX_COUNT).toBe(10);
+  });
+
+  it('PREACHER_NOTES_MAX_QUERY_STRING_LENGTH is 1800 to protect IIS 2048 limit', () => {
+    expect(PREACHER_NOTES_MAX_QUERY_STRING_LENGTH).toBe(1800);
+  });
+
+  it('PREACHER_NOTES_MAX_NAME_LENGTH is 100 to bound stored note name size', () => {
+    expect(PREACHER_NOTES_MAX_NAME_LENGTH).toBe(100);
+  });
+
+  it('computePreacherNotesQueryString builds URLSearchParams query string', () => {
+    const notes = [{ name: 'Test.pdf', path: 'PreacherNotes/MNL/1/ab/test.pdf' }];
+    const qs = computePreacherNotesQueryString(notes);
+    expect(qs).toContain(`attributeKey=${PREACHER_NOTES_ATTRIBUTE_KEY}`);
+    expect(qs).toContain('attributeValue=');
+    expect(qs).toContain('Test.pdf');
   });
 });
 

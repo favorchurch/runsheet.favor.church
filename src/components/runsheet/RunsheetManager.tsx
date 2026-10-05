@@ -29,6 +29,7 @@ import { RunsheetTableEditor } from './RunsheetTableEditorDiff';
 import { RunsheetCompareView } from './RunsheetCompareView';
 import { RunsheetTableSkeleton } from './RunsheetTableSkeleton';
 import { RunsheetLandingView } from './RunsheetLandingView';
+import { PreacherNotesPanel } from './PreacherNotesPanel';
 
 interface RunsheetManagerProps {
   user?: AuthUser;
@@ -617,6 +618,12 @@ export function RunsheetManager({
             <RunsheetTableSkeleton />
           ) : runsheetData && !showCreateForm ? (
             <div className="relative">
+              {canEditSelected && (
+                <PreacherNotesPanel
+                  key={runsheetData.channelId}
+                  channelId={runsheetData.channelId}
+                />
+              )}
               <RunsheetTableEditor
                 key={runsheetData.channelId}
                 channelId={runsheetData.channelId}

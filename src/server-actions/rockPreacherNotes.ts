@@ -34,7 +34,13 @@ export async function rockGetPreacherNotes(channelId: number): Promise<PreacherN
     return { success: false, error: 'Invalid channel id.' };
   }
 
-  const session = await getRockSession();
+  let session;
+  try {
+    session = await getRockSession();
+  } catch {
+    return { success: false, error: 'Unauthorized: Authentication required.' };
+  }
+
   const access = await assertRunsheetEditAccess(session, parsed.data.channelId);
   if (!access.allowed) {
     return { success: false, error: access.error };
@@ -63,7 +69,13 @@ export async function rockUnlinkPreacherNote(
     return { success: false, error: 'Invalid channel id or path.' };
   }
 
-  const session = await getRockSession();
+  let session;
+  try {
+    session = await getRockSession();
+  } catch {
+    return { success: false, error: 'Unauthorized: Authentication required.' };
+  }
+
   const access = await assertRunsheetEditAccess(session, parsed.data.channelId);
   if (!access.allowed) {
     return { success: false, error: access.error };
