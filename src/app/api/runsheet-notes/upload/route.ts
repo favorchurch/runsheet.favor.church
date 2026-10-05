@@ -31,7 +31,12 @@ export async function POST(request: Request) {
     }
 
     // Call assertRunsheetEditAccess strictly before request.formData()
-    const session = await getRockSession();
+    let session;
+    try {
+      session = await getRockSession();
+    } catch {
+      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+    }
     const access = await assertRunsheetEditAccess(session, channelId);
     if (!access.allowed) {
       return NextResponse.json({ error: access.error }, { status: 403 });

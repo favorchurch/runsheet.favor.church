@@ -170,7 +170,13 @@ export function formatContentDisposition(
   isDownload: boolean,
 ): string {
   const type = isDownload ? 'attachment' : 'inline';
-  const name = rawFilename?.trim() || 'document.pdf';
+  let name = (rawFilename?.trim() || 'document.pdf').toWellFormed();
+
+  if (!name || name === '.pdf') {
+    name = 'document.pdf';
+  } else if (!/\.pdf$/i.test(name)) {
+    name = `${name}.pdf`;
+  }
 
   // ASCII fallback: replace non-ASCII ([^\x20-\x7E]), quotes, CR, LF, slashes with _
   let fallback = name
@@ -178,8 +184,10 @@ export function formatContentDisposition(
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!fallback || fallback === '.pdf' || fallback === '_') {
+  if (!fallback || fallback === '.pdf' || fallback === '_.pdf' || fallback === '_') {
     fallback = 'document.pdf';
+  } else if (!/\.pdf$/i.test(fallback)) {
+    fallback = `${fallback}.pdf`;
   }
 
   const encoded = encodeURIComponent(name);

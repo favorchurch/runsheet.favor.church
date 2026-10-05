@@ -236,5 +236,19 @@ describe('formatContentDisposition', () => {
     expect(disp).toContain('inline; filename="__ __.pdf"');
     expect(disp).toContain(`filename*=UTF-8''${encodeURIComponent(koreanName)}`);
   });
+
+  it('ensures .pdf extension is appended when missing from raw filename', () => {
+    const disp = formatContentDisposition('notes', true);
+    expect(disp).toBe('attachment; filename="notes.pdf"; filename*=UTF-8\'\'notes.pdf');
+  });
+
+  it('safely handles lone surrogates without throwing URIError', () => {
+    const invalidSurrogate = 'notes_\uD800_test';
+    expect(() => formatContentDisposition(invalidSurrogate, true)).not.toThrow();
+    const disp = formatContentDisposition(invalidSurrogate, true);
+    expect(disp).toContain('attachment;');
+    expect(disp).toContain('.pdf');
+    expect(/^[\x20-\x7E]+$/.test(disp)).toBe(true);
+  });
 });
 

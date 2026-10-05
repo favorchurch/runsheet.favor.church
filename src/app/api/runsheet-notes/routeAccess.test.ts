@@ -129,6 +129,49 @@ describe('runsheet-notes route handlers access and validation', () => {
     });
   });
 
+  describe('unauthenticated caller (no Auth0 session)', () => {
+    const validPath = 'PreacherNotes/MNL/42/deadbeef/notes.pdf';
+
+    beforeEach(() => {
+      mockGetRockSession.mockRejectedValue(new Error('FORBIDDEN'));
+    });
+
+    it('denies unauthenticated caller on upload route with 401', async () => {
+      const formData = new FormData();
+      formData.append('file', createPdfFile('notes.pdf'));
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const response = await postUpload(request);
+      expect(response.status).toBe(401);
+      const json = await response.json();
+      expect(json.error).toMatch(/Authentication required|Unauthorized/i);
+      expectNoRockStorageOrAttributeCalls();
+    });
+
+    it('denies unauthenticated caller on file route with 401', async () => {
+      const request = new Request(`http://localhost:8000/api/runsheet-notes/file?channelId=42&path=${encodeURIComponent(validPath)}`);
+      const response = await getFile(request);
+
+      expect(response.status).toBe(401);
+      const json = await response.json();
+      expect(json.error).toMatch(/Authentication required|Unauthorized/i);
+      expectNoRockStorageOrAttributeCalls();
+    });
+
+    it('denies unauthenticated caller on list route with 401', async () => {
+      const request = new Request('http://localhost:8000/api/runsheet-notes?channelId=42');
+      const response = await getList(request);
+
+      expect(response.status).toBe(401);
+      const json = await response.json();
+      expect(json.error).toMatch(/Authentication required|Unauthorized/i);
+      expect(mockGetAttributeValue).not.toHaveBeenCalled();
+    });
+  });
+
   describe('upload route validation and handling', () => {
     it('rejects upload when channelId is missing from query string with 400', async () => {
       mockGetRockSession.mockResolvedValue(session('MNL', true));
@@ -487,6 +530,24 @@ describe('runsheet-notes route handlers access and validation', () => {
       expect(disposition).toContain(`filename*=UTF-8''${encodeURIComponent(koreanName)}`);
       // Header value must be ASCII (ByteString)
       expect(/^[\x20-\x7E]+$/.test(disposition!)).toBe(true);
+    });
+
+    it('ensures Content-Disposition filename ends in .pdf when stored note name has no extension', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+      const targetPath = 'PreacherNotes/MNL/42/deadbeef/notes.pdf';
+      mockGetAttributeValue.mockResolvedValueOnce([
+        { name: 'Sermon Outline', path: targetPath },
+      ]);
+      mockFetchRockContent.mockResolvedValueOnce(
+        new Response(new ReadableStream(), { status: 200 }),
+      );
+
+      const request = new Request(`http://localhost:8000/api/runsheet-notes/file?channelId=42&path=${encodeURIComponent(targetPath)}&download=true`);
+      const response = await getFile(request);
+
+      expect(response.status).toBe(200);
+      const disposition = response.headers.get('Content-Disposition');
+      expect(disposition).toBe('attachment; filename="Sermon Outline.pdf"; filename*=UTF-8\'\'Sermon%20Outline.pdf');
     });
   });
 });

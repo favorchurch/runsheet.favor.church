@@ -45,6 +45,7 @@ describe('rockContentUpload', () => {
       expect(url).toBe(`${getRockRootUrl()}/FileUploader.ashx`);
       expect(init?.method).toBe('POST');
       expect((init?.headers as Record<string, string>)['Authorization-Token']).toBe(ROCK_API_KEY);
+      expect(init?.signal).toBeDefined();
 
       const body = init?.body as FormData;
       expect(body).toBeInstanceOf(FormData);
@@ -65,17 +66,29 @@ describe('rockContentUpload', () => {
       );
 
       const buffer = Buffer.from('%PDF-1.4 test');
-      await expect(
-        uploadRockContent('PreacherNotes/MNL/42/deadbeef/', buffer, 'notes.pdf'),
-      ).rejects.toThrow(/Rock upload failed with status 500: Internal Server Error/);
-
+      let caughtError: any;
       try {
         await uploadRockContent('PreacherNotes/MNL/42/deadbeef/', buffer, 'notes.pdf');
       } catch (err: any) {
-        expect(err.message).not.toContain(secretToken);
-        expect(err.message).not.toContain('stack trace');
-        expect(err.message).not.toContain('database password');
+        caughtError = err;
       }
+
+      expect(caughtError).toBeDefined();
+      expect(caughtError.message).toMatch(/Rock upload failed with status 500: Internal Server Error/);
+      expect(caughtError.message).not.toContain(secretToken);
+      expect(caughtError.message).not.toContain('stack trace');
+      expect(caughtError.message).not.toContain('database password');
+    });
+
+    it('throws sanitized error on network error or timeout during upload', async () => {
+      mockFetch.mockRejectedValueOnce(
+        new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+      );
+
+      const buffer = Buffer.from('%PDF-1.4 test');
+      await expect(
+        uploadRockContent('PreacherNotes/MNL/42/deadbeef/', buffer, 'notes.pdf'),
+      ).rejects.toThrow(/Rock upload network error: The operation was aborted due to timeout/);
     });
 
     it('throws when FileName is missing from Rock JSON response', async () => {
@@ -116,6 +129,7 @@ describe('rockContentUpload', () => {
       );
       expect(init?.method).toBe('GET');
       expect((init?.headers as Record<string, string>)['Authorization-Token']).toBe(ROCK_API_KEY);
+      expect(init?.signal).toBeDefined();
     });
 
     it('returns body ReadableStream from fetchRockContentStream', async () => {
@@ -133,15 +147,33 @@ describe('rockContentUpload', () => {
 
     it('throws sanitized error on non-2xx response during fetch', async () => {
       mockFetch.mockResolvedValueOnce(
-        new Response('Sensitive 404 details', {
+        new Response('Sensitive 404 details with database password', {
           status: 404,
           statusText: 'Not Found',
         }),
       );
 
+      let caughtError: any;
+      try {
+        await fetchRockContent('PreacherNotes/MNL/42/deadbeef/missing.pdf');
+      } catch (err: any) {
+        caughtError = err;
+      }
+
+      expect(caughtError).toBeDefined();
+      expect(caughtError.message).toMatch(/Rock fetch failed with status 404: Not Found/);
+      expect(caughtError.message).not.toContain('Sensitive 404 details');
+      expect(caughtError.message).not.toContain('database password');
+    });
+
+    it('throws sanitized error on network error or timeout during fetch', async () => {
+      mockFetch.mockRejectedValueOnce(
+        new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+      );
+
       await expect(
         fetchRockContent('PreacherNotes/MNL/42/deadbeef/missing.pdf'),
-      ).rejects.toThrow(/Rock fetch failed with status 404: Not Found/);
+      ).rejects.toThrow(/Rock fetch network error: The operation was aborted due to timeout/);
     });
   });
 });
