@@ -4,6 +4,26 @@ import type { PreacherNote } from '@/types/PreacherNotes';
 export const PREACHER_NOTES_ATTRIBUTE_KEY = 'PreacherNotes';
 export const PREACHER_NOTES_ATTRIBUTE_GUID = 'B69F2184-2101-44B4-84E3-D6B63B6CE151';
 export const PREACHER_NOTES_MAX_BYTES = Math.floor(4.4 * 1024 * 1024); // 4.4 MB (~4,613,734 bytes)
+export const PREACHER_NOTES_MAX_COUNT = 10;
+export const PREACHER_NOTES_MAX_QUERY_STRING_LENGTH = 1800;
+export const PREACHER_NOTES_MAX_NAME_LENGTH = 100;
+export const PREACHER_NOTES_COUNT_ERROR_MESSAGE = 'A runsheet can hold up to 10 Preacher Notes PDFs';
+export const PREACHER_NOTES_LENGTH_ERROR_MESSAGE =
+  'Too many or too long Preacher Notes names; unlink one or shorten file names';
+
+export class PreacherNotesCountLimitError extends Error {
+  constructor(message = PREACHER_NOTES_COUNT_ERROR_MESSAGE) {
+    super(message);
+    this.name = 'PreacherNotesCountLimitError';
+  }
+}
+
+export class PreacherNotesLengthLimitError extends Error {
+  constructor(message = PREACHER_NOTES_LENGTH_ERROR_MESSAGE) {
+    super(message);
+    this.name = 'PreacherNotesLengthLimitError';
+  }
+}
 
 const VALID_CAMPUSES = new Set<string>(['MNL', 'BNE', 'SEL', 'ALL']);
 
@@ -105,20 +125,14 @@ export function parsePreacherNotes(raw: unknown): PreacherNote[] {
   const results: PreacherNote[] = [];
   for (const item of parsed) {
     if (!item || typeof item !== 'object') continue;
-    const { name, path, size, uploadedAt } = item as Record<string, unknown>;
+    const { name, path } = item as Record<string, unknown>;
     if (typeof name !== 'string' || !name.trim()) continue;
     if (typeof path !== 'string' || !path.trim()) continue;
 
     const note: PreacherNote = {
-      name: name.trim(),
+      name: name.trim().slice(0, PREACHER_NOTES_MAX_NAME_LENGTH),
       path: path.trim(),
     };
-    if (typeof size === 'number' && Number.isFinite(size) && size >= 0) {
-      note.size = size;
-    }
-    if (typeof uploadedAt === 'string' && uploadedAt.trim()) {
-      note.uploadedAt = uploadedAt.trim();
-    }
     results.push(note);
   }
   return results;
@@ -170,7 +184,13 @@ export function formatContentDisposition(
   isDownload: boolean,
 ): string {
   const type = isDownload ? 'attachment' : 'inline';
-  const name = rawFilename?.trim() || 'document.pdf';
+  let name = (rawFilename?.trim() || 'document.pdf').toWellFormed();
+
+  if (!name || name === '.pdf') {
+    name = 'document.pdf';
+  } else if (!/\.pdf$/i.test(name)) {
+    name = `${name}.pdf`;
+  }
 
   // ASCII fallback: replace non-ASCII ([^\x20-\x7E]), quotes, CR, LF, slashes with _
   let fallback = name
@@ -178,17 +198,39 @@ export function formatContentDisposition(
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!fallback || fallback === '.pdf' || fallback === '_') {
+  if (!fallback || fallback === '.pdf' || fallback === '_.pdf' || fallback === '_') {
     fallback = 'document.pdf';
+  } else if (!/\.pdf$/i.test(fallback)) {
+    fallback = `${fallback}.pdf`;
   }
 
-  const encoded = encodeURIComponent(name);
+  const encoded = encodeURIComponent(name).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
   return `${type}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
 /**
- * Serializes the preacher notes list to JSON.
+ * Serializes the preacher notes list to compact JSON.
+ * Capping name length and dropping size/uploadedAt keeps stored query string minimal.
  */
 export function serializePreacherNotes(notes: PreacherNote[]): string {
-  return JSON.stringify(notes);
+  const compact = notes.map((note) => ({
+    name: note.name.trim().slice(0, PREACHER_NOTES_MAX_NAME_LENGTH),
+    path: note.path.trim(),
+  }));
+  return JSON.stringify(compact);
+}
+
+/**
+ * Computes the query string for Rock's /ContentChannels/AttributeValue endpoint,
+ * as `new URLSearchParams({ attributeKey, attributeValue }).toString()`.
+ */
+export function computePreacherNotesQueryString(
+  notes: PreacherNote[] | string,
+  attributeKey = PREACHER_NOTES_ATTRIBUTE_KEY,
+): string {
+  const attributeValue = typeof notes === 'string' ? notes : serializePreacherNotes(notes);
+  return new URLSearchParams({ attributeKey, attributeValue }).toString();
 }

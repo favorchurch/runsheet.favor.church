@@ -9,6 +9,18 @@ export function getRockRootUrl(): string {
   return ROCK_API_URL.replace(/\/api\/?$/, '');
 }
 
+export const ROCK_CONTENT_TIMEOUT_MS = 15000;
+
+function formatNetworkErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string' && (error as any).message) {
+    return (error as any).message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'Unknown error';
+}
+
 /**
  * Posts multipart form data to `{ROCK_ROOT}/FileUploader.ashx` with:
  * - `Authorization-Token` header
@@ -45,9 +57,10 @@ export async function uploadRockContent(
         'Authorization-Token': ROCK_API_KEY,
       },
       body: formData,
+      signal: AbortSignal.timeout(ROCK_CONTENT_TIMEOUT_MS),
     });
   } catch (error) {
-    throw new Error(`Rock upload network error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(`Rock upload network error: ${formatNetworkErrorMessage(error)}`);
   }
 
   if (!response.ok) {
@@ -93,9 +106,10 @@ export async function fetchRockContent(path: string): Promise<Response> {
       headers: {
         'Authorization-Token': ROCK_API_KEY,
       },
+      signal: AbortSignal.timeout(ROCK_CONTENT_TIMEOUT_MS),
     });
   } catch (error) {
-    throw new Error(`Rock fetch network error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(`Rock fetch network error: ${formatNetworkErrorMessage(error)}`);
   }
 
   if (!response.ok) {

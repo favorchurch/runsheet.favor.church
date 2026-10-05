@@ -1,6 +1,6 @@
 {
   "name": "runsheet-favor-church",
-  "version": "1.27.5",
+  "version": "1.28.0",
   "private": true,
   "ts-node": {
     "esm": true,

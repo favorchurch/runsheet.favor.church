@@ -78,6 +78,7 @@ describe('runsheet-notes route handlers access and validation', () => {
       }
       return [];
     });
+    mockGetAttributeValue.mockResolvedValue([]);
   });
 
   describe('access denial (non-editor and cross-campus editor)', () => {
@@ -125,6 +126,49 @@ describe('runsheet-notes route handlers access and validation', () => {
       const response = await getList(request);
 
       expect(response.status).toBe(403);
+      expect(mockGetAttributeValue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('unauthenticated caller (no Auth0 session)', () => {
+    const validPath = 'PreacherNotes/MNL/42/deadbeef/notes.pdf';
+
+    beforeEach(() => {
+      mockGetRockSession.mockRejectedValue(new Error('FORBIDDEN'));
+    });
+
+    it('denies unauthenticated caller on upload route with 401', async () => {
+      const formData = new FormData();
+      formData.append('file', createPdfFile('notes.pdf'));
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const response = await postUpload(request);
+      expect(response.status).toBe(401);
+      const json = await response.json();
+      expect(json.error).toMatch(/Authentication required|Unauthorized/i);
+      expectNoRockStorageOrAttributeCalls();
+    });
+
+    it('denies unauthenticated caller on file route with 401', async () => {
+      const request = new Request(`http://localhost:8000/api/runsheet-notes/file?channelId=42&path=${encodeURIComponent(validPath)}`);
+      const response = await getFile(request);
+
+      expect(response.status).toBe(401);
+      const json = await response.json();
+      expect(json.error).toMatch(/Authentication required|Unauthorized/i);
+      expectNoRockStorageOrAttributeCalls();
+    });
+
+    it('denies unauthenticated caller on list route with 401', async () => {
+      const request = new Request('http://localhost:8000/api/runsheet-notes?channelId=42');
+      const response = await getList(request);
+
+      expect(response.status).toBe(401);
+      const json = await response.json();
+      expect(json.error).toMatch(/Authentication required|Unauthorized/i);
       expect(mockGetAttributeValue).not.toHaveBeenCalled();
     });
   });
@@ -315,7 +359,8 @@ describe('runsheet-notes route handlers access and validation', () => {
     it('returns 500 stating file reached Rock but was not linked if attribute read throws after upload', async () => {
       mockGetRockSession.mockResolvedValue(session('MNL', true));
       mockUploadRockContent.mockResolvedValueOnce('PreacherNotes/MNL/42/deadbeef/notes.pdf');
-      mockGetAttributeValue.mockRejectedValueOnce(new Error('Rock attribute read failed'));
+      mockGetAttributeValue.mockResolvedValueOnce([]); // pre-check before upload succeeds
+      mockGetAttributeValue.mockRejectedValueOnce(new Error('Rock attribute read failed')); // read inside mutate throws after upload
 
       const formData = new FormData();
       formData.append('file', createPdfFile('notes.pdf'));
@@ -351,6 +396,149 @@ describe('runsheet-notes route handlers access and validation', () => {
 
       const json = await response.json();
       expect(json.error).toBe('The file reached Rock but was not linked to the runsheet.');
+    });
+
+    it('rejects upload when runsheet already has 10 notes with 400 before sending to Rock', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+      const tenNotes = Array.from({ length: 10 }, (_, i) => ({
+        name: `note_${i}.pdf`,
+        path: `PreacherNotes/MNL/42/deadbeef${i}/note_${i}.pdf`,
+      }));
+      mockGetAttributeValue.mockResolvedValueOnce(tenNotes);
+
+      const formData = new FormData();
+      formData.append('file', createPdfFile('note_11.pdf'));
+
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const response = await postUpload(request);
+      expect(response.status).toBe(400);
+
+      const json = await response.json();
+      expect(json.error).toBe('A runsheet can hold up to 10 Preacher Notes PDFs');
+      expect(mockUploadRockContent).not.toHaveBeenCalled();
+    });
+
+    it('rejects upload with 400 and clear message when note list with long ASCII names exceeds query string budget before sending to Rock', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+      // 9 notes with long names
+      const longAsciiNotes = Array.from({ length: 9 }, (_, i) => ({
+        name: `long_preacher_note_title_segment_${i}_${'a'.repeat(45)}.pdf`,
+        path: `PreacherNotes/MNL/42/deadbeef${i}/note_${i}.pdf`,
+      }));
+      mockGetAttributeValue.mockResolvedValueOnce(longAsciiNotes);
+
+      const formData = new FormData();
+      formData.append('file', createPdfFile(`another_long_preacher_note_${'b'.repeat(45)}.pdf`));
+
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const response = await postUpload(request);
+      expect(response.status).toBe(400);
+
+      const json = await response.json();
+      expect(json.error).toBe('Too many or too long Preacher Notes names; unlink one or shorten file names');
+      expect(mockUploadRockContent).not.toHaveBeenCalled();
+    });
+
+    it('rejects upload with 400 and clear message when note list with Korean names exceeds query string budget before sending to Rock', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+      // Korean characters encode at 9 characters each in URLSearchParams (%XX%XX%XX)
+      // 6 notes with 25 Korean characters each exceed the 1800-char budget
+      const koreanNotes = Array.from({ length: 6 }, (_, i) => ({
+        name: `주일설교_${'가'.repeat(25)}_${i}.pdf`,
+        path: `PreacherNotes/SEL/42/deadbeef${i}/note_${i}.pdf`,
+      }));
+      mockGetAttributeValue.mockResolvedValueOnce(koreanNotes);
+
+      const formData = new FormData();
+      formData.append('file', createPdfFile(`새로운노트_${'나'.repeat(25)}.pdf`));
+
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const response = await postUpload(request);
+      expect(response.status).toBe(400);
+
+      const json = await response.json();
+      expect(json.error).toBe('Too many or too long Preacher Notes names; unlink one or shorten file names');
+      expect(mockUploadRockContent).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 "A runsheet can hold up to 10 Preacher Notes PDFs" when runsheet list reaches 10 between pre-check and mutate', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+      const returnedPath = 'PreacherNotes/MNL/42/deadbeef/notes.pdf';
+      mockUploadRockContent.mockResolvedValueOnce(returnedPath);
+
+      const nineNotes = Array.from({ length: 9 }, (_, i) => ({
+        name: `note_${i}.pdf`,
+        path: `PreacherNotes/MNL/42/deadbeef${i}/note_${i}.pdf`,
+      }));
+      const tenNotes = Array.from({ length: 10 }, (_, i) => ({
+        name: `note_${i}.pdf`,
+        path: `PreacherNotes/MNL/42/deadbeef${i}/note_${i}.pdf`,
+      }));
+
+      // Fast-path pre-check sees 9 notes (allowed)
+      mockGetAttributeValue.mockResolvedValueOnce(nineNotes);
+      // Inside mutate callback, concurrent upload has completed so runsheet now has 10 notes
+      mockGetAttributeValue.mockResolvedValueOnce(tenNotes);
+
+      const formData = new FormData();
+      formData.append('file', createPdfFile('notes.pdf'));
+
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const response = await postUpload(request);
+      expect(response.status).toBe(400);
+
+      const json = await response.json();
+      expect(json.error).toBe('A runsheet can hold up to 10 Preacher Notes PDFs');
+      expect(mockUploadRockContent).toHaveBeenCalledTimes(1);
+      // setPreacherNotesAttributeValue was not called because mutate callback threw
+      expect(mockSetAttributeValue).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 "Too many or too long Preacher Notes names..." when query string budget is exceeded between pre-check and mutate', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+      const returnedPath = 'PreacherNotes/MNL/42/deadbeef/notes.pdf';
+      mockUploadRockContent.mockResolvedValueOnce(returnedPath);
+
+      // Fast-path sees empty list
+      mockGetAttributeValue.mockResolvedValueOnce([]);
+      // Inside mutate, concurrent writes filled up notes with Korean names
+      const koreanNotes = Array.from({ length: 6 }, (_, i) => ({
+        name: `주일설교_${'가'.repeat(25)}_${i}.pdf`,
+        path: `PreacherNotes/SEL/42/deadbeef${i}/note_${i}.pdf`,
+      }));
+      mockGetAttributeValue.mockResolvedValueOnce(koreanNotes);
+
+      const formData = new FormData();
+      formData.append('file', createPdfFile(`새로운노트_${'나'.repeat(25)}.pdf`));
+
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const response = await postUpload(request);
+      expect(response.status).toBe(400);
+
+      const json = await response.json();
+      expect(json.error).toBe('Too many or too long Preacher Notes names; unlink one or shorten file names');
+      expect(mockUploadRockContent).toHaveBeenCalledTimes(1);
+      expect(mockSetAttributeValue).not.toHaveBeenCalled();
     });
   });
 
@@ -487,6 +675,24 @@ describe('runsheet-notes route handlers access and validation', () => {
       expect(disposition).toContain(`filename*=UTF-8''${encodeURIComponent(koreanName)}`);
       // Header value must be ASCII (ByteString)
       expect(/^[\x20-\x7E]+$/.test(disposition!)).toBe(true);
+    });
+
+    it('ensures Content-Disposition filename ends in .pdf when stored note name has no extension', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+      const targetPath = 'PreacherNotes/MNL/42/deadbeef/notes.pdf';
+      mockGetAttributeValue.mockResolvedValueOnce([
+        { name: 'Sermon Outline', path: targetPath },
+      ]);
+      mockFetchRockContent.mockResolvedValueOnce(
+        new Response(new ReadableStream(), { status: 200 }),
+      );
+
+      const request = new Request(`http://localhost:8000/api/runsheet-notes/file?channelId=42&path=${encodeURIComponent(targetPath)}&download=true`);
+      const response = await getFile(request);
+
+      expect(response.status).toBe(200);
+      const disposition = response.headers.get('Content-Disposition');
+      expect(disposition).toBe('attachment; filename="Sermon Outline.pdf"; filename*=UTF-8\'\'Sermon%20Outline.pdf');
     });
   });
 });
