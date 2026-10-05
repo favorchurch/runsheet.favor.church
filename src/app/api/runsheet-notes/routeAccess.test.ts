@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { PREACHER_NOTES_MAX_BYTES } from '@/lib/preacherNotes';
-import { fetchRockContent, uploadRockContent } from '@/server-actions/internal/rockContentUpload';
+import {
+  fetchRockContent,
+  RockContentExistsError,
+  uploadRockContent,
+} from '@/server-actions/internal/rockContentUpload';
 import {
   getPreacherNotesAttributeValue,
   mutatePreacherNotesAttribute,
@@ -26,6 +30,7 @@ jest.mock('@/server-actions/internal/rockFetch', () => ({
 jest.mock('@/server-actions/internal/rockContentUpload', () => ({
   fetchRockContent: jest.fn(),
   uploadRockContent: jest.fn(),
+  RockContentExistsError: class RockContentExistsError extends Error {},
 }));
 
 jest.mock('@/server-actions/internal/rockPreacherNotesAttribute', () => ({
@@ -250,7 +255,7 @@ describe('runsheet-notes route handlers access and validation', () => {
 
     it('successfully uploads valid PDF, updates attribute list, and returns new list', async () => {
       mockGetRockSession.mockResolvedValue(session('MNL', true));
-      const returnedPath = 'PreacherNotes/MNL/42/deadbeef/notes.pdf';
+      const returnedPath = 'PreacherNotes/MNL/2026-08-16_10AM_notes.pdf';
       mockUploadRockContent.mockResolvedValueOnce(returnedPath);
       mockGetAttributeValue.mockResolvedValueOnce([]);
       mockSetAttributeValue.mockImplementation(async (_chId, notes) => notes as any);
@@ -269,16 +274,21 @@ describe('runsheet-notes route handlers access and validation', () => {
       const json = await response.json();
       expect(json.success).toBe(true);
       expect(json.notes).toHaveLength(1);
-      expect(json.notes[0].name).toBe('notes.pdf');
+      expect(json.notes[0].name).toBe('2026-08-16 10AM notes.pdf');
       expect(json.notes[0].path).toBe(returnedPath);
 
       expect(mockUploadRockContent).toHaveBeenCalledTimes(1);
+      expect(mockUploadRockContent).toHaveBeenCalledWith(
+        'PreacherNotes/MNL/',
+        expect.anything(),
+        '2026-08-16 10AM notes.pdf',
+      );
       expect(mockSetAttributeValue).toHaveBeenCalledTimes(1);
     });
 
-    it('derives safe storage filename while preserving original display name (e.g. Sermon..pdf)', async () => {
+    it('names the stored file after the service date and time and sanitizes the original name', async () => {
       mockGetRockSession.mockResolvedValue(session('MNL', true));
-      const returnedPath = 'PreacherNotes/MNL/42/deadbeef/Sermon.pdf';
+      const returnedPath = 'PreacherNotes/MNL/2026-08-16_10AM_Sermon.pdf';
       mockUploadRockContent.mockResolvedValueOnce(returnedPath);
       mockGetAttributeValue.mockResolvedValueOnce([]);
       mockSetAttributeValue.mockImplementation(async (_chId, notes) => notes as any);
@@ -293,25 +303,25 @@ describe('runsheet-notes route handlers access and validation', () => {
 
       const response = await postUpload(request);
       expect(response.status).toBe(200);
-
-      // Verify sanitized storage filename passed to Rock
       expect(mockUploadRockContent).toHaveBeenCalledWith(
-        expect.stringMatching(/^PreacherNotes\/MNL\/42\//),
+        'PreacherNotes/MNL/',
         expect.anything(),
-        'Sermon.pdf',
+        '2026-08-16 10AM Sermon.pdf',
       );
 
-      // Verify original display name preserved in saved note
       const json = await response.json();
-      expect(json.notes[0].name).toBe('Sermon..pdf');
+      expect(json.notes[0].name).toBe('2026-08-16 10AM Sermon.pdf');
       expect(json.notes[0].path).toBe(returnedPath);
     });
 
-    it('appends .pdf to storage filename if missing (e.g. notes)', async () => {
+    it('retries with a numbered name when Rock already holds the file name', async () => {
       mockGetRockSession.mockResolvedValue(session('MNL', true));
-      const returnedPath = 'PreacherNotes/MNL/42/deadbeef/notes.pdf';
-      mockUploadRockContent.mockResolvedValueOnce(returnedPath);
-      mockGetAttributeValue.mockResolvedValueOnce([]);
+      const returnedPath = 'PreacherNotes/MNL/2026-08-16_10AM_notes_3.pdf';
+      mockUploadRockContent
+        .mockRejectedValueOnce(new RockContentExistsError())
+        .mockRejectedValueOnce(new RockContentExistsError())
+        .mockResolvedValueOnce(returnedPath);
+      mockGetAttributeValue.mockResolvedValue([]);
       mockSetAttributeValue.mockImplementation(async (_chId, notes) => notes as any);
 
       const formData = new FormData();
@@ -324,15 +334,15 @@ describe('runsheet-notes route handlers access and validation', () => {
 
       const response = await postUpload(request);
       expect(response.status).toBe(200);
-
-      expect(mockUploadRockContent).toHaveBeenCalledWith(
-        expect.stringMatching(/^PreacherNotes\/MNL\/42\//),
-        expect.anything(),
-        'notes.pdf',
-      );
+      expect(mockUploadRockContent.mock.calls.map((call) => call[2])).toEqual([
+        '2026-08-16 10AM notes.pdf',
+        '2026-08-16 10AM notes_2.pdf',
+        '2026-08-16 10AM notes_3.pdf',
+      ]);
 
       const json = await response.json();
-      expect(json.notes[0].name).toBe('notes');
+      expect(json.notes[0].name).toBe('2026-08-16 10AM notes_3.pdf');
+      expect(json.notes[0].path).toBe(returnedPath);
     });
 
     it('returns 500 and does not link note if returned path fails isValidNotePath', async () => {

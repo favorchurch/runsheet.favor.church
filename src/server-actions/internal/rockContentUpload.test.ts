@@ -3,6 +3,7 @@ import {
   fetchRockContent,
   fetchRockContentStream,
   getRockRootUrl,
+  RockContentExistsError,
   uploadRockContent,
 } from './rockContentUpload';
 import { ROCK_API_KEY, ROCK_API_URL } from '@/constants/server';
@@ -78,6 +79,22 @@ describe('rockContentUpload', () => {
       expect(caughtError.message).not.toContain(secretToken);
       expect(caughtError.message).not.toContain('stack trace');
       expect(caughtError.message).not.toContain('database password');
+    });
+
+    it('throws RockContentExistsError when Rock refuses to overwrite an existing file', async () => {
+      mockFetch.mockResolvedValueOnce(new Response('File already exists.', { status: 400 }));
+
+      await expect(
+        uploadRockContent('PreacherNotes/MNL/', Buffer.from('%PDF-1.4 test'), 'notes.pdf'),
+      ).rejects.toBeInstanceOf(RockContentExistsError);
+    });
+
+    it('keeps the sanitized error for other 400 responses', async () => {
+      mockFetch.mockResolvedValueOnce(new Response('Invalid folder path.', { status: 400, statusText: 'Bad Request' }));
+
+      await expect(
+        uploadRockContent('PreacherNotes/MNL/', Buffer.from('%PDF-1.4 test'), 'notes.pdf'),
+      ).rejects.toThrow(/Rock upload failed with status 400/);
     });
 
     it('throws sanitized error on network error or timeout during upload', async () => {

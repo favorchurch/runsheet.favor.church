@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import {
+  buildPreacherNotesFileName,
   buildPreacherNotesFolder,
   computePreacherNotesQueryString,
   isPdf,
@@ -13,10 +14,9 @@ import {
   PREACHER_NOTES_MAX_QUERY_STRING_LENGTH,
   PreacherNotesCountLimitError,
   PreacherNotesLengthLimitError,
-  sanitizeStorageFileName,
 } from '@/lib/preacherNotes';
 import { extractRunsheetCampus } from '@/lib/runsheetCampus';
-import { uploadRockContent } from '@/server-actions/internal/rockContentUpload';
+import { RockContentExistsError, uploadRockContent } from '@/server-actions/internal/rockContentUpload';
 import {
   getPreacherNotesAttributeValue,
   mutatePreacherNotesAttribute,
@@ -25,6 +25,8 @@ import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization
 import type { PreacherNote } from '@/types/PreacherNotes';
 
 export const dynamic = 'force-dynamic';
+
+const MAX_NAME_ATTEMPTS = 10;
 
 export async function POST(request: Request) {
   try {
@@ -84,11 +86,12 @@ export async function POST(request: Request) {
 
     // Determine campus and build folder path
     const campus = access.channelName ? extractRunsheetCampus(access.channelName) : null;
-    const folderPath = buildPreacherNotesFolder(campus, channelId);
+    const folderPath = buildPreacherNotesFolder(campus);
 
-    // Keep the original as the display name, and derive a safe storage name for Rock
+    // Named `YYYY-MM-DD <Service Time> <original name>.pdf`; the same name is shown in the panel.
     const originalFileName = (file as any).name || 'document.pdf';
-    const storageFileName = sanitizeStorageFileName(originalFileName);
+    const storageFileName = buildPreacherNotesFileName(access.channelName, originalFileName);
+    const displayName = storageFileName.slice(0, PREACHER_NOTES_MAX_NAME_LENGTH);
 
     // Fast-path 1: Enforce 10 notes maximum per runsheet before sending to Rock
     const currentNotes = await getPreacherNotesAttributeValue(channelId);
@@ -102,7 +105,7 @@ export async function POST(request: Request) {
     // Fast-path 2: Enforce query string length budget before sending to Rock
     const candidatePath = `${folderPath}${storageFileName}`;
     const candidateEntry: PreacherNote = {
-      name: originalFileName.trim().slice(0, PREACHER_NOTES_MAX_NAME_LENGTH) || 'document.pdf',
+      name: displayName,
       path: candidatePath,
     };
     const wouldBeNotes = [...currentNotes, candidateEntry];
@@ -115,8 +118,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // Upload to Rock
-    const returnedPath = await uploadRockContent(folderPath, buffer, storageFileName);
+    // Upload to Rock. Rock never overwrites, so a taken name retries as `<name>_2.pdf`, `_3`, ...
+    let returnedPath = '';
+    let uploadName = storageFileName;
+    for (let attempt = 1; !returnedPath; attempt++) {
+      uploadName = buildPreacherNotesFileName(access.channelName, originalFileName, attempt);
+      try {
+        returnedPath = await uploadRockContent(folderPath, buffer, uploadName);
+      } catch (uploadError) {
+        if (!(uploadError instanceof RockContentExistsError) || attempt >= MAX_NAME_ATTEMPTS) throw uploadError;
+      }
+    }
 
     // Validate the returned path against channelId
     if (!isValidNotePath(returnedPath, channelId)) {
@@ -134,7 +146,7 @@ export async function POST(request: Request) {
         }
 
         const newEntry: PreacherNote = {
-          name: originalFileName.trim().slice(0, PREACHER_NOTES_MAX_NAME_LENGTH) || 'document.pdf',
+          name: uploadName.slice(0, PREACHER_NOTES_MAX_NAME_LENGTH),
           path: returnedPath,
         };
         const nextList = [...currentNotes, newEntry];

@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import {
+  buildPreacherNotesFileName,
   buildPreacherNotesFolder,
   formatContentDisposition,
   isPdf,
@@ -132,38 +133,56 @@ describe('isPdf', () => {
 });
 
 describe('buildPreacherNotesFolder', () => {
-  it('builds PreacherNotes/<CAMPUS|ALL>/<channelId>/<random>/', () => {
-    const folderMnl = buildPreacherNotesFolder('MNL', 42, 'abcd1234');
-    expect(folderMnl).toBe('PreacherNotes/MNL/42/abcd1234/');
-
-    const folderBne = buildPreacherNotesFolder('BNE', '101', 'fe45');
-    expect(folderBne).toBe('PreacherNotes/BNE/101/fe45/');
-
-    const folderSel = buildPreacherNotesFolder('SEL', 55, '0011');
-    expect(folderSel).toBe('PreacherNotes/SEL/55/0011/');
-
-    const folderAll = buildPreacherNotesFolder('ALL', 7, 'deadbeef');
-    expect(folderAll).toBe('PreacherNotes/ALL/7/deadbeef/');
+  it('builds one flat folder per campus: PreacherNotes/<CAMPUS|ALL>/', () => {
+    expect(buildPreacherNotesFolder('MNL')).toBe('PreacherNotes/MNL/');
+    expect(buildPreacherNotesFolder('BNE')).toBe('PreacherNotes/BNE/');
+    expect(buildPreacherNotesFolder('SEL')).toBe('PreacherNotes/SEL/');
+    expect(buildPreacherNotesFolder('ALL')).toBe('PreacherNotes/ALL/');
   });
 
   it('resolves campus from runsheet title marker or defaults to ALL', () => {
-    const fromTitle = buildPreacherNotesFolder('MNL Crowne // Oct 10 // 10AM', 12, '1122');
-    expect(fromTitle).toBe('PreacherNotes/MNL/12/1122/');
+    expect(buildPreacherNotesFolder('MNL Crowne // Oct 10 // 10AM')).toBe('PreacherNotes/MNL/');
+    expect(buildPreacherNotesFolder('Special Event Run // Oct 10')).toBe('PreacherNotes/ALL/');
+    expect(buildPreacherNotesFolder(null)).toBe('PreacherNotes/ALL/');
+  });
+});
 
-    const noMarker = buildPreacherNotesFolder('Special Event Run // Oct 10', 99, 'aabb');
-    expect(noMarker).toBe('PreacherNotes/ALL/99/aabb/');
-
-    const empty = buildPreacherNotesFolder(null, 5, 'ccdd');
-    expect(empty).toBe('PreacherNotes/ALL/5/ccdd/');
+describe('buildPreacherNotesFileName', () => {
+  it('prefixes the service date and time to the original name', () => {
+    expect(buildPreacherNotesFileName('MNL Crowne // October 12, 2026 // 10AM', 'Sermon notes.pdf')).toBe(
+      '2026-10-12 10AM Sermon notes.pdf',
+    );
+    expect(buildPreacherNotesFileName('MNL Grow - Bible Essentials // October 6, 2026 // 7PM', 'CS_140.pdf')).toBe(
+      '2026-10-06 7PM CS_140.pdf',
+    );
   });
 
-  it('generates random hex when randomHex is omitted', () => {
-    const folder = buildPreacherNotesFolder('MNL', 42);
-    expect(folder).toMatch(/^PreacherNotes\/MNL\/42\/[0-9a-fA-F]+\/$/);
+  it('replaces the colon in times like 11:30AM', () => {
+    expect(buildPreacherNotesFileName('BNE Service // Aug 9, 2026 // 11:30AM', 'notes.pdf')).toBe(
+      '2026-08-09 11.30AM notes.pdf',
+    );
+  });
+
+  it('leaves out a missing date or time', () => {
+    expect(buildPreacherNotesFileName('Special Event', 'notes.pdf')).toBe('notes.pdf');
+    expect(buildPreacherNotesFileName('MNL Retreat // October 12, 2026', 'notes.pdf')).toBe('2026-10-12 notes.pdf');
+  });
+
+  it('sanitizes the original name and appends a numbered suffix', () => {
+    expect(buildPreacherNotesFileName('MNL // October 12, 2026 // 10AM', '../evil..pdf')).toBe('2026-10-12 10AM evil.pdf');
+    expect(buildPreacherNotesFileName('MNL // October 12, 2026 // 10AM', 'notes', 2)).toBe('2026-10-12 10AM notes_2.pdf');
+    expect(buildPreacherNotesFileName('MNL // October 12, 2026 // 10AM', 'notes.pdf', 1)).toBe('2026-10-12 10AM notes.pdf');
   });
 });
 
 describe('isValidNotePath', () => {
+  it('accepts flat campus paths regardless of channel', () => {
+    expect(isValidNotePath('PreacherNotes/MNL/2026-10-06_7PM_CS_140.pdf', 42)).toBe(true);
+    expect(isValidNotePath('PreacherNotes/ALL/notes.pdf', 7)).toBe(true);
+    expect(isValidNotePath('PreacherNotes/XYZ/notes.pdf', 42)).toBe(false);
+    expect(isValidNotePath('PreacherNotes/MNL/notes.txt', 42)).toBe(false);
+  });
+
   it('accepts valid paths matching channelId and allowed campuses', () => {
     expect(isValidNotePath('PreacherNotes/MNL/42/a1b2c3d4/notes.pdf', 42)).toBe(true);
     expect(isValidNotePath('PreacherNotes/BNE/42/0123456789abcdef/sermon_final.pdf', 42)).toBe(true);

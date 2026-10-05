@@ -1,4 +1,5 @@
 import { extractRunsheetCampus, RunsheetCampusCode } from '@/lib/runsheetCampus';
+import { extractChannelTime, formatChannelDateSortKey } from '@/lib/runsheetDate';
 import type { PreacherNote } from '@/types/PreacherNotes';
 
 export const PREACHER_NOTES_ATTRIBUTE_KEY = 'PreacherNotes';
@@ -40,27 +41,35 @@ export function resolveNotesCampus(campusOrTitle?: string | null): RunsheetCampu
   return extracted || 'ALL';
 }
 
-function generateRandomHex(byteCount = 4): string {
-  if (typeof globalThis.crypto?.getRandomValues === 'function') {
-    const arr = new Uint8Array(byteCount);
-    globalThis.crypto.getRandomValues(arr);
-    return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('');
-  }
-  return Math.random().toString(16).slice(2, 2 + byteCount * 2);
+/**
+ * Builds the folder path in Rock Asset Manager: `PreacherNotes/<CAMPUS|ALL>/`.
+ * Every runsheet of a campus shares one folder; file names carry the service date and time.
+ */
+export function buildPreacherNotesFolder(campus: string | null | undefined): string {
+  return `PreacherNotes/${resolveNotesCampus(campus)}/`;
 }
 
 /**
- * Builds the folder path in Rock Asset Manager:
- * `PreacherNotes/<CAMPUS|ALL>/<channelId>/<random>/`
+ * Builds the storage file name `YYYY-MM-DD <Service Time> <original name>.pdf` from the
+ * runsheet title (`{prefix} // {date} // {time}`). A missing date or time is left out.
+ * `suffix` (2, 3, ...) is appended to the stem when Rock already holds the name.
+ * Rock's uploader replaces spaces with `_` when it stores the file.
  */
-export function buildPreacherNotesFolder(
-  campus: string | null | undefined,
-  channelId: number | string,
-  randomHex?: string,
+export function buildPreacherNotesFileName(
+  channelName: string | null | undefined,
+  originalName: string | null | undefined,
+  suffix?: number,
 ): string {
-  const resolvedCampus = resolveNotesCampus(campus);
-  const hex = randomHex && /^[0-9a-fA-F]+$/.test(randomHex) ? randomHex : generateRandomHex(4);
-  return `PreacherNotes/${resolvedCampus}/${channelId}/${hex}/`;
+  const title = channelName || '';
+  const dateKey = formatChannelDateSortKey(title);
+  const date = dateKey === '9999-99-99' ? '' : dateKey;
+  // Times like `11:30AM`: a colon is not a valid Windows file name character.
+  const time = extractChannelTime(title).replace(/\s+/g, '').replace(/:/g, '.');
+
+  const stem = sanitizeStorageFileName(originalName).slice(0, -4);
+  const parts = [date, time, stem].filter(Boolean);
+  const base = sanitizeStorageFileName(`${parts.join(' ')}.pdf`).slice(0, -4);
+  return `${suffix && suffix > 1 ? `${base}_${suffix}` : base}.pdf`;
 }
 
 /**
@@ -84,9 +93,10 @@ function escapeRegex(str: string): string {
 }
 
 /**
- * Validates a preacher note storage path:
- * Only accepts `PreacherNotes/(MNL|BNE|SEL|ALL)/<that channelId>/<hex>/<name>.pdf`
- * with no `..`, backslash, or leading slash.
+ * Validates a preacher note storage path. Accepts `PreacherNotes/(MNL|BNE|SEL|ALL)/<name>.pdf`,
+ * plus the earlier per-runsheet layout `PreacherNotes/<CAMPUS>/<that channelId>/<hex>/<name>.pdf`
+ * so notes linked before the flat layout still open. Rejects `..`, backslashes and a leading slash.
+ * Which runsheet owns a flat path is decided by its saved list, not by the path.
  */
 export function isValidNotePath(path: string | null | undefined, channelId: number | string): boolean {
   if (typeof path !== 'string' || !path) return false;
@@ -94,13 +104,15 @@ export function isValidNotePath(path: string | null | undefined, channelId: numb
   if (path.includes('\\')) return false;
   if (path.includes('..')) return false;
 
+  if (/^PreacherNotes\/(MNL|BNE|SEL|ALL)\/[^/]+\.pdf$/.test(path)) return true;
+
   const channelStr = String(channelId).trim();
   if (!channelStr || !/^[1-9]\d*$/.test(channelStr)) return false;
 
-  const regex = new RegExp(
+  const legacy = new RegExp(
     `^PreacherNotes/(MNL|BNE|SEL|ALL)/${escapeRegex(channelStr)}/[0-9a-fA-F]+/[^/]+\\.pdf$`,
   );
-  return regex.test(path);
+  return legacy.test(path);
 }
 
 /**

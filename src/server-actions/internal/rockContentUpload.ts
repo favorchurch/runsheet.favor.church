@@ -11,6 +11,14 @@ export function getRockRootUrl(): string {
 
 export const ROCK_CONTENT_TIMEOUT_MS = 15000;
 
+/** Rock's uploader refuses to overwrite: 400 "File already exists." */
+export class RockContentExistsError extends Error {
+  constructor() {
+    super('Rock upload failed: file already exists');
+    this.name = 'RockContentExistsError';
+  }
+}
+
 function formatNetworkErrorMessage(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string' && (error as any).message) {
     return (error as any).message;
@@ -61,6 +69,10 @@ export async function uploadRockContent(
     });
   } catch (error) {
     throw new Error(`Rock upload network error: ${formatNetworkErrorMessage(error)}`);
+  }
+
+  if (response.status === 400 && /already exists/i.test(await response.text().catch(() => ''))) {
+    throw new RockContentExistsError();
   }
 
   if (!response.ok) {
