@@ -103,12 +103,12 @@ describe('rockCreateServiceRunsheet skipIfExists option', () => {
     mockDetails.mockResolvedValue({ success: true, data: { items: [] } } as any);
   });
 
-  it('skips creation and returns skipped: true when channel with same name already exists', async () => {
+  it('skips creation and returns skipped: true and existing id when channel with same name already exists', async () => {
     mockGet.mockResolvedValue([{ Id: 42 }]);
 
     const res = await rockCreateServiceRunsheet(TITLE, 13, undefined, { skipIfExists: true });
 
-    expect(res).toEqual({ success: true, skipped: true });
+    expect(res).toEqual({ success: true, id: 42, skipped: true });
     expect(mockPost).not.toHaveBeenCalled();
     expect(mockGet).toHaveBeenCalledWith('/ContentChannels', {
       $filter: `ContentChannelTypeId eq 13 and Name eq '${TITLE}'`,
@@ -146,7 +146,7 @@ describe('rockCreateServiceRunsheet skipIfExists option', () => {
 
     const res = await rockCreateServiceRunsheet(titleWithApostrophe, 13, undefined, { skipIfExists: true });
 
-    expect(res).toEqual({ success: true, skipped: true });
+    expect(res).toEqual({ success: true, id: 55, skipped: true });
     expect(mockPost).not.toHaveBeenCalled();
     expect(mockGet).toHaveBeenCalledWith('/ContentChannels', {
       $filter: "ContentChannelTypeId eq 13 and Name eq 'MNL Crowne // Father''s Day // 10AM'",

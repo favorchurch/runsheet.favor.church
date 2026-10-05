@@ -81,7 +81,7 @@ export async function rockCreateServiceRunsheet(
       })) as Array<{ Id: number }> | null;
 
       if (existing && existing.length > 0) {
-        return { success: true, skipped: true };
+        return { success: true, id: existing[0].Id, skipped: true };
       }
     }
 
