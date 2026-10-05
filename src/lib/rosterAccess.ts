@@ -9,7 +9,6 @@
 import { extractRunsheetCampus, type RunsheetCampusCode } from './runsheetCampus';
 import { extractChannelDate, extractChannelTime, parseTimeToSortSignature } from './runsheetDate';
 import { getRunsheetKind } from './runsheetKind';
-import { scheduleStartTime as resolveScheduleStartTime } from './scheduleOccurrences';
 
 /** Rock Campus.Id → runsheet campus code (verified 2026-09-26). */
 export const ROCK_CAMPUS_CODES: Record<number, RunsheetCampusCode> = { 1: 'MNL', 2: 'BNE', 3: 'SEL' };
@@ -19,33 +18,20 @@ export const ROCK_CAMPUS_CODES: Record<number, RunsheetCampusCode> = { 1: 'MNL',
  * clears its CampusId when a rostered volunteer checks in. The occurrence
  * keeps the real date and schedule, and the serving team keeps the campus,
  * so prefer those and fall back to the attendance row only when missing.
- *
- * Schedule start time precedence:
- * 1. `scheduleStartTime` (pre-resolved HH:MM:SS), if non-null.
- * 2. `resolveScheduleStartTime(iCalendarContent, weeklyTimeOfDay)` if
- *    `scheduleStartTime` is null or omitted.
- * 3. Attendance row's `attendanceStartDateTime` if neither yields a time
- *    or if `occurrenceDate` is missing.
  */
 export function rosteredAttendanceFromOccurrence(input: {
   attendanceCampusId: number | null;
   attendanceStartDateTime: string;
   occurrenceDate: string | null;
   scheduleId: number | null;
-  scheduleStartTime?: string | null;
-  iCalendarContent?: string | null;
-  weeklyTimeOfDay?: string | null;
+  scheduleStartTime: string | null;
   groupCampusId: number | null;
 }): RosteredAttendance {
   const date = input.occurrenceDate ? input.occurrenceDate.slice(0, 10) : null;
-  const time =
-    input.scheduleStartTime != null
-      ? input.scheduleStartTime
-      : resolveScheduleStartTime(input.iCalendarContent, input.weeklyTimeOfDay);
   return {
     campusId: input.groupCampusId ?? input.attendanceCampusId,
     startDateTime:
-      date && time ? `${date}T${time}` : input.attendanceStartDateTime,
+      date && input.scheduleStartTime ? `${date}T${input.scheduleStartTime}` : input.attendanceStartDateTime,
     scheduleId: input.scheduleId,
   };
 }

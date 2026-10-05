@@ -191,51 +191,16 @@ describe('rosteredAttendanceFromOccurrence', () => {
     ]);
   });
 
-  it('unit cases: resolves WeeklyTimeOfDay "09:00:00" when iCal is absent, and falls through to attendance row when null or malformed', () => {
-    // iCal absent + WeeklyTimeOfDay '09:00:00' → 09:00:00
-    const resolvedFromWeekly = rosteredAttendanceFromOccurrence({
-      attendanceCampusId: 1,
-      attendanceStartDateTime: '2026-10-04T06:33:26',
-      occurrenceDate: '2026-10-04T00:00:00',
-      scheduleId: 564,
-      weeklyTimeOfDay: '09:00:00',
-      groupCampusId: 1,
-    });
-    expect(resolvedFromWeekly.startDateTime).toBe('2026-10-04T09:00:00');
-
-    // iCal absent + WeeklyTimeOfDay null → falls through to attendance row
-    const nullWeekly = rosteredAttendanceFromOccurrence({
-      attendanceCampusId: 1,
-      attendanceStartDateTime: '2026-10-04T06:33:26',
-      occurrenceDate: '2026-10-04T00:00:00',
-      scheduleId: 564,
-      weeklyTimeOfDay: null,
-      groupCampusId: 1,
-    });
-    expect(nullWeekly.startDateTime).toBe('2026-10-04T06:33:26');
-
-    // iCal absent + WeeklyTimeOfDay malformed → falls through to attendance row
-    const malformedWeekly = rosteredAttendanceFromOccurrence({
-      attendanceCampusId: 1,
-      attendanceStartDateTime: '2026-10-04T06:33:26',
-      occurrenceDate: '2026-10-04T00:00:00',
-      scheduleId: 564,
-      weeklyTimeOfDay: 'invalid-time',
-      groupCampusId: 1,
-    });
-    expect(malformedWeekly.startDateTime).toBe('2026-10-04T06:33:26');
-
-    // Explicit scheduleStartTime null falls back to raw fields if present
-    const explicitNullWithWeekly = rosteredAttendanceFromOccurrence({
+  it('falls back to attendance StartDateTime when scheduleStartTime is null', () => {
+    const attendance = rosteredAttendanceFromOccurrence({
       attendanceCampusId: 1,
       attendanceStartDateTime: '2026-10-04T06:33:26',
       occurrenceDate: '2026-10-04T00:00:00',
       scheduleId: 564,
       scheduleStartTime: null,
-      weeklyTimeOfDay: '09:00:00',
       groupCampusId: 1,
     });
-    expect(explicitNullWithWeekly.startDateTime).toBe('2026-10-04T09:00:00');
+    expect(attendance.startDateTime).toBe('2026-10-04T06:33:26');
   });
 });
 

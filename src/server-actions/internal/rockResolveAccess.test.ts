@@ -602,5 +602,56 @@ describe('rockResolveAccess', () => {
 
     expect(result.rolesMap.rosteredViewer).toBeUndefined();
   });
+
+  it('resolves schedule time from WeeklyTimeOfDay when iCal is absent, and falls through to attendance StartDateTime when WeeklyTimeOfDay is null or malformed', async () => {
+    mockFetch.mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      const path = url.pathname.replace(/^\/api/, '');
+      const filter = url.searchParams.get('$filter') || '';
+
+      if (path === '/People') return rockResponse([{ Id: 414, FirstName: 'FallThrough', LastName: 'Volunteer' }]);
+      if (path === '/GroupMembers') return rockResponse([]);
+      if (path === '/PersonAlias') return rockResponse([{ Id: 9414 }]);
+      if (path === '/Attendances') {
+        return rockResponse([
+          { OccurrenceId: 20, CampusId: null, StartDateTime: '2026-10-04T06:33:26' },
+          { OccurrenceId: 21, CampusId: null, StartDateTime: '2026-10-04T15:00:00' },
+          { OccurrenceId: 22, CampusId: null, StartDateTime: '2026-10-04T17:00:00' },
+        ]);
+      }
+      if (path === '/AttendanceOccurrences') {
+        return rockResponse([
+          { Id: 20, ScheduleId: 564, OccurrenceDate: '2026-10-04T00:00:00', GroupId: 1001 },
+          { Id: 21, ScheduleId: 565, OccurrenceDate: '2026-10-04T00:00:00', GroupId: 1001 },
+          { Id: 22, ScheduleId: 566, OccurrenceDate: '2026-10-04T00:00:00', GroupId: 1001 },
+        ]);
+      }
+      if (path === '/Schedules') {
+        const results = [];
+        if (filter.includes('564')) {
+          results.push({ Id: 564, Name: 'MNL Crowne 9AM', iCalendarContent: '', WeeklyTimeOfDay: '09:00:00' });
+        }
+        if (filter.includes('565')) {
+          results.push({ Id: 565, Name: 'MNL Crowne 3PM', iCalendarContent: null, WeeklyTimeOfDay: null });
+        }
+        if (filter.includes('566')) {
+          results.push({ Id: 566, Name: 'MNL Crowne 5PM', iCalendarContent: '', WeeklyTimeOfDay: 'malformed' });
+        }
+        return rockResponse(results);
+      }
+      if (path === '/Groups') {
+        return rockResponse([{ Id: 1001, CampusId: 1 }]);
+      }
+      return rockResponse([]);
+    });
+
+    const result = await rockResolveAccess([414]);
+
+    expect(result.rolesMap.rosteredViewer).toEqual([
+      'MNL:2026-10-04:09:00:00',
+      'MNL:2026-10-04:15:00:00',
+      'MNL:2026-10-04:17:00:00',
+    ]);
+  });
 });
 
