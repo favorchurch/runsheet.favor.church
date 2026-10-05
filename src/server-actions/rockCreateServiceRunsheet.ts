@@ -1,7 +1,7 @@
 'use server';
 
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
-import { rockPost } from '@/server-actions/internal/rockFetch';
+import { rockGet, rockPost } from '@/server-actions/internal/rockFetch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import { extractRunsheetCampus, extractRunsheetCampuses } from '@/lib/runsheetCampus';
 import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
@@ -39,16 +39,22 @@ async function loadCampusTemplateItems(title: string): Promise<RunsheetItemRow[]
     }));
 }
 
+export interface RockCreateServiceRunsheetOptions {
+  skipIfExists?: boolean;
+}
+
 export async function rockCreateServiceRunsheet(
   title: string,
   contentChannelTypeId: number,
   _categoryId?: number,
+  options?: RockCreateServiceRunsheetOptions,
 ): Promise<{
   success: boolean;
   id?: number;
   data?: RunsheetDetails;
   rosterData?: RockRosterAssignmentsResult;
   error?: string;
+  skipped?: boolean;
 }> {
   try {
     const session = await getRockSession();
@@ -64,6 +70,19 @@ export async function rockCreateServiceRunsheet(
 
     if (contentChannelTypeId !== RUNSHEET_CONTENT_CHANNEL_TYPE_ID) {
       return { success: false, error: 'Invalid runsheet content channel type.' };
+    }
+
+    if (options?.skipIfExists) {
+      const escapedTitle = title.replace(/'/g, "''");
+      const existing = (await rockGet('/ContentChannels', {
+        $filter: `ContentChannelTypeId eq ${RUNSHEET_CONTENT_CHANNEL_TYPE_ID} and Name eq '${escapedTitle}'`,
+        $select: 'Id',
+        $top: 1,
+      })) as Array<{ Id: number }> | null;
+
+      if (existing && existing.length > 0) {
+        return { success: true, skipped: true };
+      }
     }
 
     // 1. Create the Content Channel in Rock RMS using the selected ContentChannelTypeId
