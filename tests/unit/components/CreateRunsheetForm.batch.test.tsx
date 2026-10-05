@@ -21,7 +21,7 @@ jest.mock('@/auth0-hooks/server/getRockSession', () => ({ getRockSession: jest.f
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { CreateRunsheetForm } from '@/components/runsheet/CreateRunsheetForm';
+import { CreateRunsheetForm, sessionBaseName } from '@/components/runsheet/CreateRunsheetForm';
 import { getRockContentChannelOptions } from '@/server-actions/getRockContentChannelOptions';
 import { rockGetScheduleOptions } from '@/server-actions/rockGetScheduleOptions';
 import { rockCreateServiceRunsheet } from '@/server-actions/rockCreateServiceRunsheet';
@@ -108,6 +108,64 @@ describe('CreateRunsheetForm batch operations', () => {
   });
 
   describe('Date-wide batch checkbox', () => {
+    it('only includes sessions of the selected service (same name, different time) on that date', async () => {
+      const onDate = (id: number, name: string, time: string) => ({
+        id,
+        name,
+        categoryId: 10,
+        timeLabel: time,
+        nextDate: '2026-10-11',
+        upcomingOccurrences: [{ date: '2026-10-11', time }],
+      });
+      (rockGetScheduleOptions as jest.Mock).mockResolvedValue({
+        success: true,
+        schedules: [
+          onDate(301, 'MNL Crowne 9AM', '9AM'),
+          onDate(302, 'MNL Sunday AM Huddle', '7AM'),
+          onDate(303, 'MNL Crowne 11:30AM', '11:30AM'),
+          onDate(304, 'MNL Crowne 9AM - Kids', '9AM'),
+          onDate(305, 'MNL Filoil 3PM', '3PM'),
+          onDate(306, 'MNL Crowne 5:30PM', '5:30PM'),
+        ],
+      });
+
+      render(<CreateRunsheetForm />);
+
+      const sessionSelect = await screen.findByRole('combobox', { name: /Session \/ Service Schedule/i });
+      await waitFor(() => expect(sessionSelect).toHaveValue('MNL Crowne 9AM'));
+
+      fireEvent.click(await screen.findByLabelText(/Create runsheets for all 3 sessions on this date/i));
+      fireEvent.click(screen.getByRole('button', { name: /Create All \(3\) Runsheets/i }));
+
+      await waitFor(() => expect(rockCreateServiceRunsheet).toHaveBeenCalledTimes(3));
+      const titles = (rockCreateServiceRunsheet as jest.Mock).mock.calls.map((c) => c[0]);
+      expect(titles.some((t: string) => t.includes('9AM'))).toBe(true);
+      expect(titles.some((t: string) => t.includes('11:30AM'))).toBe(true);
+      expect(titles.some((t: string) => t.includes('5:30PM'))).toBe(true);
+      expect(titles.some((t: string) => /Kids|Huddle|Filoil/i.test(t))).toBe(false);
+    });
+
+    it('hides the date-wide checkbox when the selected service has no other session that date', async () => {
+      (rockGetScheduleOptions as jest.Mock).mockResolvedValue({
+        success: true,
+        schedules: [
+          { id: 311, name: 'MNL Sunday AM Huddle', categoryId: 10, timeLabel: '7AM', nextDate: '2026-10-11', upcomingOccurrences: [{ date: '2026-10-11', time: '7AM' }] },
+          { id: 312, name: 'MNL Crowne 9AM', categoryId: 10, timeLabel: '9AM', nextDate: '2026-10-11', upcomingOccurrences: [{ date: '2026-10-11', time: '9AM' }] },
+          { id: 313, name: 'MNL Crowne 3PM', categoryId: 10, timeLabel: '3PM', nextDate: '2026-10-11', upcomingOccurrences: [{ date: '2026-10-11', time: '3PM' }] },
+        ],
+      });
+
+      render(<CreateRunsheetForm />);
+
+      const sessionSelect = await screen.findByRole('combobox', { name: /Session \/ Service Schedule/i });
+      fireEvent.change(sessionSelect, { target: { value: 'MNL Sunday AM Huddle' } });
+      await waitFor(() => expect(sessionSelect).toHaveValue('MNL Sunday AM Huddle'));
+      expect(screen.queryByText(/Create runsheets for all.*sessions on this date/i)).not.toBeInTheDocument();
+
+      fireEvent.change(sessionSelect, { target: { value: 'MNL Crowne 3PM' } });
+      expect(await screen.findByLabelText(/Create runsheets for all 2 sessions on this date/i)).toBeInTheDocument();
+    });
+
     it('appears when schedules.length >= 2, and updates the submit button label when checked', async () => {
       render(<CreateRunsheetForm />);
 
@@ -792,5 +850,19 @@ describe('CreateRunsheetForm batch operations', () => {
       expect(toast.success).not.toHaveBeenCalled();
       expect(onCreated).toHaveBeenCalledWith(702, expect.stringContaining('October 11, 2026'), expect.anything());
     });
+  });
+});
+
+describe('sessionBaseName', () => {
+  it.each([
+    ['MNL Crowne 9AM', 'MNL Crowne'],
+    ['MNL Crowne 11:30AM', 'MNL Crowne'],
+    ['MNL Crowne 5:30 PM', 'MNL Crowne'],
+    ['MNL Crowne 9AM - Kids', 'MNL Crowne - Kids'],
+    ['BNE 10AM Service', 'BNE Service'],
+    ['MNL 4PM Saturday Youth', 'MNL Saturday Youth'],
+    ['MNL Sunday AM Huddle', 'MNL Sunday AM Huddle'],
+  ])('%s -> %s', (name, base) => {
+    expect(sessionBaseName(name)).toBe(base);
   });
 });

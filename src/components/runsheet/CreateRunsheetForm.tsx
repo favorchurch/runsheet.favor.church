@@ -40,6 +40,18 @@ export function formatDateToWordy(dateStr: string) {
   });
 }
 
+/**
+ * A schedule's name with its time removed, so the sessions of one service
+ * group together: "MNL Crowne 9AM" and "MNL Crowne 11:30AM" -> "MNL Crowne",
+ * while "MNL Crowne 9AM - Kids" stays separate as "MNL Crowne - Kids".
+ */
+export function sessionBaseName(name: string): string {
+  return name
+    .replace(/\b\d{1,2}(?::\d{2})?\s*(?:AM|PM)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function generateRunsheetTitle(
   sessionName: string,
   dateStr: string,
@@ -120,10 +132,15 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
   );
   const isGrowSchedule = selectedSchedule?.categoryId === GROW_SCHEDULE_CATEGORY_ID;
 
-  const dateSchedules = React.useMemo(
-    () => schedules.filter((s) => s.upcomingOccurrences?.some((o) => o.date === date)),
-    [schedules, date]
-  );
+  // Many things happen on one date, so the date-wide batch only covers the
+  // other sessions of the selected service (same name, different time).
+  const dateSchedules = React.useMemo(() => {
+    if (!selectedSchedule) return [];
+    const base = sessionBaseName(selectedSchedule.name).toLowerCase();
+    return schedules.filter(
+      (s) => sessionBaseName(s.name).toLowerCase() === base && s.upcomingOccurrences?.some((o) => o.date === date)
+    );
+  }, [schedules, selectedSchedule, date]);
 
   const nonGrowUpcomingOccurrences = React.useMemo(() => {
     if (!selectedSchedule?.upcomingOccurrences) return [];
@@ -590,7 +607,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
                     Create runsheets for all {dateSchedules.length} sessions on this date
                   </span>
                   <p className="mt-0.5 text-slate-500">
-                    Creates runsheets for every schedule offered on {formatDateToWordy(date)}.
+                    Creates a runsheet for each {selectedSchedule && sessionBaseName(selectedSchedule.name)} session on {formatDateToWordy(date)}: {dateSchedules.map((s) => s.timeLabel || s.name).join(', ')}.
                   </p>
                 </div>
               </label>
