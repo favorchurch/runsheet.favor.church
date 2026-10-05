@@ -4,6 +4,7 @@ import { PREACHER_NOTES_MAX_BYTES } from '@/lib/preacherNotes';
 import { fetchRockContent, uploadRockContent } from '@/server-actions/internal/rockContentUpload';
 import {
   getPreacherNotesAttributeValue,
+  mutatePreacherNotesAttribute,
   setPreacherNotesAttributeValue,
 } from '@/server-actions/internal/rockPreacherNotesAttribute';
 import { rockGet } from '@/server-actions/internal/rockFetch';
@@ -30,6 +31,13 @@ jest.mock('@/server-actions/internal/rockContentUpload', () => ({
 jest.mock('@/server-actions/internal/rockPreacherNotesAttribute', () => ({
   getPreacherNotesAttributeValue: jest.fn(),
   setPreacherNotesAttributeValue: jest.fn(),
+  mutatePreacherNotesAttribute: jest.fn(async (chId: number, mutate: any) => {
+    const { getPreacherNotesAttributeValue, setPreacherNotesAttributeValue } =
+      jest.requireMock('@/server-actions/internal/rockPreacherNotesAttribute') as any;
+    const current = await getPreacherNotesAttributeValue(chId);
+    const updated = await mutate(current);
+    return setPreacherNotesAttributeValue(chId, updated);
+  }),
 }));
 
 const mockGetRockSession = jest.mocked(getRockSession);
@@ -38,6 +46,7 @@ const mockUploadRockContent = jest.mocked(uploadRockContent);
 const mockFetchRockContent = jest.mocked(fetchRockContent);
 const mockGetAttributeValue = jest.mocked(getPreacherNotesAttributeValue);
 const mockSetAttributeValue = jest.mocked(setPreacherNotesAttributeValue);
+const mockMutateAttribute = jest.mocked(mutatePreacherNotesAttribute);
 
 function session(campus: 'MNL' | 'BNE', editor: boolean) {
   return {
@@ -51,6 +60,7 @@ function expectNoRockStorageOrAttributeCalls() {
   expect(mockFetchRockContent).not.toHaveBeenCalled();
   expect(mockGetAttributeValue).not.toHaveBeenCalled();
   expect(mockSetAttributeValue).not.toHaveBeenCalled();
+  expect(mockMutateAttribute).not.toHaveBeenCalled();
 }
 
 function createPdfFile(name: string, content = '%PDF-1.4 sample content', type = 'application/pdf'): File {
@@ -80,10 +90,9 @@ describe('runsheet-notes route handlers access and validation', () => {
       mockGetRockSession.mockResolvedValue(s);
 
       const formData = new FormData();
-      formData.append('channelId', '42');
       formData.append('file', createPdfFile('notes.pdf'));
 
-      const request = new Request('http://localhost:8000/api/runsheet-notes/upload', {
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
         method: 'POST',
         body: formData,
       });
@@ -121,14 +130,31 @@ describe('runsheet-notes route handlers access and validation', () => {
   });
 
   describe('upload route validation and handling', () => {
+    it('rejects upload when channelId is missing from query string with 400', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+
+      const formData = new FormData();
+      formData.append('file', createPdfFile('notes.pdf'));
+
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const response = await postUpload(request);
+      expect(response.status).toBe(400);
+      const json = await response.json();
+      expect(json.error).toContain('Invalid channel id');
+      expectNoRockStorageOrAttributeCalls();
+    });
+
     it('rejects non-PDF MIME type with 400', async () => {
       mockGetRockSession.mockResolvedValue(session('MNL', true));
 
       const formData = new FormData();
-      formData.append('channelId', '42');
       formData.append('file', createPdfFile('image.png', 'fake image bytes', 'image/png'));
 
-      const request = new Request('http://localhost:8000/api/runsheet-notes/upload', {
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
         method: 'POST',
         body: formData,
       });
@@ -148,10 +174,9 @@ describe('runsheet-notes route handlers access and validation', () => {
       const largeFile = new File([largeBuffer], 'large.pdf', { type: 'application/pdf' });
 
       const formData = new FormData();
-      formData.append('channelId', '42');
       formData.append('file', largeFile);
 
-      const request = new Request('http://localhost:8000/api/runsheet-notes/upload', {
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
         method: 'POST',
         body: formData,
       });
@@ -165,10 +190,9 @@ describe('runsheet-notes route handlers access and validation', () => {
       mockGetRockSession.mockResolvedValue(session('MNL', true));
 
       const formData = new FormData();
-      formData.append('channelId', '42');
       formData.append('file', createPdfFile('corrupt.pdf', 'NOT_A_PDF_CONTENT', 'application/pdf'));
 
-      const request = new Request('http://localhost:8000/api/runsheet-notes/upload', {
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
         method: 'POST',
         body: formData,
       });
@@ -188,10 +212,9 @@ describe('runsheet-notes route handlers access and validation', () => {
       mockSetAttributeValue.mockImplementation(async (_chId, notes) => notes as any);
 
       const formData = new FormData();
-      formData.append('channelId', '42');
       formData.append('file', createPdfFile('notes.pdf'));
 
-      const request = new Request('http://localhost:8000/api/runsheet-notes/upload', {
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
         method: 'POST',
         body: formData,
       });
@@ -209,6 +232,106 @@ describe('runsheet-notes route handlers access and validation', () => {
       expect(mockSetAttributeValue).toHaveBeenCalledTimes(1);
     });
 
+    it('derives safe storage filename while preserving original display name (e.g. Sermon..pdf)', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+      const returnedPath = 'PreacherNotes/MNL/42/deadbeef/Sermon.pdf';
+      mockUploadRockContent.mockResolvedValueOnce(returnedPath);
+      mockGetAttributeValue.mockResolvedValueOnce([]);
+      mockSetAttributeValue.mockImplementation(async (_chId, notes) => notes as any);
+
+      const formData = new FormData();
+      formData.append('file', createPdfFile('Sermon..pdf'));
+
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const response = await postUpload(request);
+      expect(response.status).toBe(200);
+
+      // Verify sanitized storage filename passed to Rock
+      expect(mockUploadRockContent).toHaveBeenCalledWith(
+        expect.stringMatching(/^PreacherNotes\/MNL\/42\//),
+        expect.anything(),
+        'Sermon.pdf',
+      );
+
+      // Verify original display name preserved in saved note
+      const json = await response.json();
+      expect(json.notes[0].name).toBe('Sermon..pdf');
+      expect(json.notes[0].path).toBe(returnedPath);
+    });
+
+    it('appends .pdf to storage filename if missing (e.g. notes)', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+      const returnedPath = 'PreacherNotes/MNL/42/deadbeef/notes.pdf';
+      mockUploadRockContent.mockResolvedValueOnce(returnedPath);
+      mockGetAttributeValue.mockResolvedValueOnce([]);
+      mockSetAttributeValue.mockImplementation(async (_chId, notes) => notes as any);
+
+      const formData = new FormData();
+      formData.append('file', createPdfFile('notes'));
+
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const response = await postUpload(request);
+      expect(response.status).toBe(200);
+
+      expect(mockUploadRockContent).toHaveBeenCalledWith(
+        expect.stringMatching(/^PreacherNotes\/MNL\/42\//),
+        expect.anything(),
+        'notes.pdf',
+      );
+
+      const json = await response.json();
+      expect(json.notes[0].name).toBe('notes');
+    });
+
+    it('returns 500 and does not link note if returned path fails isValidNotePath', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+      // Rock returned an invalid path (e.g. wrong channelId or invalid segment)
+      mockUploadRockContent.mockResolvedValueOnce('PreacherNotes/MNL/99/invalid/notes.pdf');
+
+      const formData = new FormData();
+      formData.append('file', createPdfFile('notes.pdf'));
+
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const response = await postUpload(request);
+      expect(response.status).toBe(500);
+
+      const json = await response.json();
+      expect(json.error).toBe('The file reached Rock but was not linked to the runsheet.');
+      expect(mockSetAttributeValue).not.toHaveBeenCalled();
+    });
+
+    it('returns 500 stating file reached Rock but was not linked if attribute read throws after upload', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+      mockUploadRockContent.mockResolvedValueOnce('PreacherNotes/MNL/42/deadbeef/notes.pdf');
+      mockGetAttributeValue.mockRejectedValueOnce(new Error('Rock attribute read failed'));
+
+      const formData = new FormData();
+      formData.append('file', createPdfFile('notes.pdf'));
+
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const response = await postUpload(request);
+      expect(response.status).toBe(500);
+
+      const json = await response.json();
+      expect(json.error).toBe('The file reached Rock but was not linked to the runsheet.');
+    });
+
     it('returns 500 stating file reached Rock but was not linked if attribute save throws', async () => {
       mockGetRockSession.mockResolvedValue(session('MNL', true));
       mockUploadRockContent.mockResolvedValueOnce('PreacherNotes/MNL/42/deadbeef/notes.pdf');
@@ -216,10 +339,9 @@ describe('runsheet-notes route handlers access and validation', () => {
       mockSetAttributeValue.mockRejectedValueOnce(new Error('Rock attribute write failed'));
 
       const formData = new FormData();
-      formData.append('channelId', '42');
       formData.append('file', createPdfFile('notes.pdf'));
 
-      const request = new Request('http://localhost:8000/api/runsheet-notes/upload', {
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
         method: 'POST',
         body: formData,
       });
@@ -279,7 +401,9 @@ describe('runsheet-notes route handlers access and validation', () => {
       expect(response.status).toBe(200);
       expect(response.headers.get('Content-Type')).toBe('application/pdf');
       expect(response.headers.get('Cache-Control')).toBe('private, no-store');
-      expect(response.headers.get('Content-Disposition')).toBe('inline; filename="Sermon _Quote_ Notes.pdf"');
+      expect(response.headers.get('Content-Disposition')).toBe(
+        'inline; filename="Sermon _Quote_ Notes.pdf"; filename*=UTF-8\'\'Sermon%20%22Quote%22%20Notes.pdf',
+      );
       expect(response.headers.get('Content-Length')).toBe('2048');
     });
 
@@ -301,7 +425,34 @@ describe('runsheet-notes route handlers access and validation', () => {
       const response = await getFile(request);
 
       expect(response.status).toBe(200);
-      expect(response.headers.get('Content-Disposition')).toBe('attachment; filename="notes.pdf"');
+      expect(response.headers.get('Content-Disposition')).toBe(
+        'attachment; filename="notes.pdf"; filename*=UTF-8\'\'notes.pdf',
+      );
+    });
+
+    it('handles non-Latin note filenames safely in Content-Disposition', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+      const targetPath = 'PreacherNotes/SEL/42/deadbeef/notes.pdf';
+      const koreanName = '설교 노트.pdf';
+
+      mockGetAttributeValue.mockResolvedValueOnce([
+        { name: koreanName, path: targetPath },
+      ]);
+
+      mockFetchRockContent.mockResolvedValueOnce(
+        new Response(new ReadableStream(), { status: 200 }),
+      );
+
+      const request = new Request(`http://localhost:8000/api/runsheet-notes/file?channelId=42&path=${encodeURIComponent(targetPath)}`);
+      const response = await getFile(request);
+
+      expect(response.status).toBe(200);
+      const disposition = response.headers.get('Content-Disposition');
+      expect(disposition).toContain('inline;');
+      expect(disposition).toContain('filename="__ __.pdf"');
+      expect(disposition).toContain(`filename*=UTF-8''${encodeURIComponent(koreanName)}`);
+      // Header value must be ASCII (ByteString)
+      expect(/^[\x20-\x7E]+$/.test(disposition!)).toBe(true);
     });
   });
 });

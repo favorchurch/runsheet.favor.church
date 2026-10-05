@@ -1,9 +1,11 @@
 import { describe, expect, it } from '@jest/globals';
 import {
   buildPreacherNotesFolder,
+  formatContentDisposition,
   isPdf,
   isValidNotePath,
   parsePreacherNotes,
+  sanitizeStorageFileName,
   serializePreacherNotes,
   PREACHER_NOTES_MAX_BYTES,
 } from './preacherNotes';
@@ -170,3 +172,64 @@ describe('PREACHER_NOTES_MAX_BYTES', () => {
     expect(PREACHER_NOTES_MAX_BYTES).toBeGreaterThan(4.0 * 1024 * 1024);
   });
 });
+
+describe('sanitizeStorageFileName', () => {
+  it('removes .. anywhere from the file name', () => {
+    expect(sanitizeStorageFileName('Sermon..pdf')).toBe('Sermon.pdf');
+    expect(sanitizeStorageFileName('sermon....pdf')).toBe('sermon.pdf');
+    expect(sanitizeStorageFileName('..hidden..notes..pdf')).toBe('hiddennotes.pdf');
+  });
+
+  it('appends .pdf if extension is missing', () => {
+    expect(sanitizeStorageFileName('notes')).toBe('notes.pdf');
+    expect(sanitizeStorageFileName('Sermon Notes')).toBe('Sermon Notes.pdf');
+    expect(sanitizeStorageFileName('notes.PDF')).toBe('notes.pdf');
+  });
+
+  it('takes basename and strips path separators', () => {
+    expect(sanitizeStorageFileName('path/to/notes.pdf')).toBe('notes.pdf');
+    expect(sanitizeStorageFileName('dir\\sub\\sermon.pdf')).toBe('sermon.pdf');
+    expect(sanitizeStorageFileName('../../etc/passwd.pdf')).toBe('passwd.pdf');
+  });
+
+  it('collapses whitespace and removes control characters', () => {
+    expect(sanitizeStorageFileName('  my \t sermon \r\n notes..  ')).toBe('my sermon notes.pdf');
+  });
+
+  it('handles empty, null, or only dots/pdf safely', () => {
+    expect(sanitizeStorageFileName('')).toBe('document.pdf');
+    expect(sanitizeStorageFileName(null)).toBe('document.pdf');
+    expect(sanitizeStorageFileName(undefined)).toBe('document.pdf');
+    expect(sanitizeStorageFileName('..')).toBe('document.pdf');
+    expect(sanitizeStorageFileName('...')).toBe('document.pdf');
+    expect(sanitizeStorageFileName('.pdf')).toBe('document.pdf');
+  });
+});
+
+describe('formatContentDisposition', () => {
+  it('formats ASCII filenames with fallback and encoded filename*', () => {
+    const disp = formatContentDisposition('sermon.pdf', false);
+    expect(disp).toBe('inline; filename="sermon.pdf"; filename*=UTF-8\'\'sermon.pdf');
+  });
+
+  it('sets attachment when isDownload is true', () => {
+    const disp = formatContentDisposition('notes.pdf', true);
+    expect(disp).toBe('attachment; filename="notes.pdf"; filename*=UTF-8\'\'notes.pdf');
+  });
+
+  it('sanitizes quotes, slashes, and control characters in ASCII fallback', () => {
+    const disp = formatContentDisposition('Sermon "Quote" / Notes.pdf', false);
+    expect(disp).toContain('filename="Sermon _Quote_ _ Notes.pdf"');
+    expect(disp).toContain('filename*=UTF-8\'\'Sermon%20%22Quote%22%20%2F%20Notes.pdf');
+  });
+
+  it('handles non-Latin names safely with ASCII-only fallback and UTF-8 filename*', () => {
+    const koreanName = '설교 노트.pdf';
+    const disp = formatContentDisposition(koreanName, false);
+    // Header value must be ByteString (ASCII only)
+    expect(/^[\x20-\x7E]+$/.test(disp)).toBe(true);
+    expect(disp).toContain('inline; filename="__ __.pdf"');
+    expect(disp).toContain(`filename*=UTF-8''${encodeURIComponent(koreanName)}`);
+  });
+});
+

@@ -3,6 +3,7 @@ import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet, rockPatch, rockPost } from '@/server-actions/internal/rockFetch';
 import {
   getPreacherNotesAttributeValue,
+  mutatePreacherNotesAttribute,
   setPreacherNotesAttributeValue,
 } from '@/server-actions/internal/rockPreacherNotesAttribute';
 import { rockGetPreacherNotes, rockUnlinkPreacherNote } from './rockPreacherNotes';
@@ -21,6 +22,13 @@ jest.mock('@/server-actions/internal/rockFetch', () => ({
 jest.mock('@/server-actions/internal/rockPreacherNotesAttribute', () => ({
   getPreacherNotesAttributeValue: jest.fn(),
   setPreacherNotesAttributeValue: jest.fn(),
+  mutatePreacherNotesAttribute: jest.fn(async (chId: number, mutate: any) => {
+    const { getPreacherNotesAttributeValue, setPreacherNotesAttributeValue } =
+      jest.requireMock('@/server-actions/internal/rockPreacherNotesAttribute') as any;
+    const current = await getPreacherNotesAttributeValue(chId);
+    const updated = await mutate(current);
+    return setPreacherNotesAttributeValue(chId, updated);
+  }),
 }));
 
 const mockGetRockSession = jest.mocked(getRockSession);
@@ -29,6 +37,7 @@ const mockRockPost = jest.mocked(rockPost);
 const mockRockPatch = jest.mocked(rockPatch);
 const mockGetAttributeValue = jest.mocked(getPreacherNotesAttributeValue);
 const mockSetAttributeValue = jest.mocked(setPreacherNotesAttributeValue);
+const mockMutateAttribute = jest.mocked(mutatePreacherNotesAttribute);
 
 function session(campus: 'MNL' | 'BNE', editor: boolean) {
   return {
@@ -38,6 +47,7 @@ function session(campus: 'MNL' | 'BNE', editor: boolean) {
 }
 
 function expectNoRockAttributeCalls() {
+  expect(mockMutateAttribute).not.toHaveBeenCalled();
   expect(mockGetAttributeValue).not.toHaveBeenCalled();
   expect(mockSetAttributeValue).not.toHaveBeenCalled();
   expect(mockRockPost).not.toHaveBeenCalled();

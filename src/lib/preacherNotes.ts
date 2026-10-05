@@ -126,6 +126,68 @@ export function parsePreacherNotes(raw: unknown): PreacherNote[] {
 }
 
 /**
+ * Derives a safe storage file name from the original file name:
+ * takes the basename, removes /, \, .., and control characters,
+ * collapses whitespace, and appends .pdf if missing.
+ */
+export function sanitizeStorageFileName(rawName: string | null | undefined): string {
+  if (!rawName || typeof rawName !== 'string') {
+    return 'document.pdf';
+  }
+
+  // 1. Take basename (strip path separators)
+  let name = rawName.split(/[/\\]/).pop() || '';
+
+  // 2. Remove /, \, and control characters (0x00-0x1F, 0x7F)
+  name = name.replace(/[/\\]/g, '').replace(/[\x00-\x1F\x7F]/g, '');
+
+  // 3. Separate .pdf extension if present so stem dots/doubles can be sanitized
+  const hasPdfExt = /\.pdf$/i.test(name);
+  if (hasPdfExt) {
+    name = name.slice(0, -4);
+  }
+
+  // 4. Remove '..' anywhere
+  while (name.includes('..')) {
+    name = name.replace(/\.\./g, '');
+  }
+
+  // 5. Collapse whitespace and strip trailing dots from stem
+  name = name.replace(/\s+/g, ' ').replace(/\.+$/, '').trim();
+
+  if (!name) {
+    return 'document.pdf';
+  }
+
+  return `${name}.pdf`;
+}
+
+/**
+ * Builds a safe Content-Disposition header value with an ASCII-only fallback filename
+ * and an RFC 5987 / RFC 6266 UTF-8 encoded filename*.
+ */
+export function formatContentDisposition(
+  rawFilename: string | null | undefined,
+  isDownload: boolean,
+): string {
+  const type = isDownload ? 'attachment' : 'inline';
+  const name = rawFilename?.trim() || 'document.pdf';
+
+  // ASCII fallback: replace non-ASCII ([^\x20-\x7E]), quotes, CR, LF, slashes with _
+  let fallback = name
+    .replace(/[^\x20-\x7E]|["\r\n\/\\]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!fallback || fallback === '.pdf' || fallback === '_') {
+    fallback = 'document.pdf';
+  }
+
+  const encoded = encodeURIComponent(name);
+  return `${type}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
+/**
  * Serializes the preacher notes list to JSON.
  */
 export function serializePreacherNotes(notes: PreacherNote[]): string {

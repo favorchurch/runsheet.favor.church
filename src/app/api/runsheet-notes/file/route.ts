@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
-import { isValidNotePath } from '@/lib/preacherNotes';
+import { formatContentDisposition, isValidNotePath } from '@/lib/preacherNotes';
 import { fetchRockContent } from '@/server-actions/internal/rockContentUpload';
 import { getPreacherNotesAttributeValue } from '@/server-actions/internal/rockPreacherNotesAttribute';
 import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
@@ -57,9 +57,7 @@ export async function GET(request: Request) {
     }
 
     const isDownload = downloadParam === 'true' || dispositionParam === 'attachment';
-    const rawFilename = matchedNote.name || 'document.pdf';
-    const safeFilename = rawFilename.replace(/["\r\n\/\\]/g, '_');
-    const contentDisposition = `${isDownload ? 'attachment' : 'inline'}; filename="${safeFilename}"`;
+    const contentDisposition = formatContentDisposition(matchedNote.name, isDownload);
 
     const headers = new Headers();
     headers.set('Content-Type', 'application/pdf');

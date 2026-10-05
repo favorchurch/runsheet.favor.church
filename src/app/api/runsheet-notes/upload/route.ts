@@ -3,14 +3,13 @@ import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import {
   buildPreacherNotesFolder,
   isPdf,
+  isValidNotePath,
   PREACHER_NOTES_MAX_BYTES,
+  sanitizeStorageFileName,
 } from '@/lib/preacherNotes';
 import { extractRunsheetCampus } from '@/lib/runsheetCampus';
 import { uploadRockContent } from '@/server-actions/internal/rockContentUpload';
-import {
-  getPreacherNotesAttributeValue,
-  setPreacherNotesAttributeValue,
-} from '@/server-actions/internal/rockPreacherNotesAttribute';
+import { mutatePreacherNotesAttribute } from '@/server-actions/internal/rockPreacherNotesAttribute';
 import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
 import type { PreacherNote } from '@/types/PreacherNotes';
 
@@ -19,36 +18,26 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const queryChannelId = searchParams.get('channelId');
+    const channelIdParam = searchParams.get('channelId');
 
-    const session = await getRockSession();
-
-    // If channelId is present in searchParams, verify access before parsing formData
-    if (queryChannelId) {
-      const channelIdNum = Number(queryChannelId);
-      if (!Number.isSafeInteger(channelIdNum) || channelIdNum <= 0) {
-        return NextResponse.json({ error: 'Invalid channel id.' }, { status: 400 });
-      }
-      const access = await assertRunsheetEditAccess(session, channelIdNum);
-      if (!access.allowed) {
-        return NextResponse.json({ error: access.error }, { status: 403 });
-      }
+    // Require channelId in query string and validate it
+    if (!channelIdParam || !/^[1-9]\d*$/.test(channelIdParam)) {
+      return NextResponse.json({ error: 'Invalid channel id.' }, { status: 400 });
     }
 
-    const formData = await request.formData();
-    const rawChannelId = queryChannelId || (formData.get('channelId') as string);
-    const channelId = Number(rawChannelId);
-
+    const channelId = Number(channelIdParam);
     if (!Number.isSafeInteger(channelId) || channelId <= 0) {
       return NextResponse.json({ error: 'Invalid channel id.' }, { status: 400 });
     }
 
-    // Verify access before reading/processing the file
+    // Call assertRunsheetEditAccess strictly before request.formData()
+    const session = await getRockSession();
     const access = await assertRunsheetEditAccess(session, channelId);
     if (!access.allowed) {
       return NextResponse.json({ error: access.error }, { status: 403 });
     }
 
+    const formData = await request.formData();
     const file = formData.get('file');
     if (!file || !(file instanceof Blob)) {
       return NextResponse.json({ error: 'No file provided.' }, { status: 400 });
@@ -80,23 +69,35 @@ export async function POST(request: Request) {
     // Determine campus and build folder path
     const campus = access.channelName ? extractRunsheetCampus(access.channelName) : null;
     const folderPath = buildPreacherNotesFolder(campus, channelId);
-    const fileName = (file as any).name || 'document.pdf';
+
+    // Keep the original as the display name, and derive a safe storage name for Rock
+    const originalFileName = (file as any).name || 'document.pdf';
+    const storageFileName = sanitizeStorageFileName(originalFileName);
 
     // Upload to Rock
-    const returnedPath = await uploadRockContent(folderPath, buffer, fileName);
+    const returnedPath = await uploadRockContent(folderPath, buffer, storageFileName);
 
-    // Save attribute to ContentChannel
-    const currentNotes = await getPreacherNotesAttributeValue(channelId);
-    const newEntry: PreacherNote = {
-      name: fileName,
-      path: returnedPath,
-      size: file.size,
-      uploadedAt: new Date().toISOString(),
-    };
-    const updatedNotes = [...currentNotes, newEntry];
+    // Validate the returned path against channelId
+    if (!isValidNotePath(returnedPath, channelId)) {
+      return NextResponse.json(
+        { error: 'The file reached Rock but was not linked to the runsheet.' },
+        { status: 500 },
+      );
+    }
 
+    // Read, append, and write serialized per channelId
     try {
-      await setPreacherNotesAttributeValue(channelId, updatedNotes);
+      const updatedNotes = await mutatePreacherNotesAttribute(channelId, (currentNotes) => {
+        const newEntry: PreacherNote = {
+          name: originalFileName,
+          path: returnedPath,
+          size: file.size,
+          uploadedAt: new Date().toISOString(),
+        };
+        return [...currentNotes, newEntry];
+      });
+
+      return NextResponse.json({ success: true, notes: updatedNotes });
     } catch (saveError) {
       console.error('Failed to save preacher notes attribute after upload:', saveError);
       return NextResponse.json(
@@ -104,8 +105,6 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
-
-    return NextResponse.json({ success: true, notes: updatedNotes });
   } catch (error) {
     console.error('Preacher notes upload error:', error);
     return NextResponse.json({ error: 'An unexpected error occurred during upload.' }, { status: 500 });

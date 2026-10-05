@@ -4,6 +4,7 @@ import {
   CONTENT_CHANNEL_ENTITY_TYPE_NAME,
   ensurePreacherNotesAttribute,
   getPreacherNotesAttributeValue,
+  mutatePreacherNotesAttribute,
   resetPreacherNotesAttributeCache,
   RUNSHEET_CONTENT_CHANNEL_TYPE_ID,
   setPreacherNotesAttributeValue,
@@ -200,4 +201,39 @@ describe('rockPreacherNotesAttribute', () => {
       expect(mockRockPost).not.toHaveBeenCalledWith('/AttributeValues', expect.anything());
     });
   });
+
+  describe('atomic serialized mutations (mutatePreacherNotesAttribute)', () => {
+    it('serializes concurrent mutations on the same channel to prevent dropped updates', async () => {
+      let storedValue = '[]';
+      mockRockGet.mockImplementation(async (url: string) => {
+        if (url === '/EntityTypes') return [{ Id: MOCK_ENTITY_TYPE_ID }];
+        if (url === '/Attributes') return [{ Id: MOCK_ATTRIBUTE_ID }];
+        if (url === '/AttributeValues') return [{ Id: 9001, Value: storedValue }];
+        return [];
+      });
+      mockRockPatch.mockImplementation(async (_url: string, body: any) => {
+        storedValue = body.Value;
+        return {} as any;
+      });
+
+      // Launch two concurrent mutations
+      const op1 = mutatePreacherNotesAttribute(42, async (current) => {
+        // slight delay to simulate async processing
+        await new Promise((r) => setTimeout(r, 20));
+        return [...current, { name: 'Note 1.pdf', path: 'PreacherNotes/MNL/42/11/note1.pdf' }];
+      });
+
+      const op2 = mutatePreacherNotesAttribute(42, async (current) => {
+        await new Promise((r) => setTimeout(r, 10));
+        return [...current, { name: 'Note 2.pdf', path: 'PreacherNotes/MNL/42/22/note2.pdf' }];
+      });
+
+      const [res1, res2] = await Promise.all([op1, op2]);
+
+      expect(res1).toHaveLength(1);
+      expect(res2).toHaveLength(2);
+      expect(res2.map((n) => n.name)).toEqual(['Note 1.pdf', 'Note 2.pdf']);
+    });
+  });
 });
+

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import {
   getPreacherNotesAttributeValue,
-  setPreacherNotesAttributeValue,
+  mutatePreacherNotesAttribute,
 } from '@/server-actions/internal/rockPreacherNotesAttribute';
 import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
 import type { PreacherNote } from '@/types/PreacherNotes';
@@ -16,18 +16,6 @@ const ChannelIdSchema = z.object({
 const UnlinkSchema = z.object({
   channelId: z.number().int().positive('Channel id must be a positive integer'),
   path: z.string().trim().min(1, 'Path is required'),
-});
-
-const SaveNotesSchema = z.object({
-  channelId: z.number().int().positive('Channel id must be a positive integer'),
-  notes: z.array(
-    z.object({
-      name: z.string().trim().min(1),
-      path: z.string().trim().min(1),
-      size: z.number().nonnegative().optional(),
-      uploadedAt: z.string().optional(),
-    }),
-  ),
 });
 
 export interface PreacherNotesActionResult {
@@ -82,40 +70,13 @@ export async function rockUnlinkPreacherNote(
   }
 
   try {
-    const current = await getPreacherNotesAttributeValue(parsed.data.channelId);
-    const updated = current.filter((note) => note.path !== parsed.data.path);
-    const saved = await setPreacherNotesAttributeValue(parsed.data.channelId, updated);
-    return { success: true, notes: saved };
+    const updated = await mutatePreacherNotesAttribute(parsed.data.channelId, (current) => {
+      return current.filter((note) => note.path !== parsed.data.path);
+    });
+    return { success: true, notes: updated };
   } catch (err) {
     console.error('Failed to unlink preacher note:', err);
     return { success: false, error: 'Failed to unlink preacher note.' };
   }
 }
 
-/**
- * Saves the full list of Preacher Notes for a runsheet channel.
- * Requires runsheet edit access.
- */
-export async function rockSavePreacherNotes(
-  channelId: number,
-  notes: PreacherNote[],
-): Promise<PreacherNotesActionResult> {
-  const parsed = SaveNotesSchema.safeParse({ channelId, notes });
-  if (!parsed.success) {
-    return { success: false, error: 'Invalid parameters for saving preacher notes.' };
-  }
-
-  const session = await getRockSession();
-  const access = await assertRunsheetEditAccess(session, parsed.data.channelId);
-  if (!access.allowed) {
-    return { success: false, error: access.error };
-  }
-
-  try {
-    const saved = await setPreacherNotesAttributeValue(parsed.data.channelId, parsed.data.notes);
-    return { success: true, notes: saved };
-  } catch (err) {
-    console.error('Failed to save preacher notes:', err);
-    return { success: false, error: 'Failed to save preacher notes.' };
-  }
-}

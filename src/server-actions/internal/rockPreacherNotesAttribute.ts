@@ -24,6 +24,7 @@ export function resetPreacherNotesAttributeCache(): void {
   cachedAttributeId = null;
   cachedEntityTypeId = null;
   cachedFieldTypeId = null;
+  resetPreacherNotesChannelQueues();
 }
 
 /**
@@ -187,3 +188,59 @@ export async function setPreacherNotesAttributeValue(
 
   return parsePreacherNotes(serialized);
 }
+
+/**
+ * In-process promise queue per channelId to serialize read-modify-write operations
+ * (e.g. concurrent uploads or unlinks for the same runsheet channel).
+ *
+ * NOTE: Cross-instance races remain in multi-instance or serverless environments
+ * because Rock RMS does not support atomic AttributeValue updates or conditional ETag writes.
+ */
+const channelQueues = new Map<number, Promise<unknown>>();
+
+export function resetPreacherNotesChannelQueues(): void {
+  channelQueues.clear();
+}
+
+export async function serializeChannelMutation<T>(
+  channelId: number,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const prev = channelQueues.get(channelId) ?? Promise.resolve();
+
+  const task = async () => {
+    await prev.catch(() => {});
+    return await fn();
+  };
+
+  const nextPromise = task();
+  channelQueues.set(channelId, nextPromise);
+
+  try {
+    return await nextPromise;
+  } finally {
+    if (channelQueues.get(channelId) === nextPromise) {
+      channelQueues.delete(channelId);
+    }
+  }
+}
+
+/**
+ * Reads, modifies, and writes the PreacherNotes attribute for a channelId atomically
+ * within this process, serialized per channelId.
+ * Re-reads the current list inside the critical section.
+ *
+ * NOTE: Cross-instance races remain in multi-instance or serverless environments
+ * because Rock RMS does not support atomic AttributeValue updates or conditional ETag writes.
+ */
+export async function mutatePreacherNotesAttribute(
+  channelId: number,
+  mutate: (current: PreacherNote[]) => PreacherNote[] | Promise<PreacherNote[]>,
+): Promise<PreacherNote[]> {
+  return serializeChannelMutation(channelId, async () => {
+    const current = await getPreacherNotesAttributeValue(channelId);
+    const updated = await mutate(current);
+    return await setPreacherNotesAttributeValue(channelId, updated);
+  });
+}
+
