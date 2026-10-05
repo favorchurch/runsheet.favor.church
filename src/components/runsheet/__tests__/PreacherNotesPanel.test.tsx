@@ -210,6 +210,55 @@ describe('PreacherNotesPanel', () => {
     expect(screen.getByText('1 MB')).toBeInTheDocument();
   });
 
+  it('uploads a .pdf file with an empty MIME type by normalizing type to application/pdf', async () => {
+    mockGetNotes.mockResolvedValueOnce({ success: true, notes: [] });
+
+    const newNote: PreacherNote = {
+      name: 'report.pdf',
+      path: 'PreacherNotes/MNL/42/deadbeef/report.pdf',
+      size: 1024,
+      uploadedAt: '2026-10-06T15:00:00.000Z',
+    };
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        notes: [newNote],
+      }),
+    });
+
+    render(<PreacherNotesPanel channelId={channelId} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/no preacher notes attached yet/i)).toBeInTheDocument();
+    });
+
+    const fileInput = screen.getByLabelText(/attach pdf/i);
+    const emptyTypeFile = new File(['%PDF-1.4 content'], 'report.pdf', { type: '' });
+
+    fireEvent.change(fileInput, { target: { files: [emptyTypeFile] } });
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        `/api/runsheet-notes/upload?channelId=${channelId}`,
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      );
+    });
+
+    const fetchArgs = (global.fetch as jest.Mock).mock.calls[0];
+    const formData = fetchArgs[1].body as FormData;
+    const uploadedBlob = formData.get('file') as File;
+    expect(uploadedBlob).toBeDefined();
+    expect(uploadedBlob.type).toBe('application/pdf');
+
+    await waitFor(() => {
+      expect(screen.getByText('report.pdf')).toBeInTheDocument();
+    });
+  });
+
   it('removes note only after confirming, with confirmation text explaining file stays in Rock Asset Manager', async () => {
     mockGetNotes.mockResolvedValueOnce({ success: true, notes: [sampleNote] });
     mockUnlinkNote.mockResolvedValueOnce({ success: true, notes: [] });

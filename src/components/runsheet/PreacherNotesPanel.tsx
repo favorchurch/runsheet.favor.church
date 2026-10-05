@@ -139,7 +139,11 @@ export function PreacherNotesPanel({ channelId }: PreacherNotesPanelProps) {
 
       try {
         const formData = new FormData();
-        formData.append('file', file);
+        const fileToUpload =
+          file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf'
+            ? new File([file], file.name, { type: 'application/pdf' })
+            : file;
+        formData.append('file', fileToUpload);
 
         const res = await fetch(`/api/runsheet-notes/upload?channelId=${channelId}`, {
           method: 'POST',
