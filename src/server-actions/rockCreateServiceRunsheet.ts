@@ -74,11 +74,15 @@ export async function rockCreateServiceRunsheet(
 
     if (options?.skipIfExists) {
       const escapedTitle = title.replace(/'/g, "''");
-      const existing = (await rockGet('/ContentChannels', {
-        $filter: `ContentChannelTypeId eq ${RUNSHEET_CONTENT_CHANNEL_TYPE_ID} and Name eq '${escapedTitle}'`,
-        $select: 'Id',
-        $top: 1,
-      })) as Array<{ Id: number }> | null;
+      const existing = (await rockGet(
+        '/ContentChannels',
+        {
+          $filter: `ContentChannelTypeId eq ${RUNSHEET_CONTENT_CHANNEL_TYPE_ID} and Name eq '${escapedTitle}'`,
+          $select: 'Id',
+          $top: 1,
+        },
+        true,
+      )) as Array<{ Id: number }> | null;
 
       if (existing && existing.length > 0) {
         return { success: true, id: existing[0].Id, skipped: true };

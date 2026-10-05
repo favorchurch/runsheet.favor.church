@@ -110,11 +110,15 @@ describe('rockCreateServiceRunsheet skipIfExists option', () => {
 
     expect(res).toEqual({ success: true, id: 42, skipped: true });
     expect(mockPost).not.toHaveBeenCalled();
-    expect(mockGet).toHaveBeenCalledWith('/ContentChannels', {
-      $filter: `ContentChannelTypeId eq 13 and Name eq '${TITLE}'`,
-      $select: 'Id',
-      $top: 1,
-    });
+    expect(mockGet).toHaveBeenCalledWith(
+      '/ContentChannels',
+      {
+        $filter: `ContentChannelTypeId eq 13 and Name eq '${TITLE}'`,
+        $select: 'Id',
+        $top: 1,
+      },
+      true,
+    );
   });
 
   it('creates normally when skipIfExists is true but no channel matches', async () => {
@@ -124,6 +128,15 @@ describe('rockCreateServiceRunsheet skipIfExists option', () => {
 
     expect(res.success).toBe(true);
     expect(res.skipped).toBeUndefined();
+    expect(mockGet).toHaveBeenCalledWith(
+      '/ContentChannels',
+      {
+        $filter: `ContentChannelTypeId eq 13 and Name eq '${TITLE}'`,
+        $select: 'Id',
+        $top: 1,
+      },
+      true,
+    );
     expect(mockPost).toHaveBeenCalledWith('/ContentChannels', expect.objectContaining({ Name: TITLE }));
   });
 
@@ -148,11 +161,15 @@ describe('rockCreateServiceRunsheet skipIfExists option', () => {
 
     expect(res).toEqual({ success: true, id: 55, skipped: true });
     expect(mockPost).not.toHaveBeenCalled();
-    expect(mockGet).toHaveBeenCalledWith('/ContentChannels', {
-      $filter: "ContentChannelTypeId eq 13 and Name eq 'MNL Crowne // Father''s Day // 10AM'",
-      $select: 'Id',
-      $top: 1,
-    });
+    expect(mockGet).toHaveBeenCalledWith(
+      '/ContentChannels',
+      {
+        $filter: "ContentChannelTypeId eq 13 and Name eq 'MNL Crowne // Father''s Day // 10AM'",
+        $select: 'Id',
+        $top: 1,
+      },
+      true,
+    );
   });
 
   it('rejects an unauthorized title before any Rock call, even with skipIfExists', async () => {
