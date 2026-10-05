@@ -20,7 +20,7 @@ import {
   rosteredAttendanceFromOccurrence,
   type RosteredAttendance,
 } from '@/lib/rosterAccess';
-import { icalStartTime } from '@/lib/scheduleOccurrences';
+import { scheduleStartTime } from '@/lib/scheduleOccurrences';
 import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
 import { fetchKidsScheduleIds } from '@/server-actions/internal/rockKidsSchedules';
 
@@ -272,14 +272,17 @@ async function fetchRosteredOccurrences(personIds: number[]): Promise<{
   const groupIds = [...new Set(occurrences.map((o) => Number(o.GroupId)).filter((id) => id > 0))];
   const [schedules, groups] = await Promise.all([
     scheduleIds.length
-      ? (rawRockGet('/Schedules', { $filter: orFilter('Id', scheduleIds), $select: 'Id,iCalendarContent', $top: 500 }) as Promise<any[] | null>)
+      ? (rawRockGet('/Schedules', { $filter: orFilter('Id', scheduleIds), $select: 'Id,iCalendarContent,WeeklyTimeOfDay', $top: 500 }) as Promise<any[] | null>)
       : Promise.resolve([]),
     groupIds.length
       ? (rawRockGet('/Groups', { $filter: orFilter('Id', groupIds), $select: 'Id,CampusId', $top: 500 }) as Promise<any[] | null>)
       : Promise.resolve([]),
   ]);
   const startTimeBySchedule = new Map<number, string | null>(
-    (schedules || []).map((sc) => [Number(sc.Id), icalStartTime(String(sc.iCalendarContent || ''))]),
+    (schedules || []).map((sc) => [
+      Number(sc.Id),
+      scheduleStartTime(sc.iCalendarContent, sc.WeeklyTimeOfDay ?? sc.weeklyTimeOfDay),
+    ]),
   );
   const campusByGroup = new Map<number, number | null>(
     (groups || []).map((g) => [Number(g.Id), g.CampusId != null ? Number(g.CampusId) : null]),

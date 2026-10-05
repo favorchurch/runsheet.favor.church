@@ -104,4 +104,113 @@ describe('rosteredAttendanceFromOccurrence', () => {
       }),
     ).toEqual({ campusId: 1, startDateTime: '2026-10-02T20:00:00', scheduleId: null });
   });
+
+  it('produces the same key for pre-check-in and post-check-in rows matching MNL Crowne // October 4, 2026 // 9AM', () => {
+    const preCheckIn = rosteredAttendanceFromOccurrence({
+      attendanceCampusId: 1,
+      attendanceStartDateTime: '2026-10-04T09:00:00',
+      occurrenceDate: '2026-10-04T00:00:00',
+      scheduleId: 564,
+      scheduleStartTime: '09:00:00',
+      groupCampusId: 1,
+    });
+    const postCheckIn = rosteredAttendanceFromOccurrence(checkedIn);
+
+    const expectedKey = channelRosterKey('MNL Crowne // October 4, 2026 // 9AM');
+    expect(expectedKey).toBe('MNL:2026-10-04:09:00:00');
+    expect(buildRosteredViewerKeys([preCheckIn], new Set())).toEqual([expectedKey]);
+    expect(buildRosteredViewerKeys([postCheckIn], new Set())).toEqual([expectedKey]);
+  });
+
+  it('keeps keys for both 9AM and 11:30AM when rostered for both and checked in to either or both', () => {
+    const expectedKeys = [
+      channelRosterKey('MNL Crowne // October 4, 2026 // 9AM'),
+      channelRosterKey('MNL Crowne // October 4, 2026 // 11:30AM'),
+    ];
+
+    const slot9amCheckedIn = rosteredAttendanceFromOccurrence(checkedIn);
+    const slot9amPre = rosteredAttendanceFromOccurrence({
+      attendanceCampusId: 1,
+      attendanceStartDateTime: '2026-10-04T09:00:00',
+      occurrenceDate: '2026-10-04T00:00:00',
+      scheduleId: 564,
+      scheduleStartTime: '09:00:00',
+      groupCampusId: 1,
+    });
+
+    const slot1130amCheckedIn = rosteredAttendanceFromOccurrence({
+      attendanceCampusId: null,
+      attendanceStartDateTime: '2026-10-04T08:52:10',
+      occurrenceDate: '2026-10-04T00:00:00',
+      scheduleId: 557,
+      scheduleStartTime: '11:30:00',
+      groupCampusId: 1,
+    });
+    const slot1130amPre = rosteredAttendanceFromOccurrence({
+      attendanceCampusId: 1,
+      attendanceStartDateTime: '2026-10-04T11:30:00',
+      occurrenceDate: '2026-10-04T00:00:00',
+      scheduleId: 557,
+      scheduleStartTime: '11:30:00',
+      groupCampusId: 1,
+    });
+
+    // Checked in to 9AM, pre-check-in for 11:30AM
+    expect(buildRosteredViewerKeys([slot9amCheckedIn, slot1130amPre], new Set())).toEqual(expectedKeys);
+    // Pre-check-in for 9AM, checked in to 11:30AM
+    expect(buildRosteredViewerKeys([slot9amPre, slot1130amCheckedIn], new Set())).toEqual(expectedKeys);
+    // Checked in to both
+    expect(buildRosteredViewerKeys([slot9amCheckedIn, slot1130amCheckedIn], new Set())).toEqual(expectedKeys);
+  });
+
+  it('yields no key when team and attendance campuses are both null, but keeps key when attendance campus is present', () => {
+    // Team null + attendance null: no stable campus at all → no key granted
+    const noCampus = rosteredAttendanceFromOccurrence({
+      attendanceCampusId: null,
+      attendanceStartDateTime: '2026-10-04T06:33:26',
+      occurrenceDate: '2026-10-04T00:00:00',
+      scheduleId: 564,
+      scheduleStartTime: '09:00:00',
+      groupCampusId: null,
+    });
+    expect(noCampus.campusId).toBeNull();
+    expect(buildRosteredViewerKeys([noCampus], new Set())).toEqual([]);
+
+    // Team null + attendance campus 1: falls back to attendance campus as last resort
+    const attendanceCampusFallback = rosteredAttendanceFromOccurrence({
+      attendanceCampusId: 1,
+      attendanceStartDateTime: '2026-10-04T09:00:00',
+      occurrenceDate: '2026-10-04T00:00:00',
+      scheduleId: 564,
+      scheduleStartTime: '09:00:00',
+      groupCampusId: null,
+    });
+    expect(attendanceCampusFallback.campusId).toBe(1);
+    expect(buildRosteredViewerKeys([attendanceCampusFallback], new Set())).toEqual([
+      'MNL:2026-10-04:09:00:00',
+    ]);
+  });
+
+  it('uses scheduleStartTime when provided, and falls back to attendance StartDateTime when null', () => {
+    const withScheduleTime = rosteredAttendanceFromOccurrence({
+      attendanceCampusId: 1,
+      attendanceStartDateTime: '2026-10-04T06:33:26',
+      occurrenceDate: '2026-10-04T00:00:00',
+      scheduleId: 564,
+      scheduleStartTime: '09:00:00',
+      groupCampusId: 1,
+    });
+    expect(withScheduleTime.startDateTime).toBe('2026-10-04T09:00:00');
+
+    const nullScheduleTime = rosteredAttendanceFromOccurrence({
+      attendanceCampusId: 1,
+      attendanceStartDateTime: '2026-10-04T06:33:26',
+      occurrenceDate: '2026-10-04T00:00:00',
+      scheduleId: 564,
+      scheduleStartTime: null,
+      groupCampusId: 1,
+    });
+    expect(nullScheduleTime.startDateTime).toBe('2026-10-04T06:33:26');
+  });
 });
+
