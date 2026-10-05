@@ -56,16 +56,21 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Could not fetch file from storage.' }, { status: 404 });
     }
 
-    const isDownload = downloadParam === 'true' || dispositionParam === 'attachment';
+    const isDownload =
+      downloadParam === 'true' ||
+      downloadParam === '1' ||
+      dispositionParam === 'attachment';
     const contentDisposition = formatContentDisposition(matchedNote.name, isDownload);
 
     const headers = new Headers();
     headers.set('Content-Type', 'application/pdf');
     headers.set('Cache-Control', 'private, no-store');
     headers.set('Content-Disposition', contentDisposition);
+    headers.set('X-Content-Type-Options', 'nosniff');
 
+    const contentEncoding = rockResponse.headers.get('content-encoding');
     const contentLength = rockResponse.headers.get('content-length');
-    if (contentLength) {
+    if (contentLength && !contentEncoding) {
       headers.set('Content-Length', contentLength);
     }
 

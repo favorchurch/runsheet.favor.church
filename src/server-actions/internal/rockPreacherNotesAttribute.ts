@@ -16,6 +16,7 @@ export const MEMO_FIELD_TYPE_CLASS = 'Rock.Field.Types.MemoFieldType';
 let cachedAttributeId: number | null = null;
 let cachedEntityTypeId: number | null = null;
 let cachedFieldTypeId: number | null = null;
+let ensureAttributePromise: Promise<number> | null = null;
 
 /**
  * Resets the in-memory cache for the PreacherNotes attribute metadata (used in unit tests).
@@ -24,6 +25,7 @@ export function resetPreacherNotesAttributeCache(): void {
   cachedAttributeId = null;
   cachedEntityTypeId = null;
   cachedFieldTypeId = null;
+  ensureAttributePromise = null;
   resetPreacherNotesChannelQueues();
 }
 
@@ -98,35 +100,57 @@ export async function ensurePreacherNotesAttribute(): Promise<number> {
     return cachedAttributeId;
   }
 
-  const existingId = await findPreacherNotesAttributeId();
-  if (existingId !== null) {
-    cachedAttributeId = existingId;
-    return cachedAttributeId;
+  if (ensureAttributePromise) {
+    return ensureAttributePromise;
   }
 
-  const entityTypeId = await resolveContentChannelEntityTypeId();
-  const memoFieldTypeId = await resolveMemoFieldTypeId();
+  ensureAttributePromise = (async () => {
+    try {
+      const existingId = await findPreacherNotesAttributeId();
+      if (existingId !== null) {
+        cachedAttributeId = existingId;
+        return cachedAttributeId;
+      }
 
-  const result = (await rockPost('/Attributes', {
-    Guid: PREACHER_NOTES_ATTRIBUTE_GUID,
-    Key: PREACHER_NOTES_ATTRIBUTE_KEY,
-    Name: 'Preacher Notes',
-    FieldTypeId: memoFieldTypeId,
-    EntityTypeId: entityTypeId,
-    EntityTypeQualifierColumn: 'ContentChannelTypeId',
-    EntityTypeQualifierValue: RUNSHEET_CONTENT_CHANNEL_TYPE_ID,
-    IsGridColumn: false,
-    IsMultiValue: false,
-    IsRequired: false,
-  })) as number | { Id?: number };
+      const entityTypeId = await resolveContentChannelEntityTypeId();
+      const memoFieldTypeId = await resolveMemoFieldTypeId();
 
-  const newId = typeof result === 'number' ? result : result?.Id;
-  if (!newId || !Number.isSafeInteger(newId)) {
-    throw new Error('Failed to create PreacherNotes ContentChannel attribute in Rock');
-  }
+      try {
+        const result = (await rockPost('/Attributes', {
+          Guid: PREACHER_NOTES_ATTRIBUTE_GUID,
+          Key: PREACHER_NOTES_ATTRIBUTE_KEY,
+          Name: 'Preacher Notes',
+          FieldTypeId: memoFieldTypeId,
+          EntityTypeId: entityTypeId,
+          EntityTypeQualifierColumn: 'ContentChannelTypeId',
+          EntityTypeQualifierValue: RUNSHEET_CONTENT_CHANNEL_TYPE_ID,
+          IsGridColumn: false,
+          IsMultiValue: false,
+          IsRequired: false,
+        })) as number | { Id?: number };
 
-  cachedAttributeId = newId;
-  return newId;
+        const newId = typeof result === 'number' ? result : result?.Id;
+        if (!newId || !Number.isSafeInteger(newId)) {
+          throw new Error('Failed to create PreacherNotes ContentChannel attribute in Rock');
+        }
+
+        cachedAttributeId = newId;
+        return newId;
+      } catch (postError) {
+        // If POST failed (e.g. concurrent creation race on Rock side), re-check if attribute exists now
+        const recheckId = await findPreacherNotesAttributeId();
+        if (recheckId !== null) {
+          cachedAttributeId = recheckId;
+          return recheckId;
+        }
+        throw postError;
+      }
+    } finally {
+      ensureAttributePromise = null;
+    }
+  })();
+
+  return ensureAttributePromise;
 }
 
 /**

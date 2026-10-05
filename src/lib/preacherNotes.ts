@@ -79,7 +79,6 @@ export function isValidNotePath(path: string | null | undefined, channelId: numb
 
   const regex = new RegExp(
     `^PreacherNotes/(MNL|BNE|SEL|ALL)/${escapeRegex(channelStr)}/[0-9a-fA-F]+/[^/]+\\.pdf$`,
-    'i',
   );
   return regex.test(path);
 }

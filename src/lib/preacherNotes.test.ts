@@ -149,6 +149,11 @@ describe('isValidNotePath', () => {
     expect(isValidNotePath('PreacherNotes/OTHER/42/a1b2/notes.pdf', 42)).toBe(false);
   });
 
+  it('rejects lowercase campus or folder segments', () => {
+    expect(isValidNotePath('preachernotes/mnl/42/a1b2/notes.pdf', 42)).toBe(false);
+    expect(isValidNotePath('PreacherNotes/mnl/42/a1b2/notes.pdf', 42)).toBe(false);
+  });
+
   it('rejects non-hex segments', () => {
     expect(isValidNotePath('PreacherNotes/MNL/42/xyz123/notes.pdf', 42)).toBe(false);
     expect(isValidNotePath('PreacherNotes/MNL/42/random-folder/notes.pdf', 42)).toBe(false);

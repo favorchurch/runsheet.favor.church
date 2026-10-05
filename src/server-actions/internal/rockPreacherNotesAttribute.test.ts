@@ -136,6 +136,48 @@ describe('rockPreacherNotesAttribute', () => {
       expect(mockRockPost).toHaveBeenCalledTimes(1); // No additional POST
     });
 
+    it('shares single in-flight promise during concurrent ensurePreacherNotesAttribute calls', async () => {
+      mockRockPost.mockImplementation(async (url: string) => {
+        if (url === '/Attributes') {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return MOCK_ATTRIBUTE_ID;
+        }
+        return 1;
+      });
+
+      const [id1, id2] = await Promise.all([
+        ensurePreacherNotesAttribute(),
+        ensurePreacherNotesAttribute(),
+      ]);
+
+      expect(id1).toBe(MOCK_ATTRIBUTE_ID);
+      expect(id2).toBe(MOCK_ATTRIBUTE_ID);
+      expect(mockRockPost).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-checks attribute id if POST fails due to concurrent creation race', async () => {
+      let postAttempted = false;
+      mockRockPost.mockImplementation(async (url: string) => {
+        if (url === '/Attributes') {
+          postAttempted = true;
+          throw new Error('Attribute with Guid already exists');
+        }
+        return 1;
+      });
+
+      mockRockGet.mockImplementation(async (url: string) => {
+        if (url === '/EntityTypes') return [{ Id: MOCK_ENTITY_TYPE_ID }];
+        if (url === '/FieldTypes') return [{ Id: MOCK_MEMO_FIELD_TYPE_ID }];
+        if (url === '/Attributes') {
+          return postAttempted ? [{ Id: MOCK_ATTRIBUTE_ID }] : [];
+        }
+        return [];
+      });
+
+      const id = await ensurePreacherNotesAttribute();
+      expect(id).toBe(MOCK_ATTRIBUTE_ID);
+    });
+
     it('makes no POST if attribute already exists in Rock prior to ensure', async () => {
       mockRockGet.mockImplementation(async (url: string) => {
         if (url === '/EntityTypes') return [{ Id: MOCK_ENTITY_TYPE_ID }];

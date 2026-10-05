@@ -407,7 +407,38 @@ describe('runsheet-notes route handlers access and validation', () => {
       expect(response.headers.get('Content-Length')).toBe('2048');
     });
 
-    it('sets attachment disposition when download=true', async () => {
+    it('sets attachment disposition when download=true or download=1', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+      const targetPath = 'PreacherNotes/MNL/42/deadbeef/notes.pdf';
+
+      mockGetAttributeValue.mockResolvedValue([
+        { name: 'notes.pdf', path: targetPath },
+      ]);
+
+      mockFetchRockContent.mockResolvedValue(
+        new Response(new ReadableStream(), {
+          status: 200,
+        }),
+      );
+
+      const requestTrue = new Request(`http://localhost:8000/api/runsheet-notes/file?channelId=42&path=${encodeURIComponent(targetPath)}&download=true`);
+      const responseTrue = await getFile(requestTrue);
+
+      expect(responseTrue.status).toBe(200);
+      expect(responseTrue.headers.get('Content-Disposition')).toBe(
+        'attachment; filename="notes.pdf"; filename*=UTF-8\'\'notes.pdf',
+      );
+
+      const requestOne = new Request(`http://localhost:8000/api/runsheet-notes/file?channelId=42&path=${encodeURIComponent(targetPath)}&download=1`);
+      const responseOne = await getFile(requestOne);
+
+      expect(responseOne.status).toBe(200);
+      expect(responseOne.headers.get('Content-Disposition')).toBe(
+        'attachment; filename="notes.pdf"; filename*=UTF-8\'\'notes.pdf',
+      );
+    });
+
+    it('sets X-Content-Type-Options: nosniff and omits Content-Length when response is encoded', async () => {
       mockGetRockSession.mockResolvedValue(session('MNL', true));
       const targetPath = 'PreacherNotes/MNL/42/deadbeef/notes.pdf';
 
@@ -418,16 +449,19 @@ describe('runsheet-notes route handlers access and validation', () => {
       mockFetchRockContent.mockResolvedValueOnce(
         new Response(new ReadableStream(), {
           status: 200,
+          headers: {
+            'Content-Length': '1024',
+            'Content-Encoding': 'gzip',
+          },
         }),
       );
 
-      const request = new Request(`http://localhost:8000/api/runsheet-notes/file?channelId=42&path=${encodeURIComponent(targetPath)}&download=true`);
+      const request = new Request(`http://localhost:8000/api/runsheet-notes/file?channelId=42&path=${encodeURIComponent(targetPath)}`);
       const response = await getFile(request);
 
       expect(response.status).toBe(200);
-      expect(response.headers.get('Content-Disposition')).toBe(
-        'attachment; filename="notes.pdf"; filename*=UTF-8\'\'notes.pdf',
-      );
+      expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+      expect(response.headers.get('Content-Length')).toBeNull();
     });
 
     it('handles non-Latin note filenames safely in Content-Disposition', async () => {
