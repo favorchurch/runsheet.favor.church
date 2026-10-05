@@ -66,7 +66,8 @@ export function buildPreacherNotesFileName(
   // Times like `11:30AM`: a colon is not a valid Windows file name character.
   const time = extractChannelTime(title).replace(/\s+/g, '').replace(/:/g, '.');
 
-  const stem = sanitizeStorageFileName(originalName).slice(0, -4);
+  // Rock drops these (and Windows-invalid characters) when it stores the file; match it so the shown name is the stored one.
+  const stem = sanitizeStorageFileName(originalName).slice(0, -4).replace(/[#()&%:*?"<>|]/g, '');
   const parts = [date, time, stem].filter(Boolean);
   const base = sanitizeStorageFileName(`${parts.join(' ')}.pdf`).slice(0, -4);
   return `${suffix && suffix > 1 ? `${base}_${suffix}` : base}.pdf`;

@@ -171,6 +171,9 @@ describe('buildPreacherNotesFileName', () => {
   it('sanitizes the original name and appends a numbered suffix', () => {
     expect(buildPreacherNotesFileName('MNL // October 12, 2026 // 10AM', '../evil..pdf')).toBe('2026-10-12 10AM evil.pdf');
     expect(buildPreacherNotesFileName('MNL // October 12, 2026 // 10AM', 'notes', 2)).toBe('2026-10-12 10AM notes_2.pdf');
+    expect(buildPreacherNotesFileName('MNL // October 12, 2026 // 10AM', 'Q&A #1 (final) 100%.pdf')).toBe(
+      '2026-10-12 10AM QA 1 final 100.pdf',
+    );
     expect(buildPreacherNotesFileName('MNL // October 12, 2026 // 10AM', 'notes.pdf', 1)).toBe('2026-10-12 10AM notes.pdf');
   });
 });
