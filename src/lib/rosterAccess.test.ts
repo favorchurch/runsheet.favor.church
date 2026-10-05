@@ -191,8 +191,18 @@ describe('rosteredAttendanceFromOccurrence', () => {
     ]);
   });
 
-  it('falls back to attendance StartDateTime when scheduleStartTime is null', () => {
-    const attendance = rosteredAttendanceFromOccurrence({
+  it('uses scheduleStartTime when provided, and falls back to attendance StartDateTime when null', () => {
+    const withScheduleTime = rosteredAttendanceFromOccurrence({
+      attendanceCampusId: 1,
+      attendanceStartDateTime: '2026-10-04T06:33:26',
+      occurrenceDate: '2026-10-04T00:00:00',
+      scheduleId: 564,
+      scheduleStartTime: '09:00:00',
+      groupCampusId: 1,
+    });
+    expect(withScheduleTime.startDateTime).toBe('2026-10-04T09:00:00');
+
+    const nullScheduleTime = rosteredAttendanceFromOccurrence({
       attendanceCampusId: 1,
       attendanceStartDateTime: '2026-10-04T06:33:26',
       occurrenceDate: '2026-10-04T00:00:00',
@@ -200,7 +210,7 @@ describe('rosteredAttendanceFromOccurrence', () => {
       scheduleStartTime: null,
       groupCampusId: 1,
     });
-    expect(attendance.startDateTime).toBe('2026-10-04T06:33:26');
+    expect(nullScheduleTime.startDateTime).toBe('2026-10-04T06:33:26');
   });
 });
 
