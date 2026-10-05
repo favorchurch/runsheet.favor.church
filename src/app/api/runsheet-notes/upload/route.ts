@@ -5,11 +5,15 @@ import {
   isPdf,
   isValidNotePath,
   PREACHER_NOTES_MAX_BYTES,
+  PREACHER_NOTES_MAX_COUNT,
   sanitizeStorageFileName,
 } from '@/lib/preacherNotes';
 import { extractRunsheetCampus } from '@/lib/runsheetCampus';
 import { uploadRockContent } from '@/server-actions/internal/rockContentUpload';
-import { mutatePreacherNotesAttribute } from '@/server-actions/internal/rockPreacherNotesAttribute';
+import {
+  getPreacherNotesAttributeValue,
+  mutatePreacherNotesAttribute,
+} from '@/server-actions/internal/rockPreacherNotesAttribute';
 import { assertRunsheetEditAccess } from '@/server-actions/runsheetAuthorization';
 import type { PreacherNote } from '@/types/PreacherNotes';
 
@@ -78,6 +82,15 @@ export async function POST(request: Request) {
     // Keep the original as the display name, and derive a safe storage name for Rock
     const originalFileName = (file as any).name || 'document.pdf';
     const storageFileName = sanitizeStorageFileName(originalFileName);
+
+    // Enforce 10 notes maximum per runsheet before sending to Rock
+    const currentNotes = await getPreacherNotesAttributeValue(channelId);
+    if (currentNotes.length >= PREACHER_NOTES_MAX_COUNT) {
+      return NextResponse.json(
+        { error: 'A runsheet can hold up to 10 Preacher Notes PDFs' },
+        { status: 400 },
+      );
+    }
 
     // Upload to Rock
     const returnedPath = await uploadRockContent(folderPath, buffer, storageFileName);

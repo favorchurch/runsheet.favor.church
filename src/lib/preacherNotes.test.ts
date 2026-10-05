@@ -250,5 +250,20 @@ describe('formatContentDisposition', () => {
     expect(disp).toContain('.pdf');
     expect(/^[\x20-\x7E]+$/.test(disp)).toBe(true);
   });
+
+  it('percent-encodes RFC 5987 special characters like single quotes, parens, and asterisks', () => {
+    const complexName = "Pastor's (Sunday)* Notes.pdf";
+    const disp = formatContentDisposition(complexName, false);
+    expect(disp).toContain("filename*=UTF-8''Pastor%27s%20%28Sunday%29%2A%20Notes.pdf");
+    const encodedValue = disp.split("filename*=UTF-8''")[1];
+    expect(encodedValue).not.toMatch(/['()*]/);
+  });
+});
+
+describe('PREACHER_NOTES_MAX_COUNT', () => {
+  it('is 10 to fit within IIS 2048 query string limit', () => {
+    const { PREACHER_NOTES_MAX_COUNT } = require('./preacherNotes');
+    expect(PREACHER_NOTES_MAX_COUNT).toBe(10);
+  });
 });
 

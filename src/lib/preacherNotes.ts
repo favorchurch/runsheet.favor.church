@@ -4,6 +4,7 @@ import type { PreacherNote } from '@/types/PreacherNotes';
 export const PREACHER_NOTES_ATTRIBUTE_KEY = 'PreacherNotes';
 export const PREACHER_NOTES_ATTRIBUTE_GUID = 'B69F2184-2101-44B4-84E3-D6B63B6CE151';
 export const PREACHER_NOTES_MAX_BYTES = Math.floor(4.4 * 1024 * 1024); // 4.4 MB (~4,613,734 bytes)
+export const PREACHER_NOTES_MAX_COUNT = 10;
 
 const VALID_CAMPUSES = new Set<string>(['MNL', 'BNE', 'SEL', 'ALL']);
 
@@ -190,7 +191,10 @@ export function formatContentDisposition(
     fallback = `${fallback}.pdf`;
   }
 
-  const encoded = encodeURIComponent(name);
+  const encoded = encodeURIComponent(name).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
   return `${type}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 

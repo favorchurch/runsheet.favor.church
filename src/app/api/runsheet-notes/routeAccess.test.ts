@@ -78,6 +78,7 @@ describe('runsheet-notes route handlers access and validation', () => {
       }
       return [];
     });
+    mockGetAttributeValue.mockResolvedValue([]);
   });
 
   describe('access denial (non-editor and cross-campus editor)', () => {
@@ -358,7 +359,8 @@ describe('runsheet-notes route handlers access and validation', () => {
     it('returns 500 stating file reached Rock but was not linked if attribute read throws after upload', async () => {
       mockGetRockSession.mockResolvedValue(session('MNL', true));
       mockUploadRockContent.mockResolvedValueOnce('PreacherNotes/MNL/42/deadbeef/notes.pdf');
-      mockGetAttributeValue.mockRejectedValueOnce(new Error('Rock attribute read failed'));
+      mockGetAttributeValue.mockResolvedValueOnce([]); // pre-check before upload succeeds
+      mockGetAttributeValue.mockRejectedValueOnce(new Error('Rock attribute read failed')); // read inside mutate throws after upload
 
       const formData = new FormData();
       formData.append('file', createPdfFile('notes.pdf'));
@@ -394,6 +396,30 @@ describe('runsheet-notes route handlers access and validation', () => {
 
       const json = await response.json();
       expect(json.error).toBe('The file reached Rock but was not linked to the runsheet.');
+    });
+
+    it('rejects upload when runsheet already has 10 notes with 400 before sending to Rock', async () => {
+      mockGetRockSession.mockResolvedValue(session('MNL', true));
+      const tenNotes = Array.from({ length: 10 }, (_, i) => ({
+        name: `note_${i}.pdf`,
+        path: `PreacherNotes/MNL/42/deadbeef${i}/note_${i}.pdf`,
+      }));
+      mockGetAttributeValue.mockResolvedValueOnce(tenNotes);
+
+      const formData = new FormData();
+      formData.append('file', createPdfFile('note_11.pdf'));
+
+      const request = new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const response = await postUpload(request);
+      expect(response.status).toBe(400);
+
+      const json = await response.json();
+      expect(json.error).toBe('A runsheet can hold up to 10 Preacher Notes PDFs');
+      expect(mockUploadRockContent).not.toHaveBeenCalled();
     });
   });
 

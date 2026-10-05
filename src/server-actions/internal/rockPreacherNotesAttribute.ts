@@ -3,10 +3,11 @@ import 'server-only';
 import {
   PREACHER_NOTES_ATTRIBUTE_GUID,
   PREACHER_NOTES_ATTRIBUTE_KEY,
+  PREACHER_NOTES_MAX_COUNT,
   parsePreacherNotes,
   serializePreacherNotes,
 } from '@/lib/preacherNotes';
-import { rockGet, rockPatch, rockPost } from '@/server-actions/internal/rockFetch';
+import { rockGet, rockPost } from '@/server-actions/internal/rockFetch';
 import type { PreacherNote } from '@/types/PreacherNotes';
 
 export const CONTENT_CHANNEL_ENTITY_TYPE_NAME = 'Rock.Model.ContentChannel';
@@ -156,24 +157,18 @@ export async function ensurePreacherNotesAttribute(): Promise<number> {
 /**
  * Reads the ContentChannel PreacherNotes attribute value for a channelId.
  * Does NOT ensure the attribute exists (never mutates Rock on read).
- * Returns `[]` if the attribute or attribute value is missing or empty.
+ * Reads via rockGet('/ContentChannels/<id>', { loadAttributes: 'simple' }, true)
+ * taking AttributeValues.PreacherNotes.Value (missing -> []).
+ * NEVER calls /AttributeValues.
  */
 export async function getPreacherNotesAttributeValue(channelId: number): Promise<PreacherNote[]> {
-  const attributeId = await findPreacherNotesAttributeId();
-  if (!attributeId) {
-    return [];
-  }
-
-  const values = (await rockGet(
-    '/AttributeValues',
-    {
-      $filter: `AttributeId eq ${attributeId} and EntityId eq ${channelId}`,
-      $select: 'Id,Value',
-    },
+  const channel = (await rockGet(
+    `/ContentChannels/${channelId}`,
+    { loadAttributes: 'simple' },
     true,
-  )) as Array<{ Id: number; Value?: string }>;
+  )) as { AttributeValues?: Record<string, { Value?: string }> } | null;
 
-  const rawValue = values?.[0]?.Value;
+  const rawValue = channel?.AttributeValues?.[PREACHER_NOTES_ATTRIBUTE_KEY]?.Value;
   if (!rawValue) return [];
 
   return parsePreacherNotes(rawValue);
@@ -182,33 +177,29 @@ export async function getPreacherNotesAttributeValue(channelId: number): Promise
 /**
  * Writes the ContentChannel PreacherNotes attribute value for a channelId.
  * Ensures the attribute exists only on write.
- * Uses rockPatch if an AttributeValue record exists, or rockPost if new.
+ * Writes via rockPost('/ContentChannels/AttributeValue/<id>', undefined, { attributeKey: 'PreacherNotes', attributeValue: <compact JSON> }).
+ * NEVER calls /AttributeValues.
  */
 export async function setPreacherNotesAttributeValue(
   channelId: number,
   notes: PreacherNote[] | string,
 ): Promise<PreacherNote[]> {
-  const attributeId = await ensurePreacherNotesAttribute();
+  const parsedNotes = typeof notes === 'string' ? parsePreacherNotes(notes) : notes;
+  if (parsedNotes.length > PREACHER_NOTES_MAX_COUNT) {
+    throw new Error('A runsheet can hold up to 10 Preacher Notes PDFs');
+  }
+
+  await ensurePreacherNotesAttribute();
   const serialized = typeof notes === 'string' ? notes : serializePreacherNotes(notes);
 
-  const existing = (await rockGet(
-    '/AttributeValues',
+  await rockPost(
+    `/ContentChannels/AttributeValue/${channelId}`,
+    undefined,
     {
-      $filter: `AttributeId eq ${attributeId} and EntityId eq ${channelId}`,
-      $select: 'Id,Value',
+      attributeKey: PREACHER_NOTES_ATTRIBUTE_KEY,
+      attributeValue: serialized,
     },
-    true,
-  )) as Array<{ Id: number; Value?: string }>;
-
-  if (existing?.[0]?.Id) {
-    await rockPatch(`/AttributeValues/${existing[0].Id}`, { Value: serialized });
-  } else {
-    await rockPost('/AttributeValues', {
-      AttributeId: attributeId,
-      EntityId: channelId,
-      Value: serialized,
-    });
-  }
+  );
 
   return parsePreacherNotes(serialized);
 }
@@ -264,6 +255,15 @@ export async function mutatePreacherNotesAttribute(
   return serializeChannelMutation(channelId, async () => {
     const current = await getPreacherNotesAttributeValue(channelId);
     const updated = await mutate(current);
+
+    // If the list hasn't changed (e.g. unlinking a path not in the list), skip write
+    if (
+      current.length === updated.length &&
+      current.every((note, i) => note.path === updated[i]?.path && note.name === updated[i]?.name)
+    ) {
+      return current;
+    }
+
     return await setPreacherNotesAttributeValue(channelId, updated);
   });
 }
