@@ -120,6 +120,11 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
   );
   const isGrowSchedule = selectedSchedule?.categoryId === GROW_SCHEDULE_CATEGORY_ID;
 
+  const dateSchedules = React.useMemo(
+    () => schedules.filter((s) => s.upcomingOccurrences?.some((o) => o.date === date)),
+    [schedules, date]
+  );
+
   const isGlobalStaffOrAdmin = React.useMemo(
     () => !runsheetCampuses || runsheetCampuses.includes(ALL_CAMPUSES),
     [runsheetCampuses]
@@ -292,11 +297,13 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
       let itemsToCreate: string[] = [];
 
       if (batchCreateDateWide) {
-        itemsToCreate = schedules.map((s) => {
+        itemsToCreate = dateSchedules.map((s) => {
+          const occ = s.upcomingOccurrences?.find((o) => o.date === date);
+          const timeLabel = occ?.time || s.timeLabel;
           if (s.categoryId === GROW_SCHEDULE_CATEGORY_ID) {
-            return buildGrowRunsheetTitle(s.name, date, s.timeLabel);
+            return buildGrowRunsheetTitle(s.name, date, timeLabel);
           }
-          return generateRunsheetTitle(s.name, date, s.timeLabel, selectedCategory?.name);
+          return generateRunsheetTitle(s.name, date, timeLabel, selectedCategory?.name);
         });
       } else if (batchCreateUpcoming) {
         const occurrences = selectedSchedule?.upcomingOccurrences || [];
@@ -540,7 +547,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
           </div>
 
           {/* Date-wide batch creation */}
-          {schedules.length >= 2 && (
+          {dateSchedules.length >= 2 && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
               <label className="flex items-start gap-2.5 cursor-pointer">
                 <input
@@ -554,7 +561,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
                 />
                 <div className="text-xs">
                   <span className="font-semibold text-slate-800">
-                    Create runsheets for all {schedules.length} sessions on this date
+                    Create runsheets for all {dateSchedules.length} sessions on this date
                   </span>
                   <p className="mt-0.5 text-slate-500">
                     Creates runsheets for every schedule offered on {formatDateToWordy(date)}.
@@ -676,7 +683,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
               {status.type === 'loading'
                 ? 'Saving...'
                 : batchCreateDateWide
-                  ? `Create All (${schedules.length}) Runsheets`
+                  ? `Create All (${dateSchedules.length}) Runsheets`
                   : batchCreateUpcoming
                     ? isGrowSchedule
                       ? `Create All (${selectedSchedule?.upcomingOccurrences?.length || 0}) Runsheets`

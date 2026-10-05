@@ -40,6 +40,7 @@ jest.mock('react-hot-toast', () => ({
 const mockCategories = [
   { id: 10, name: 'MNL | SUNDAY SERVICES' },
   { id: 20, name: 'BNE | SUNDAY SERVICES' },
+  { id: 590, name: 'MNL | ALL EVENTS' },
 ];
 
 const mockMultiSchedules = [
@@ -179,6 +180,128 @@ describe('CreateRunsheetForm batch operations', () => {
       );
 
       expect(onCreated).toHaveBeenCalledWith(501, expect.stringContaining('9AM'), expect.anything());
+    });
+
+    it('only includes schedules occurring on the chosen date and excludes schedules from other dates', async () => {
+      (rockGetScheduleOptions as jest.Mock).mockResolvedValue({
+        success: true,
+        schedules: [
+          {
+            id: 201,
+            name: 'MNL Crowne 9AM',
+            categoryId: 10,
+            timeLabel: '9AM',
+            nextDate: '2026-10-11',
+            upcomingOccurrences: [
+              { date: '2026-10-11', time: '9AM' },
+            ],
+          },
+          {
+            id: 202,
+            name: 'MNL Crowne 11AM',
+            categoryId: 10,
+            timeLabel: '11AM',
+            nextDate: '2026-10-11',
+            upcomingOccurrences: [
+              { date: '2026-10-11', time: '11AM' },
+            ],
+          },
+          {
+            id: 203,
+            name: 'MNL Saturday Meeting 5PM',
+            categoryId: 10,
+            timeLabel: '5PM',
+            nextDate: '2026-10-17',
+            upcomingOccurrences: [
+              { date: '2026-10-17', time: '5PM' },
+            ],
+          },
+        ],
+      });
+
+      render(<CreateRunsheetForm />);
+
+      // On 2026-10-11 (next Sunday), only 2 of the 3 schedules occur
+      await waitFor(() => {
+        expect(
+          screen.getByLabelText(/Create runsheets for all 2 sessions on this date/i)
+        ).toBeInTheDocument();
+      });
+
+      // It should NOT count 3 sessions
+      expect(
+        screen.queryByLabelText(/Create runsheets for all 3 sessions on this date/i)
+      ).not.toBeInTheDocument();
+
+      const checkbox = screen.getByLabelText(/Create runsheets for all 2 sessions on this date/i);
+      fireEvent.click(checkbox);
+
+      // Button should say Create All (2) Runsheets
+      expect(screen.getByRole('button', { name: /Create All \(2\) Runsheets/i })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /Create All \(2\) Runsheets/i }));
+
+      await waitFor(() => {
+        expect(rockCreateServiceRunsheet).toHaveBeenCalledTimes(2);
+      });
+
+      expect(rockCreateServiceRunsheet).toHaveBeenCalledWith(
+        expect.stringContaining('9AM'),
+        13,
+        10,
+        { skipIfExists: true }
+      );
+      expect(rockCreateServiceRunsheet).toHaveBeenCalledWith(
+        expect.stringContaining('11AM'),
+        13,
+        10,
+        { skipIfExists: true }
+      );
+      expect(rockCreateServiceRunsheet).not.toHaveBeenCalledWith(
+        expect.stringContaining('Saturday Meeting'),
+        expect.anything(),
+        expect.anything(),
+        expect.anything()
+      );
+    });
+
+    it('does not display the date-wide checkbox when only 1 schedule occurs on the chosen date despite multiple total schedules', async () => {
+      (rockGetScheduleOptions as jest.Mock).mockResolvedValue({
+        success: true,
+        schedules: [
+          {
+            id: 301,
+            name: 'MNL Grow - Topic A',
+            categoryId: 483,
+            timeLabel: '3PM',
+            nextDate: '2026-10-11',
+            upcomingOccurrences: [
+              { date: '2026-10-11', time: '3PM' },
+            ],
+          },
+          {
+            id: 302,
+            name: 'MNL Grow - Topic B',
+            categoryId: 483,
+            timeLabel: '3PM',
+            nextDate: '2026-10-18',
+            upcomingOccurrences: [
+              { date: '2026-10-18', time: '3PM' },
+            ],
+          },
+        ],
+      });
+
+      render(<CreateRunsheetForm growOnly />);
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue(/MNL Grow - Topic A/i)).toBeInTheDocument();
+      });
+
+      // Date-wide batch should NOT appear because only 1 topic occurs on 2026-10-11
+      expect(
+        screen.queryByText(/Create runsheets for all.*sessions on this date/i)
+      ).not.toBeInTheDocument();
     });
   });
 
