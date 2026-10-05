@@ -9,6 +9,7 @@
 import { extractRunsheetCampus, type RunsheetCampusCode } from './runsheetCampus';
 import { extractChannelDate, extractChannelTime, parseTimeToSortSignature } from './runsheetDate';
 import { getRunsheetKind } from './runsheetKind';
+import { scheduleStartTime as resolveScheduleStartTime } from './scheduleOccurrences';
 
 /** Rock Campus.Id → runsheet campus code (verified 2026-09-26). */
 export const ROCK_CAMPUS_CODES: Record<number, RunsheetCampusCode> = { 1: 'MNL', 2: 'BNE', 3: 'SEL' };
@@ -24,14 +25,20 @@ export function rosteredAttendanceFromOccurrence(input: {
   attendanceStartDateTime: string;
   occurrenceDate: string | null;
   scheduleId: number | null;
-  scheduleStartTime: string | null;
+  scheduleStartTime?: string | null;
+  iCalendarContent?: string | null;
+  weeklyTimeOfDay?: string | null;
   groupCampusId: number | null;
 }): RosteredAttendance {
   const date = input.occurrenceDate ? input.occurrenceDate.slice(0, 10) : null;
+  const time =
+    input.scheduleStartTime !== undefined
+      ? input.scheduleStartTime
+      : resolveScheduleStartTime(input.iCalendarContent, input.weeklyTimeOfDay);
   return {
     campusId: input.groupCampusId ?? input.attendanceCampusId,
     startDateTime:
-      date && input.scheduleStartTime ? `${date}T${input.scheduleStartTime}` : input.attendanceStartDateTime,
+      date && time ? `${date}T${time}` : input.attendanceStartDateTime,
     scheduleId: input.scheduleId,
   };
 }

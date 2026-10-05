@@ -461,4 +461,146 @@ describe('rockResolveAccess', () => {
     expect(attendanceCalls[0]).toContain('(ScheduledToAttend eq true or RequestedToAttend eq true)');
     expect(attendanceCalls[0]).toContain("RSVP ne '2'");
   });
+
+  it('exercises the full fetch path with a checked-in attendance (CampusId null, StartDateTime 06:33:26) and asserts rosteredViewer keys', async () => {
+    mockFetch.mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      const path = url.pathname.replace(/^\/api/, '');
+      const filter = url.searchParams.get('$filter') || '';
+
+      if (path === '/People') {
+        return rockResponse([{ Id: 411, FirstName: 'Bryan', LastName: 'Opano' }]);
+      }
+      if (path === '/GroupMembers') return rockResponse([]);
+      if (path === '/PersonAlias') return rockResponse([{ Id: 9411 }]);
+      if (path === '/Attendances') {
+        return rockResponse([
+          { OccurrenceId: 10, CampusId: null, StartDateTime: '2026-10-04T06:33:26' },
+        ]);
+      }
+      if (path === '/AttendanceOccurrences') {
+        return rockResponse([
+          { Id: 10, ScheduleId: 564, OccurrenceDate: '2026-10-04T00:00:00', GroupId: 1001 },
+        ]);
+      }
+      if (path === '/Schedules') {
+        if (filter.includes('Id eq 564')) {
+          expect(url.searchParams.get('$select')).toContain('WeeklyTimeOfDay');
+          return rockResponse([
+            {
+              Id: 564,
+              Name: 'MNL Crowne 9AM',
+              iCalendarContent: 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nDTSTART:20260816T090000\r\nRRULE:FREQ=WEEKLY;BYDAY=SU\r\nEND:VEVENT\r\nEND:VCALENDAR',
+              WeeklyTimeOfDay: '09:00:00',
+            },
+          ]);
+        }
+        return rockResponse([]);
+      }
+      if (path === '/Groups') {
+        if (filter.includes('Id eq 1001')) {
+          return rockResponse([{ Id: 1001, CampusId: 1 }]);
+        }
+        return rockResponse([]);
+      }
+      return rockResponse([]);
+    });
+
+    const result = await rockResolveAccess([411]);
+
+    expect(result.rolesMap.rosteredViewer).toEqual(['MNL:2026-10-04:09:00:00']);
+  });
+
+  it('keeps keys for both 9AM and 11:30AM when a volunteer is rostered for both and checked in', async () => {
+    mockFetch.mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      const path = url.pathname.replace(/^\/api/, '');
+      const filter = url.searchParams.get('$filter') || '';
+
+      if (path === '/People') return rockResponse([{ Id: 412, FirstName: 'Multi', LastName: 'Rostered' }]);
+      if (path === '/GroupMembers') return rockResponse([]);
+      if (path === '/PersonAlias') return rockResponse([{ Id: 9412 }]);
+      if (path === '/Attendances') {
+        return rockResponse([
+          { OccurrenceId: 10, CampusId: null, StartDateTime: '2026-10-04T06:33:26' },
+          { OccurrenceId: 11, CampusId: null, StartDateTime: '2026-10-04T08:52:10' },
+        ]);
+      }
+      if (path === '/AttendanceOccurrences') {
+        return rockResponse([
+          { Id: 10, ScheduleId: 564, OccurrenceDate: '2026-10-04T00:00:00', GroupId: 1001 },
+          { Id: 11, ScheduleId: 557, OccurrenceDate: '2026-10-04T00:00:00', GroupId: 1001 },
+        ]);
+      }
+      if (path === '/Schedules') {
+        if (filter.includes('Id eq 564') || filter.includes('Id eq 557')) {
+          return rockResponse([
+            {
+              Id: 564,
+              Name: 'MNL Crowne 9AM',
+              iCalendarContent: 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nDTSTART:20260816T090000\r\nRRULE:FREQ=WEEKLY;BYDAY=SU\r\nEND:VEVENT\r\nEND:VCALENDAR',
+              WeeklyTimeOfDay: '09:00:00',
+            },
+            {
+              Id: 557,
+              Name: 'MNL Crowne 11:30AM',
+              iCalendarContent: 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nDTSTART:20260816T113000\r\nRRULE:FREQ=WEEKLY;BYDAY=SU\r\nEND:VEVENT\r\nEND:VCALENDAR',
+              WeeklyTimeOfDay: '11:30:00',
+            },
+          ]);
+        }
+        return rockResponse([]);
+      }
+      if (path === '/Groups') {
+        return rockResponse([{ Id: 1001, CampusId: 1 }]);
+      }
+      return rockResponse([]);
+    });
+
+    const result = await rockResolveAccess([412]);
+
+    expect(result.rolesMap.rosteredViewer).toEqual([
+      'MNL:2026-10-04:09:00:00',
+      'MNL:2026-10-04:11:30:00',
+    ]);
+  });
+
+  it('yields no rostered key when team group CampusId is null and attendance CampusId is null', async () => {
+    mockFetch.mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      const path = url.pathname.replace(/^\/api/, '');
+      const filter = url.searchParams.get('$filter') || '';
+
+      if (path === '/People') return rockResponse([{ Id: 413, FirstName: 'NoCampus', LastName: 'Volunteer' }]);
+      if (path === '/GroupMembers') return rockResponse([]);
+      if (path === '/PersonAlias') return rockResponse([{ Id: 9413 }]);
+      if (path === '/Attendances') {
+        return rockResponse([
+          { OccurrenceId: 12, CampusId: null, StartDateTime: '2026-10-04T06:33:26' },
+        ]);
+      }
+      if (path === '/AttendanceOccurrences') {
+        return rockResponse([
+          { Id: 12, ScheduleId: 564, OccurrenceDate: '2026-10-04T00:00:00', GroupId: 1002 },
+        ]);
+      }
+      if (path === '/Schedules') {
+        if (filter.includes('Id eq 564')) {
+          return rockResponse([
+            { Id: 564, Name: 'MNL Crowne 9AM', iCalendarContent: '', WeeklyTimeOfDay: '09:00:00' },
+          ]);
+        }
+        return rockResponse([]);
+      }
+      if (path === '/Groups') {
+        return rockResponse([{ Id: 1002, CampusId: null }]);
+      }
+      return rockResponse([]);
+    });
+
+    const result = await rockResolveAccess([413]);
+
+    expect(result.rolesMap.rosteredViewer).toBeUndefined();
+  });
 });
+

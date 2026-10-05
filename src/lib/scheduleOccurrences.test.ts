@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { expandIcalOccurrences, formatIcalTime, icalStartTime } from './scheduleOccurrences';
+import { expandIcalOccurrences, formatIcalTime, icalStartTime, scheduleStartTime } from './scheduleOccurrences';
 
 const wrap = (body: string) =>
   `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n${body}\r\nEND:VEVENT\r\nEND:VCALENDAR`;
@@ -72,3 +72,29 @@ describe('icalStartTime', () => {
     expect(icalStartTime('')).toBeNull();
   });
 });
+
+describe('scheduleStartTime', () => {
+  const ical9am = 'BEGIN:VEVENT\r\nDTSTART:20260816T090000\r\nRRULE:FREQ=WEEKLY;BYDAY=SU\r\nEND:VEVENT';
+
+  it('prefers DTSTART from iCalendar over WeeklyTimeOfDay', () => {
+    expect(scheduleStartTime(ical9am, '11:30:00')).toBe('09:00:00');
+  });
+
+  it('resolves WeeklyTimeOfDay "09:00:00" when iCal is absent', () => {
+    expect(scheduleStartTime(null, '09:00:00')).toBe('09:00:00');
+    expect(scheduleStartTime('', '09:00:00')).toBe('09:00:00');
+  });
+
+  it('resolves WeeklyTimeOfDay "09:00" to "09:00:00"', () => {
+    expect(scheduleStartTime('', '09:00')).toBe('09:00:00');
+  });
+
+  it('returns null when iCal is absent and WeeklyTimeOfDay is null or malformed', () => {
+    expect(scheduleStartTime(null, null)).toBeNull();
+    expect(scheduleStartTime('', '')).toBeNull();
+    expect(scheduleStartTime(null, 'not-a-time')).toBeNull();
+    expect(scheduleStartTime('', '25:00:00')).toBeNull();
+    expect(scheduleStartTime('DTSTART:20260816', 'malformed')).toBeNull();
+  });
+});
+

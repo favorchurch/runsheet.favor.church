@@ -56,6 +56,27 @@ export function icalStartTime(ical: string): string | null {
   return m ? `${m[1]}:${m[2]}:${m[3]}` : null;
 }
 
+/**
+ * Resolves a schedule's start time as `HH:MM:SS`.
+ * Precedence: DTSTART from iCalendarContent, else WeeklyTimeOfDay, or null
+ * when neither yields a valid time.
+ */
+export function scheduleStartTime(
+  ical?: string | null,
+  weeklyTimeOfDay?: string | null,
+): string | null {
+  const fromIcal = ical ? icalStartTime(ical) : null;
+  if (fromIcal) return fromIcal;
+  if (!weeklyTimeOfDay) return null;
+  const m = String(weeklyTimeOfDay).trim().match(/^(\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const sec = m[3] ? parseInt(m[3], 10) : 0;
+  if (h < 0 || h > 23 || min < 0 || min > 59 || sec < 0 || sec > 59) return null;
+  return `${m[1]}:${m[2]}:${m[3] || '00'}`;
+}
+
 function expandRrule(rule: string, start: { date: string; time: string }, lastDate: string): ScheduleOccurrence[] {
   const parts = Object.fromEntries(
     rule.split(';').map((p) => {
