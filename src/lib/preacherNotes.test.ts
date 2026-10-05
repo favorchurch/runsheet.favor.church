@@ -43,24 +43,69 @@ describe('parsePreacherNotes and serializePreacherNotes', () => {
       {
         name: 'Valid Note',
         path: 'PreacherNotes/MNL/10/deadbeef/note.pdf',
-        size: 1024,
-        uploadedAt: '2026-10-06T00:00:00Z',
       },
     ]);
   });
 
-  it('serializes and roundtrips valid notes', () => {
+  it('drops size and uploadedAt to keep stored attribute minimal', () => {
+    const raw = [
+      {
+        name: 'Note with metadata',
+        path: 'PreacherNotes/MNL/42/deadbeef/note.pdf',
+        size: 12345,
+        uploadedAt: '2026-10-06T01:00:00.000Z',
+      },
+    ];
+    const parsed = parsePreacherNotes(JSON.stringify(raw));
+    expect(parsed).toEqual([
+      {
+        name: 'Note with metadata',
+        path: 'PreacherNotes/MNL/42/deadbeef/note.pdf',
+      },
+    ]);
+    expect((parsed[0] as any).size).toBeUndefined();
+    expect((parsed[0] as any).uploadedAt).toBeUndefined();
+  });
+
+  it('caps note name to PREACHER_NOTES_MAX_NAME_LENGTH', () => {
+    const veryLongName = 'a'.repeat(200);
+    const raw = [{ name: veryLongName, path: 'PreacherNotes/MNL/42/deadbeef/note.pdf' }];
+    const parsed = parsePreacherNotes(JSON.stringify(raw));
+    expect(parsed[0].name).toHaveLength(100);
+    expect(parsed[0].name).toBe('a'.repeat(100));
+  });
+
+  it('serializes and roundtrips valid notes without size or uploadedAt', () => {
     const notes = [
       {
         name: 'Sermon 1.pdf',
         path: 'PreacherNotes/MNL/42/1234abcd/sermon1.pdf',
-        size: 50000,
-        uploadedAt: '2026-10-06T01:00:00.000Z',
       },
     ];
 
     const json = serializePreacherNotes(notes);
     expect(parsePreacherNotes(json)).toEqual(notes);
+  });
+
+  it('serializePreacherNotes strips extraneous properties and caps name length', () => {
+    const notesWithExtra: any[] = [
+      {
+        name: 'b'.repeat(150),
+        path: 'PreacherNotes/MNL/42/abcd/test.pdf',
+        size: 9999,
+        uploadedAt: '2026-10-06T00:00:00Z',
+      },
+    ];
+    const json = serializePreacherNotes(notesWithExtra);
+    const parsed = JSON.parse(json);
+    expect(parsed).toEqual([
+      {
+        name: 'b'.repeat(100),
+        path: 'PreacherNotes/MNL/42/abcd/test.pdf',
+      },
+    ]);
+    expect(parsed[0].size).toBeUndefined();
+    expect(parsed[0].uploadedAt).toBeUndefined();
   });
 });
 
@@ -260,10 +305,29 @@ describe('formatContentDisposition', () => {
   });
 });
 
-describe('PREACHER_NOTES_MAX_COUNT', () => {
+describe('PREACHER_NOTES_MAX_COUNT and query string limits', () => {
   it('is 10 to fit within IIS 2048 query string limit', () => {
     const { PREACHER_NOTES_MAX_COUNT } = require('./preacherNotes');
     expect(PREACHER_NOTES_MAX_COUNT).toBe(10);
+  });
+
+  it('PREACHER_NOTES_MAX_QUERY_STRING_LENGTH is 1800 to protect IIS 2048 limit', () => {
+    const { PREACHER_NOTES_MAX_QUERY_STRING_LENGTH } = require('./preacherNotes');
+    expect(PREACHER_NOTES_MAX_QUERY_STRING_LENGTH).toBe(1800);
+  });
+
+  it('PREACHER_NOTES_MAX_NAME_LENGTH is 100 to bound stored note name size', () => {
+    const { PREACHER_NOTES_MAX_NAME_LENGTH } = require('./preacherNotes');
+    expect(PREACHER_NOTES_MAX_NAME_LENGTH).toBe(100);
+  });
+
+  it('computePreacherNotesQueryString builds URLSearchParams query string', () => {
+    const { computePreacherNotesQueryString, PREACHER_NOTES_ATTRIBUTE_KEY } = require('./preacherNotes');
+    const notes = [{ name: 'Test.pdf', path: 'PreacherNotes/MNL/1/ab/test.pdf' }];
+    const qs = computePreacherNotesQueryString(notes);
+    expect(qs).toContain(`attributeKey=${PREACHER_NOTES_ATTRIBUTE_KEY}`);
+    expect(qs).toContain('attributeValue=');
+    expect(qs).toContain('Test.pdf');
   });
 });
 

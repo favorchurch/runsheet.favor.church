@@ -3,7 +3,13 @@ import 'server-only';
 import {
   PREACHER_NOTES_ATTRIBUTE_GUID,
   PREACHER_NOTES_ATTRIBUTE_KEY,
+  PREACHER_NOTES_COUNT_ERROR_MESSAGE,
+  PREACHER_NOTES_LENGTH_ERROR_MESSAGE,
   PREACHER_NOTES_MAX_COUNT,
+  PREACHER_NOTES_MAX_QUERY_STRING_LENGTH,
+  PreacherNotesCountLimitError,
+  PreacherNotesLengthLimitError,
+  computePreacherNotesQueryString,
   parsePreacherNotes,
   serializePreacherNotes,
 } from '@/lib/preacherNotes';
@@ -186,11 +192,17 @@ export async function setPreacherNotesAttributeValue(
 ): Promise<PreacherNote[]> {
   const parsedNotes = typeof notes === 'string' ? parsePreacherNotes(notes) : notes;
   if (parsedNotes.length > PREACHER_NOTES_MAX_COUNT) {
-    throw new Error('A runsheet can hold up to 10 Preacher Notes PDFs');
+    throw new PreacherNotesCountLimitError(PREACHER_NOTES_COUNT_ERROR_MESSAGE);
+  }
+
+  const serialized = serializePreacherNotes(parsedNotes);
+  const queryString = computePreacherNotesQueryString(serialized);
+
+  if (queryString.length > PREACHER_NOTES_MAX_QUERY_STRING_LENGTH) {
+    throw new PreacherNotesLengthLimitError(PREACHER_NOTES_LENGTH_ERROR_MESSAGE);
   }
 
   await ensurePreacherNotesAttribute();
-  const serialized = typeof notes === 'string' ? notes : serializePreacherNotes(notes);
 
   await rockPost(
     `/ContentChannels/AttributeValue/${channelId}`,

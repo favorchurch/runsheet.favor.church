@@ -12,7 +12,11 @@ import {
 import {
   PREACHER_NOTES_ATTRIBUTE_GUID,
   PREACHER_NOTES_ATTRIBUTE_KEY,
+  PREACHER_NOTES_COUNT_ERROR_MESSAGE,
+  PREACHER_NOTES_LENGTH_ERROR_MESSAGE,
   PREACHER_NOTES_MAX_COUNT,
+  PreacherNotesCountLimitError,
+  PreacherNotesLengthLimitError,
 } from '@/lib/preacherNotes';
 import type { PreacherNote } from '@/types/PreacherNotes';
 
@@ -112,8 +116,6 @@ describe('rockPreacherNotesAttribute', () => {
         {
           name: 'Notes.pdf',
           path: 'PreacherNotes/MNL/42/deadbeef/notes.pdf',
-          size: 1234,
-          uploadedAt: '2026-10-06T00:00:00Z',
         },
       ];
 
@@ -316,7 +318,47 @@ describe('rockPreacherNotesAttribute', () => {
       );
 
       await expect(setPreacherNotesAttributeValue(42, elevenNotes)).rejects.toThrow(
-        'A runsheet can hold up to 10 Preacher Notes PDFs',
+        PreacherNotesCountLimitError,
+      );
+      await expect(setPreacherNotesAttributeValue(42, elevenNotes)).rejects.toThrow(
+        PREACHER_NOTES_COUNT_ERROR_MESSAGE,
+      );
+
+      expect(mockRockPost).not.toHaveBeenCalled();
+      expectNeverCalledAttributeValues();
+    });
+
+    it('throws PreacherNotesLengthLimitError if notes with long ASCII names exceed query string budget', async () => {
+      // 10 notes with 90-character names will exceed the 1800-character URLSearchParams limit
+      const longAsciiNotes: PreacherNote[] = Array.from({ length: 10 }, (_, i) => ({
+        name: `long_preacher_note_title_segment_${i}_${'a'.repeat(60)}.pdf`,
+        path: `PreacherNotes/MNL/42/deadbeef${i}/note_${i}.pdf`,
+      }));
+
+      await expect(setPreacherNotesAttributeValue(42, longAsciiNotes)).rejects.toThrow(
+        PreacherNotesLengthLimitError,
+      );
+      await expect(setPreacherNotesAttributeValue(42, longAsciiNotes)).rejects.toThrow(
+        PREACHER_NOTES_LENGTH_ERROR_MESSAGE,
+      );
+
+      expect(mockRockPost).not.toHaveBeenCalled();
+      expectNeverCalledAttributeValues();
+    });
+
+    it('throws PreacherNotesLengthLimitError if notes with Korean names exceed query string budget', async () => {
+      // Korean characters encode at 9 characters each in URLSearchParams (%XX%XX%XX)
+      // 6 notes with 25 Korean characters each exceed 1800 characters (~2250 chars)
+      const koreanNotes: PreacherNote[] = Array.from({ length: 6 }, (_, i) => ({
+        name: `주일설교_${'가'.repeat(25)}_${i}.pdf`,
+        path: `PreacherNotes/SEL/42/deadbeef${i}/note_${i}.pdf`,
+      }));
+
+      await expect(setPreacherNotesAttributeValue(42, koreanNotes)).rejects.toThrow(
+        PreacherNotesLengthLimitError,
+      );
+      await expect(setPreacherNotesAttributeValue(42, koreanNotes)).rejects.toThrow(
+        PREACHER_NOTES_LENGTH_ERROR_MESSAGE,
       );
 
       expect(mockRockPost).not.toHaveBeenCalled();
