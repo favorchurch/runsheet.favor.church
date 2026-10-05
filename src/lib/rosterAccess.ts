@@ -19,6 +19,13 @@ export const ROCK_CAMPUS_CODES: Record<number, RunsheetCampusCode> = { 1: 'MNL',
  * clears its CampusId when a rostered volunteer checks in. The occurrence
  * keeps the real date and schedule, and the serving team keeps the campus,
  * so prefer those and fall back to the attendance row only when missing.
+ *
+ * Schedule start time precedence:
+ * 1. `scheduleStartTime` (pre-resolved HH:MM:SS), if non-null.
+ * 2. `resolveScheduleStartTime(iCalendarContent, weeklyTimeOfDay)` if
+ *    `scheduleStartTime` is null or omitted.
+ * 3. Attendance row's `attendanceStartDateTime` if neither yields a time
+ *    or if `occurrenceDate` is missing.
  */
 export function rosteredAttendanceFromOccurrence(input: {
   attendanceCampusId: number | null;
@@ -32,7 +39,7 @@ export function rosteredAttendanceFromOccurrence(input: {
 }): RosteredAttendance {
   const date = input.occurrenceDate ? input.occurrenceDate.slice(0, 10) : null;
   const time =
-    input.scheduleStartTime !== undefined
+    input.scheduleStartTime != null
       ? input.scheduleStartTime
       : resolveScheduleStartTime(input.iCalendarContent, input.weeklyTimeOfDay);
   return {

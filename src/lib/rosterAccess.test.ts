@@ -224,6 +224,18 @@ describe('rosteredAttendanceFromOccurrence', () => {
       groupCampusId: 1,
     });
     expect(malformedWeekly.startDateTime).toBe('2026-10-04T06:33:26');
+
+    // Explicit scheduleStartTime null falls back to raw fields if present
+    const explicitNullWithWeekly = rosteredAttendanceFromOccurrence({
+      attendanceCampusId: 1,
+      attendanceStartDateTime: '2026-10-04T06:33:26',
+      occurrenceDate: '2026-10-04T00:00:00',
+      scheduleId: 564,
+      scheduleStartTime: null,
+      weeklyTimeOfDay: '09:00:00',
+      groupCampusId: 1,
+    });
+    expect(explicitNullWithWeekly.startDateTime).toBe('2026-10-04T09:00:00');
   });
 });
 
