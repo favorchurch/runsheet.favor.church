@@ -402,6 +402,64 @@ describe('CreateRunsheetForm batch operations', () => {
         ).not.toBeInTheDocument();
       });
     });
+
+    it('starts non-Grow upcoming batch at the chosen date and creates subsequent occurrences from that date', async () => {
+      const onCreated = jest.fn();
+      const { container } = render(<CreateRunsheetForm onCreated={onCreated} />);
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue(/MNL Crowne 9AM/i)).toBeInTheDocument();
+      });
+
+      // Change date to 2026-10-25 (occurrences on or after: 2026-10-25, 2026-11-01, 2026-11-08)
+      const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement;
+      fireEvent.change(dateInput, { target: { value: '2026-10-25' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('(3 sessions available)')).toBeInTheDocument();
+      });
+
+      const upcomingCheckbox = screen.getByLabelText(/Also create runsheets for upcoming sessions/i);
+      fireEvent.click(upcomingCheckbox);
+
+      const countInput = screen.getByLabelText(/Upcoming sessions count/i) as HTMLInputElement;
+      expect(countInput.max).toBe('3');
+
+      // Set count to 2
+      fireEvent.change(countInput, { target: { value: '2' } });
+      expect(screen.getByRole('button', { name: /Create All \(2\) Runsheets/i })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /Create All \(2\) Runsheets/i }));
+
+      await waitFor(() => {
+        expect(rockCreateServiceRunsheet).toHaveBeenCalledTimes(2);
+      });
+
+      expect(rockCreateServiceRunsheet).toHaveBeenCalledWith(
+        expect.stringContaining('October 25, 2026'),
+        13,
+        10,
+        { skipIfExists: true }
+      );
+      expect(rockCreateServiceRunsheet).toHaveBeenCalledWith(
+        expect.stringContaining('November 1, 2026'),
+        13,
+        10,
+        { skipIfExists: true }
+      );
+      expect(rockCreateServiceRunsheet).not.toHaveBeenCalledWith(
+        expect.stringContaining('October 11, 2026'),
+        expect.anything(),
+        expect.anything(),
+        expect.anything()
+      );
+      expect(rockCreateServiceRunsheet).not.toHaveBeenCalledWith(
+        expect.stringContaining('October 18, 2026'),
+        expect.anything(),
+        expect.anything(),
+        expect.anything()
+      );
+    });
   });
 
   describe('Mutual exclusion and resets', () => {
@@ -491,15 +549,41 @@ describe('CreateRunsheetForm batch operations', () => {
         ).toBeInTheDocument();
       });
 
-      const dateWideCheckbox = screen.getByLabelText(/Create runsheets for all 3 sessions on this date/i);
-      fireEvent.click(dateWideCheckbox);
-      expect(dateWideCheckbox).toBeChecked();
+      const upcomingCheckbox = screen.getByLabelText(/Also create runsheets for upcoming sessions/i);
+      const countInput = screen.getByLabelText(/Upcoming sessions count/i);
 
+      // Check upcoming and set count to 2
+      fireEvent.click(upcomingCheckbox);
+      fireEvent.change(countInput, { target: { value: '2' } });
+      expect(upcomingCheckbox).toBeChecked();
+      expect(screen.getByRole('button', { name: /Create All \(2\) Runsheets/i })).toBeInTheDocument();
+
+      // Change date
       const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement;
       fireEvent.change(dateInput, { target: { value: '2026-10-18' } });
 
+      // Wait for schedules to reload for the new date (2 sessions on 2026-10-18)
       await waitFor(() => {
-        expect(dateWideCheckbox).not.toBeChecked();
+        expect(
+          screen.getByLabelText(/Create runsheets for all 2 sessions on this date/i)
+        ).toBeInTheDocument();
+      });
+      expect(upcomingCheckbox).toBeChecked();
+      expect(screen.getByRole('button', { name: /Create All \(2\) Runsheets/i })).toBeInTheDocument();
+
+      // Now check date-wide
+      const dateWideCheckbox = screen.getByLabelText(/Create runsheets for all 2 sessions on this date/i);
+      fireEvent.click(dateWideCheckbox);
+      expect(dateWideCheckbox).toBeChecked();
+      expect(upcomingCheckbox).not.toBeChecked();
+
+      // Change date again -> date-wide should reset
+      fireEvent.change(dateInput, { target: { value: '2026-10-11' } });
+
+      await waitFor(() => {
+        expect(
+          screen.getByLabelText(/Create runsheets for all 3 sessions on this date/i)
+        ).not.toBeChecked();
       });
     });
   });
@@ -632,6 +716,81 @@ describe('CreateRunsheetForm batch operations', () => {
 
       expect(toast.error).toHaveBeenCalledWith('Failed to create runsheets (2 failed).');
       expect(onCreated).not.toHaveBeenCalled();
+    });
+
+    it('reports partial failure with skipped and failed items, naming failed titles with error toast and banner', async () => {
+      const onCreated = jest.fn();
+      (rockCreateServiceRunsheet as jest.Mock)
+        .mockResolvedValueOnce({
+          success: true,
+          skipped: true,
+          id: 701,
+        })
+        .mockResolvedValueOnce({
+          success: false,
+          error: 'Rock network timeout',
+        });
+
+      render(<CreateRunsheetForm onCreated={onCreated} />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Upcoming sessions count/i)).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByLabelText(/Also create runsheets for upcoming sessions/i));
+      const countInput = screen.getByLabelText(/Upcoming sessions count/i);
+      fireEvent.change(countInput, { target: { value: '2' } });
+
+      fireEvent.click(screen.getByRole('button', { name: /Create All \(2\) Runsheets/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Created 0, skipped 1/i)).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText(/All runsheets already exist/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/failed 1 \(.*October 18, 2026.*\)/i)).toBeInTheDocument();
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringMatching(/Created 0, skipped 1 \(.*October 11, 2026.*\), failed 1 \(.*October 18, 2026.*\)\./)
+      );
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(onCreated).toHaveBeenCalledWith(701, expect.stringContaining('October 11, 2026'));
+    });
+
+    it('reports partial failure with created and failed items, naming failed titles with error toast and banner', async () => {
+      const onCreated = jest.fn();
+      (rockCreateServiceRunsheet as jest.Mock)
+        .mockResolvedValueOnce({
+          success: true,
+          id: 702,
+          data: { channelId: 702, name: 'Created Title' },
+        })
+        .mockResolvedValueOnce({
+          success: false,
+          error: 'Unauthorized',
+        });
+
+      render(<CreateRunsheetForm onCreated={onCreated} />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Upcoming sessions count/i)).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByLabelText(/Also create runsheets for upcoming sessions/i));
+      const countInput = screen.getByLabelText(/Upcoming sessions count/i);
+      fireEvent.change(countInput, { target: { value: '2' } });
+
+      fireEvent.click(screen.getByRole('button', { name: /Create All \(2\) Runsheets/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Created 1, skipped 0, failed 1/i)).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/failed 1 \(.*October 18, 2026.*\)/i)).toBeInTheDocument();
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringMatching(/Created 1, skipped 0, failed 1 \(.*October 18, 2026.*\)\./)
+      );
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(onCreated).toHaveBeenCalledWith(702, expect.stringContaining('October 11, 2026'), expect.anything());
     });
   });
 });

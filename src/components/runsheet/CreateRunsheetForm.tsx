@@ -125,6 +125,11 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
     [schedules, date]
   );
 
+  const nonGrowUpcomingOccurrences = React.useMemo(() => {
+    if (!selectedSchedule?.upcomingOccurrences) return [];
+    return selectedSchedule.upcomingOccurrences.filter((o) => o.date >= date);
+  }, [selectedSchedule, date]);
+
   const isGlobalStaffOrAdmin = React.useMemo(
     () => !runsheetCampuses || runsheetCampuses.includes(ALL_CAMPUSES),
     [runsheetCampuses]
@@ -248,19 +253,31 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
     setTitle(autoTitle);
   }, [session, date, selectedCategoryId, categories, schedules, selectedSchedule]);
 
+  const dateRef = useRef(date);
+  dateRef.current = date;
+  const selectedScheduleId = selectedSchedule?.id;
+
   useEffect(() => {
     setBatchCreateDateWide(false);
     setBatchCreateUpcoming(false);
-    if (selectedSchedule?.upcomingOccurrences?.length) {
-      setUpcomingCount(Math.min(4, Math.max(1, selectedSchedule.upcomingOccurrences.length)));
+    const occs = (selectedSchedule?.upcomingOccurrences || []).filter((o) => o.date >= dateRef.current);
+    if (occs.length > 0) {
+      setUpcomingCount(Math.min(4, Math.max(1, occs.length)));
     } else {
       setUpcomingCount(4);
     }
-  }, [session, selectedCategoryId, selectedSchedule]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, selectedCategoryId, selectedScheduleId]);
 
   useEffect(() => {
     setBatchCreateDateWide(false);
   }, [date]);
+
+  useEffect(() => {
+    if (!isGrowSchedule && nonGrowUpcomingOccurrences.length < 2) {
+      setBatchCreateUpcoming(false);
+    }
+  }, [isGrowSchedule, nonGrowUpcomingOccurrences.length]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -306,22 +323,24 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
           return generateRunsheetTitle(s.name, date, timeLabel, selectedCategory?.name);
         });
       } else if (batchCreateUpcoming) {
-        const occurrences = selectedSchedule?.upcomingOccurrences || [];
-        const count = isGrowSchedule
-          ? occurrences.length
-          : Math.min(Math.max(1, upcomingCount), occurrences.length);
-        const targetOccurrences = occurrences.slice(0, count);
-        itemsToCreate = targetOccurrences.map((occ) => {
-          if (isGrowSchedule) {
+        if (isGrowSchedule) {
+          const occurrences = selectedSchedule?.upcomingOccurrences || [];
+          itemsToCreate = occurrences.map((occ) => {
             return buildGrowRunsheetTitle(selectedSchedule!.name, occ.date, occ.time);
-          }
-          return generateRunsheetTitle(
-            selectedSchedule!.name,
-            occ.date,
-            occ.time || selectedSchedule!.timeLabel,
-            selectedCategory?.name
-          );
-        });
+          });
+        } else {
+          const occurrences = nonGrowUpcomingOccurrences;
+          const count = Math.min(Math.max(1, upcomingCount), occurrences.length);
+          const targetOccurrences = occurrences.slice(0, count);
+          itemsToCreate = targetOccurrences.map((occ) => {
+            return generateRunsheetTitle(
+              selectedSchedule!.name,
+              occ.date,
+              occ.time || selectedSchedule!.timeLabel,
+              selectedCategory?.name
+            );
+          });
+        }
       }
 
       let firstCreated: {
@@ -385,15 +404,22 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
       }
 
       const skipDetail = skippedCount > 0 ? `skipped ${skippedCount} (${skippedTitles.join(', ')})` : 'skipped 0';
-      let resultMsg: string;
-      if (createdCount === 0) {
-        resultMsg = `All runsheets already exist. Created 0, ${skipDetail}, failed ${failedCount}.`;
-      } else {
-        resultMsg = `Created ${createdCount}, ${skipDetail}, failed ${failedCount}.`;
-      }
 
-      setStatus({ type: 'success', message: resultMsg });
-      toast.success(resultMsg);
+      if (failedCount > 0) {
+        const failDetail = `failed ${failedCount} (${failedTitles.join(', ')})`;
+        const resultMsg = `Created ${createdCount}, ${skipDetail}, ${failDetail}.`;
+        setStatus({ type: 'error', message: resultMsg });
+        toast.error(resultMsg);
+      } else {
+        let resultMsg: string;
+        if (createdCount === 0) {
+          resultMsg = `All runsheets already exist. Created 0, ${skipDetail}, failed 0.`;
+        } else {
+          resultMsg = `Created ${createdCount}, ${skipDetail}, failed 0.`;
+        }
+        setStatus({ type: 'success', message: resultMsg });
+        toast.success(resultMsg);
+      }
 
       if (onCreated) {
         if (firstCreated) {
@@ -600,7 +626,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
           )}
 
           {/* Batch creation for non-Grow schedule */}
-          {!isGrowSchedule && (selectedSchedule?.upcomingOccurrences?.length ?? 0) >= 2 && (
+          {!isGrowSchedule && nonGrowUpcomingOccurrences.length >= 2 && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
               <label className="flex items-start gap-2.5 cursor-pointer">
                 <input
@@ -617,14 +643,14 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
                     Also create runsheets for upcoming sessions
                   </span>
                   <span className="ml-1 font-medium text-slate-500">
-                    ({selectedSchedule?.upcomingOccurrences?.length} sessions available)
+                    ({nonGrowUpcomingOccurrences.length} sessions available)
                   </span>
                   <p className="mt-0.5 text-slate-500">
                     Creates runsheets for upcoming dates of &quot;{selectedSchedule?.name}&quot;.
                   </p>
                 </div>
               </label>
-              <div className="mt-2.5 ml-6.5 flex items-center gap-2">
+              <div className="mt-2.5 ml-6 flex items-center gap-2">
                 <label htmlFor="upcoming-sessions-count" className="text-xs font-medium text-slate-700">
                   Number of upcoming sessions:
                 </label>
@@ -633,11 +659,11 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
                   aria-label="Upcoming sessions count"
                   type="number"
                   min={1}
-                  max={selectedSchedule?.upcomingOccurrences?.length ?? 1}
+                  max={nonGrowUpcomingOccurrences.length || 1}
                   value={upcomingCount}
                   onChange={(e) => {
                     const raw = parseInt(e.target.value, 10);
-                    const max = selectedSchedule?.upcomingOccurrences?.length ?? 1;
+                    const max = nonGrowUpcomingOccurrences.length || 1;
                     if (isNaN(raw)) {
                       setUpcomingCount(1);
                     } else {
@@ -687,7 +713,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
                   : batchCreateUpcoming
                     ? isGrowSchedule
                       ? `Create All (${selectedSchedule?.upcomingOccurrences?.length || 0}) Runsheets`
-                      : `Create All (${Math.min(Math.max(1, upcomingCount), selectedSchedule?.upcomingOccurrences?.length || 1)}) Runsheets`
+                      : `Create All (${Math.min(Math.max(1, upcomingCount), nonGrowUpcomingOccurrences.length || 1)}) Runsheets`
                     : 'Save Runsheet'}
             </button>
           </div>
