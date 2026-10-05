@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { getRockContentChannelOptions, ContentChannelCategoryOption } from '@/server-actions/getRockContentChannelOptions';
 import { rockGetScheduleOptions, ScheduleOption } from '@/server-actions/rockGetScheduleOptions';
 import { rockCreateServiceRunsheet } from '@/server-actions/rockCreateServiceRunsheet';
+import { rockGetAvailableRunsheetChannels } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import { buildGrowRunsheetTitle, GROW_CONTENT_CHANNEL_CATEGORY_ID, GROW_SCHEDULE_CATEGORY_ID } from '@/lib/growRunsheets';
 import type { RockRosterAssignmentsResult } from '@/server-actions/rockGetRosterAssignments';
 import toast from 'react-hot-toast';
@@ -107,7 +108,9 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
   const [date, setDate] = useState(getNextSunday());
   const [session, setSession] = useState('');
   const [title, setTitle] = useState('');
-  const [batchCreateCourse, setBatchCreateCourse] = useState(false);
+  const [batchCreateDateWide, setBatchCreateDateWide] = useState(false);
+  const [batchCreateUpcoming, setBatchCreateUpcoming] = useState(false);
+  const [upcomingCount, setUpcomingCount] = useState<number>(4);
   const [status, setStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message?: string }>({ type: 'idle' });
   const userEditedDateRef = useRef(false);
 
@@ -241,8 +244,18 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
   }, [session, date, selectedCategoryId, categories, schedules, selectedSchedule]);
 
   useEffect(() => {
-    setBatchCreateCourse(false);
-  }, [session, selectedCategoryId]);
+    setBatchCreateDateWide(false);
+    setBatchCreateUpcoming(false);
+    if (selectedSchedule?.upcomingOccurrences?.length) {
+      setUpcomingCount(Math.min(4, Math.max(1, selectedSchedule.upcomingOccurrences.length)));
+    } else {
+      setUpcomingCount(4);
+    }
+  }, [session, selectedCategoryId, selectedSchedule]);
+
+  useEffect(() => {
+    setBatchCreateDateWide(false);
+  }, [date]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -250,78 +263,159 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
       setStatus({ type: 'error', message: 'Please select a Category.' });
       return;
     }
-    if (!title.trim()) {
-      setStatus({ type: 'error', message: 'Please enter a Runsheet Title.' });
-      return;
-    }
 
+    const isBatch = batchCreateDateWide || batchCreateUpcoming;
     const finalTitle = title.trim();
 
-    if (!isGlobalStaffOrAdmin && userAllowedCampuses.length > 0) {
-      const titleCampus = extractRunsheetCampus(finalTitle);
-      if (titleCampus && !userAllowedCampuses.includes(titleCampus)) {
-        setStatus({
-          type: 'error',
-          message: `You are only authorized to create runsheets for your assigned campus (${userAllowedCampuses.join(', ')}).`,
-        });
+    if (!isBatch) {
+      if (!finalTitle) {
+        setStatus({ type: 'error', message: 'Please enter a Runsheet Title.' });
         return;
+      }
+
+      if (!isGlobalStaffOrAdmin && userAllowedCampuses.length > 0) {
+        const titleCampus = extractRunsheetCampus(finalTitle);
+        if (titleCampus && !userAllowedCampuses.includes(titleCampus)) {
+          setStatus({
+            type: 'error',
+            message: `You are only authorized to create runsheets for your assigned campus (${userAllowedCampuses.join(', ')}).`,
+          });
+          return;
+        }
       }
     }
 
     setStatus({ type: 'loading' });
 
-    if (batchCreateCourse && isGrowSchedule && selectedSchedule && (selectedSchedule.upcomingOccurrences?.length ?? 0) > 1) {
-      const occurrences = selectedSchedule.upcomingOccurrences!;
-      let firstId: number | null = null;
-      let firstTitle = '';
-      let firstData: RunsheetDetails | undefined = undefined;
-      let firstRosterData: RockRosterAssignmentsResult | undefined = undefined;
-      let createdCount = 0;
+    if (isBatch) {
+      const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
+      let itemsToCreate: string[] = [];
 
-      for (const occ of occurrences) {
-        const occTitle = buildGrowRunsheetTitle(selectedSchedule.name, occ.date, occ.time);
+      if (batchCreateDateWide) {
+        itemsToCreate = schedules.map((s) => {
+          if (s.categoryId === GROW_SCHEDULE_CATEGORY_ID) {
+            return buildGrowRunsheetTitle(s.name, date, s.timeLabel);
+          }
+          return generateRunsheetTitle(s.name, date, s.timeLabel, selectedCategory?.name);
+        });
+      } else if (batchCreateUpcoming) {
+        const occurrences = selectedSchedule?.upcomingOccurrences || [];
+        const count = isGrowSchedule
+          ? occurrences.length
+          : Math.min(Math.max(1, upcomingCount), occurrences.length);
+        const targetOccurrences = occurrences.slice(0, count);
+        itemsToCreate = targetOccurrences.map((occ) => {
+          if (isGrowSchedule) {
+            return buildGrowRunsheetTitle(selectedSchedule!.name, occ.date, occ.time);
+          }
+          return generateRunsheetTitle(
+            selectedSchedule!.name,
+            occ.date,
+            occ.time || selectedSchedule!.timeLabel,
+            selectedCategory?.name
+          );
+        });
+      }
+
+      let firstCreated: {
+        id: number;
+        title: string;
+        data?: RunsheetDetails;
+        rosterData?: RockRosterAssignmentsResult;
+      } | null = null;
+      let firstSkipped: { id?: number; title: string } | null = null;
+      let createdCount = 0;
+      let skippedCount = 0;
+      let failedCount = 0;
+      const skippedTitles: string[] = [];
+      const failedTitles: string[] = [];
+
+      for (const itemTitle of itemsToCreate) {
         try {
           const res = await rockCreateServiceRunsheet(
-            occTitle,
+            itemTitle,
             Number(selectedTypeId || 13),
-            Number(selectedCategoryId)
+            Number(selectedCategoryId),
+            { skipIfExists: true }
           );
-          if (res.success && res.id) {
-            createdCount++;
-            if (!firstId) {
-              firstId = res.id;
-              firstTitle = occTitle;
-              firstData = res.data;
-              firstRosterData = res.rosterData;
+          if (res.success) {
+            if (res.skipped) {
+              skippedCount++;
+              skippedTitles.push(itemTitle);
+              if (!firstSkipped) {
+                firstSkipped = { id: res.id, title: itemTitle };
+              }
+            } else if (res.id) {
+              createdCount++;
+              if (!firstCreated) {
+                firstCreated = {
+                  id: res.id,
+                  title: itemTitle,
+                  data: res.data,
+                  rosterData: res.rosterData,
+                };
+              }
+            } else {
+              failedCount++;
+              failedTitles.push(itemTitle);
             }
+          } else {
+            failedCount++;
+            failedTitles.push(itemTitle);
           }
         } catch (err) {
-          console.warn(`Could not create runsheet "${occTitle}":`, err);
+          console.warn(`Could not create runsheet "${itemTitle}":`, err);
+          failedCount++;
+          failedTitles.push(itemTitle);
         }
       }
 
-      if (firstId) {
-        const successMsg = `Successfully created ${createdCount} runsheets for "${selectedSchedule.name}"!`;
-        setStatus({
-          type: 'success',
-          message: successMsg,
-        });
-        toast.success(successMsg);
-
-        if (onCreated) {
-          if (firstRosterData !== undefined) {
-            onCreated(firstId, firstTitle, firstData, firstRosterData);
-          } else {
-            onCreated(firstId, firstTitle, firstData);
-          }
-        }
-        return;
-      } else {
-        const errorMsg = 'Failed to create runsheets.';
+      if (createdCount === 0 && skippedCount === 0) {
+        const errorMsg = failedCount > 0 ? `Failed to create runsheets (${failedCount} failed).` : 'Failed to create runsheets.';
         setStatus({ type: 'error', message: errorMsg });
         toast.error(errorMsg);
         return;
       }
+
+      const skipDetail = skippedCount > 0 ? `skipped ${skippedCount} (${skippedTitles.join(', ')})` : 'skipped 0';
+      let resultMsg: string;
+      if (createdCount === 0) {
+        resultMsg = `All runsheets already exist. Created 0, ${skipDetail}, failed ${failedCount}.`;
+      } else {
+        resultMsg = `Created ${createdCount}, ${skipDetail}, failed ${failedCount}.`;
+      }
+
+      setStatus({ type: 'success', message: resultMsg });
+      toast.success(resultMsg);
+
+      if (onCreated) {
+        if (firstCreated) {
+          if (firstCreated.rosterData !== undefined) {
+            onCreated(firstCreated.id, firstCreated.title, firstCreated.data, firstCreated.rosterData);
+          } else {
+            onCreated(firstCreated.id, firstCreated.title, firstCreated.data);
+          }
+        } else if (firstSkipped) {
+          let openId = firstSkipped.id;
+          if (!openId) {
+            try {
+              const channelsRes = await rockGetAvailableRunsheetChannels(true);
+              if (channelsRes.success && channelsRes.channels) {
+                const match = channelsRes.channels.find((c) => c.name === firstSkipped!.title);
+                if (match) {
+                  openId = match.id;
+                }
+              }
+            } catch (err) {
+              console.warn('Failed to resolve channel ID for skipped runsheet:', err);
+            }
+          }
+          if (openId) {
+            onCreated(openId, firstSkipped.title);
+          }
+        }
+      }
+      return;
     }
 
     const res = await rockCreateServiceRunsheet(
@@ -376,10 +470,11 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
       ) : (
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
-            <label className="mb-1 block text-sm font-semibold text-slate-700">
+            <label htmlFor="category-select" className="mb-1 block text-sm font-semibold text-slate-700">
               Category
             </label>
             <select
+              id="category-select"
               required
               className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:border-blue-600 focus:outline-none"
               value={selectedCategoryId}
@@ -398,10 +493,11 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-semibold text-slate-700">
+            <label htmlFor="date-input" className="mb-1 block text-sm font-semibold text-slate-700">
               Date
             </label>
             <input
+              id="date-input"
               type="date"
               required
               className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:border-blue-600 focus:outline-none"
@@ -414,10 +510,11 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-semibold text-slate-700">
+            <label htmlFor="session-select" className="mb-1 block text-sm font-semibold text-slate-700">
               Session / Service Schedule
             </label>
             <select
+              id="session-select"
               required
               className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100"
               value={session}
@@ -442,14 +539,42 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
             </select>
           </div>
 
-          {/* Batch creation is for Grow courses only; a weekly meeting would create a year of runsheets. */}
-          {isGrowSchedule && (selectedSchedule?.upcomingOccurrences?.length ?? 0) > 1 && (
+          {/* Date-wide batch creation */}
+          {schedules.length >= 2 && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
               <label className="flex items-start gap-2.5 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={batchCreateCourse}
-                  onChange={(e) => setBatchCreateCourse(e.target.checked)}
+                  checked={batchCreateDateWide}
+                  onChange={(e) => {
+                    setBatchCreateDateWide(e.target.checked);
+                    if (e.target.checked) setBatchCreateUpcoming(false);
+                  }}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <div className="text-xs">
+                  <span className="font-semibold text-slate-800">
+                    Create runsheets for all {schedules.length} sessions on this date
+                  </span>
+                  <p className="mt-0.5 text-slate-500">
+                    Creates runsheets for every schedule offered on {formatDateToWordy(date)}.
+                  </p>
+                </div>
+              </label>
+            </div>
+          )}
+
+          {/* Batch creation for Grow course */}
+          {isGrowSchedule && (selectedSchedule?.upcomingOccurrences?.length ?? 0) >= 2 && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={batchCreateUpcoming}
+                  onChange={(e) => {
+                    setBatchCreateUpcoming(e.target.checked);
+                    if (e.target.checked) setBatchCreateDateWide(false);
+                  }}
                   className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                 />
                 <div className="text-xs">
@@ -464,6 +589,57 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
                   </p>
                 </div>
               </label>
+            </div>
+          )}
+
+          {/* Batch creation for non-Grow schedule */}
+          {!isGrowSchedule && (selectedSchedule?.upcomingOccurrences?.length ?? 0) >= 2 && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={batchCreateUpcoming}
+                  onChange={(e) => {
+                    setBatchCreateUpcoming(e.target.checked);
+                    if (e.target.checked) setBatchCreateDateWide(false);
+                  }}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <div className="text-xs">
+                  <span className="font-semibold text-slate-800">
+                    Also create runsheets for upcoming sessions
+                  </span>
+                  <span className="ml-1 font-medium text-slate-500">
+                    ({selectedSchedule?.upcomingOccurrences?.length} sessions available)
+                  </span>
+                  <p className="mt-0.5 text-slate-500">
+                    Creates runsheets for upcoming dates of &quot;{selectedSchedule?.name}&quot;.
+                  </p>
+                </div>
+              </label>
+              <div className="mt-2.5 ml-6.5 flex items-center gap-2">
+                <label htmlFor="upcoming-sessions-count" className="text-xs font-medium text-slate-700">
+                  Number of upcoming sessions:
+                </label>
+                <input
+                  id="upcoming-sessions-count"
+                  aria-label="Upcoming sessions count"
+                  type="number"
+                  min={1}
+                  max={selectedSchedule?.upcomingOccurrences?.length ?? 1}
+                  value={upcomingCount}
+                  onChange={(e) => {
+                    const raw = parseInt(e.target.value, 10);
+                    const max = selectedSchedule?.upcomingOccurrences?.length ?? 1;
+                    if (isNaN(raw)) {
+                      setUpcomingCount(1);
+                    } else {
+                      setUpcomingCount(Math.min(Math.max(1, raw), max));
+                    }
+                  }}
+                  className="w-16 rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900 focus:border-blue-600 focus:outline-none"
+                />
+              </div>
             </div>
           )}
 
@@ -499,9 +675,13 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
             >
               {status.type === 'loading'
                 ? 'Saving...'
-                : batchCreateCourse
-                  ? `Create All (${selectedSchedule?.upcomingOccurrences?.length || 0}) Runsheets`
-                  : 'Save Runsheet'}
+                : batchCreateDateWide
+                  ? `Create All (${schedules.length}) Runsheets`
+                  : batchCreateUpcoming
+                    ? isGrowSchedule
+                      ? `Create All (${selectedSchedule?.upcomingOccurrences?.length || 0}) Runsheets`
+                      : `Create All (${Math.min(Math.max(1, upcomingCount), selectedSchedule?.upcomingOccurrences?.length || 1)}) Runsheets`
+                    : 'Save Runsheet'}
             </button>
           </div>
         </form>

@@ -117,17 +117,20 @@ describe('CreateRunsheetForm Grow course creation', () => {
     expect(rockCreateServiceRunsheet).toHaveBeenCalledWith(
       expect.stringContaining('October 4, 2026'),
       13,
-      590
+      590,
+      { skipIfExists: true }
     );
     expect(rockCreateServiceRunsheet).toHaveBeenCalledWith(
       expect.stringContaining('October 11, 2026'),
       13,
-      590
+      590,
+      { skipIfExists: true }
     );
     expect(rockCreateServiceRunsheet).toHaveBeenCalledWith(
       expect.stringContaining('October 18, 2026'),
       13,
-      590
+      590,
+      { skipIfExists: true }
     );
     expect(onCreated).toHaveBeenCalledTimes(1);
   });
