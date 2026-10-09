@@ -61,6 +61,7 @@ import { RichTextToolbar } from './RichTextToolbar';
 import { SongSearchDropdown } from './SongSearchDropdown';
 import { SongDetailModal } from './SongDetailModal';
 import { ShareRunsheetModal } from './ShareRunsheetModal';
+import { ExportPdfButton } from './ExportPdfButton';
 import { isMasterTemplateName } from '@/lib/runsheetTemplate';
 import { EventTeamRosterCard, ensureRosterItems } from './EventTeamRosterCard';
 import { REORDER_INDEX_ATTR, usePointerReorder } from './usePointerReorder';
@@ -2388,6 +2389,8 @@ export function RunsheetTableEditor({
                 <HiShare className="h-3.5 w-3.5 text-blue-600" />
                 <span>Share</span>
               </button>
+
+              <ExportPdfButton channelId={channelId} channelName={channelName} hasUnsavedChanges={!readOnly && isDirty} />
 
               {canEdit !== false && (
                 <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
