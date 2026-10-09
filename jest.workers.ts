@@ -3,44 +3,39 @@
  */
 
 export function resolveMaxWorkers(
-  val?: string,
+  val: string | undefined = process.env.JEST_MAX_WORKERS,
   onWarn?: (message: string) => void
 ): number | string {
-  const hasVal = arguments.length > 0;
-  const raw = hasVal ? val : process.env.JEST_MAX_WORKERS;
-
-  if (raw === undefined) {
+  if (val === undefined) {
     return '50%';
   }
 
   // Valid positive integer
-  if (/^[1-9]\d*$/.test(raw)) {
-    const num = Number(raw);
+  if (/^[1-9]\d*$/.test(val)) {
+    const num = Number(val);
     if (Number.isSafeInteger(num)) {
       return num;
     }
   }
 
   // Valid percentage (1% to 100%)
-  const percentMatch = raw.match(/^([1-9]\d*)%$/);
+  const percentMatch = val.match(/^([1-9]\d*)%$/);
   if (percentMatch) {
     const pct = Number(percentMatch[1]);
     if (pct >= 1 && pct <= 100) {
-      return raw;
+      return val;
     }
   }
 
   // Fallback to 50% with single stderr warning
   const warn = onWarn ?? console.warn;
-  const displayVal = raw === '' ? '"" (empty string)' : `"${raw}"`;
+  const displayVal = val === '' ? '"" (empty string)' : `"${val}"`;
   warn(`Invalid JEST_MAX_WORKERS value ${displayVal}. Falling back to 50%.`);
   return '50%';
 }
 
 export function resolveVerbose(
-  val?: string
+  val: string | undefined = process.env.JEST_VERBOSE
 ): boolean {
-  const hasVal = arguments.length > 0;
-  const raw = hasVal ? val : process.env.JEST_VERBOSE;
-  return raw === 'true';
+  return val === 'true';
 }

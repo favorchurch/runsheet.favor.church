@@ -9,12 +9,13 @@ The repository provides explicit npm scripts for running tests:
 | Command | Description | Scope / Tier |
 | --- | --- | --- |
 | `pnpm test` | Runs the complete test suite | Full gate (unit + integration) |
+| `pnpm test:full` | Runs the complete test suite | Full gate (unit + integration; alias for `pnpm test`) |
 | `pnpm test:unit` | Runs unit tests | All tests outside `tests/integration/` |
 | `pnpm test:integration` | Runs integration tests | Tests located in `tests/integration/` |
 | `pnpm test:changed` | Runs tests related to changed files | Git working tree diff (`jest --onlyChanged`) |
 
 > [!IMPORTANT]
-> Neither `pnpm test:changed` nor `pnpm test:unit` serves as the full gate. `pnpm test` must always be run to validate the complete suite before merging or completing tasks.
+> Neither `pnpm test:changed` nor `pnpm test:unit` serves as the full gate. `pnpm test` (or `pnpm test:full`) must always be run to validate the complete suite before merging or completing tasks.
 
 ## Test Tiers
 

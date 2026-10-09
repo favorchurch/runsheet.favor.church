@@ -26,6 +26,7 @@ Required environment variables (`.env.local`):
 pnpm build            # production build (lint + typecheck included)
 pnpm typecheck        # tsc --noEmit on its own
 pnpm test             # run full test suite (jest)
+pnpm test:full        # run full test suite (jest)
 pnpm test:unit        # run unit tests
 pnpm test:integration # run integration tests
 pnpm test:changed     # run tests for files changed since last commit
