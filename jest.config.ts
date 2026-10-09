@@ -4,8 +4,10 @@
  */
 
 import type { Config } from 'jest';
+import { resolveMaxWorkers, resolveVerbose } from './jest.workers';
 
 const config: Config = {
+  maxWorkers: resolveMaxWorkers(),
   testTimeout: 30000,
   collectCoverage: false,
   moduleFileExtensions: [
@@ -40,7 +42,7 @@ const config: Config = {
     'node_modules/(?!(jose|@auth0/nextjs-auth0|@uidotdev/usehooks|lodash-es)/)',
     '\\.pnp\\.[^\\/]+$'
   ],
-  verbose: true,
+  verbose: resolveVerbose(),
 };
 
 export default config;

@@ -23,11 +23,16 @@ Required environment variables (`.env.local`):
 | `REDIS_URL` | Optional; the Rock object cache is skipped when unset |
 
 ```bash
-pnpm build          # production build (lint + typecheck included)
-pnpm typecheck      # tsc --noEmit on its own
-pnpm test           # jest
-pnpm list:channels  # print the Rock channel ids that hold runsheets
+pnpm build            # production build (lint + typecheck included)
+pnpm typecheck        # tsc --noEmit on its own
+pnpm test             # run full test suite (jest)
+pnpm test:unit        # run unit tests
+pnpm test:integration # run integration tests
+pnpm test:changed     # run tests for files changed since last commit
+pnpm list:channels    # print the Rock channel ids that hold runsheets
 ```
+
+See [docs/testing.md](docs/testing.md) for test tiers, commands, and environment variables (`JEST_MAX_WORKERS`, `JEST_VERBOSE`).
 
 ## Layout
 
