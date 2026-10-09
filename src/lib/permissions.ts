@@ -44,3 +44,48 @@ export function canUserAccessRunsheet(user?: HasRolesMap | AuthUser | null): boo
     hasRole(user, ROSTERED_VIEWER_ROLE)
   );
 }
+
+export type AccessGateState =
+  | 'allowed'
+  | 'resolution-failed'
+  | 'volunteer-landing'
+  | 'ineligible';
+
+/**
+ * Determine gate access state for a user.
+ *
+ * - 'allowed': User holds a runsheet role (editor, viewer, growEditor, growViewer, rosteredViewer).
+ *   Holds 'allowed' even if rosterLookupFailed is true.
+ * - 'resolution-failed': User has no runsheet role, but either access resolution failed
+ *   or roster lookup failed (which could be hiding real rostered access).
+ *   Takes precedence over volunteer-landing or ineligible.
+ * - 'volunteer-landing': User has an active Ministry Team membership but is not currently rostered.
+ * - 'ineligible': User has no permissions, no volunteer status, and no failed lookups.
+ */
+export function getAccessGateState(user?: AuthUser | null): AccessGateState {
+  if (canUserAccessRunsheet(user)) {
+    return 'allowed';
+  }
+
+  const isFailed = Boolean(
+    user?.accessResolutionFailed ||
+    user?.rosterLookupFailed ||
+    user?.accessDiagnostics?.rosterLookupFailed
+  );
+
+  if (isFailed) {
+    return 'resolution-failed';
+  }
+
+  const isVolunteer = Boolean(
+    user?.isMinistryTeamVolunteer ||
+    user?.access?.isMinistryTeamVolunteer
+  );
+
+  if (isVolunteer) {
+    return 'volunteer-landing';
+  }
+
+  return 'ineligible';
+}
+
