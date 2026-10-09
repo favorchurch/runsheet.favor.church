@@ -24,6 +24,7 @@ export function filenameFromContentDisposition(header: string | null, fallback: 
 }
 
 function errorMessage(status: number): string {
+  if (status === 401) return 'Your session has expired. Please sign in again.';
   if (status === 403) return "You don't have permission to export this runsheet.";
   if (status === 404) return 'This runsheet could not be found for export.';
   return 'Failed to export the runsheet PDF. Please try again.';
@@ -51,7 +52,9 @@ interface ExportPdfButtonProps {
 
 export function ExportPdfButton({ channelId, channelName, hasUnsavedChanges }: ExportPdfButtonProps) {
   const [isExporting, setIsExporting] = useState(false);
-  const label = `Export PDF – ${channelName}`;
+  const text = isExporting ? 'Exporting…' : 'Export PDF';
+  // Starts with the visible text so the accessible name always contains it.
+  const label = `${text} – ${channelName}`;
 
   const handleClick = async () => {
     setIsExporting(true);
@@ -65,6 +68,10 @@ export function ExportPdfButton({ channelId, channelName, hasUnsavedChanges }: E
         return;
       }
       const blob = await response.blob();
+      if (!blob.type.includes('pdf')) {
+        toast.error('The server did not return a PDF. Please try again.');
+        return;
+      }
       saveBlob(
         blob,
         filenameFromContentDisposition(response.headers.get('Content-Disposition'), `runsheet-${channelId}.pdf`),
@@ -87,7 +94,7 @@ export function ExportPdfButton({ channelId, channelName, hasUnsavedChanges }: E
       className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:cursor-wait disabled:opacity-60"
     >
       <HiPrinter className={`h-3.5 w-3.5 text-blue-600 ${isExporting ? 'animate-pulse' : ''}`} />
-      <span>{isExporting ? 'Exporting…' : 'Export PDF'}</span>
+      <span>{text}</span>
     </button>
   );
 }

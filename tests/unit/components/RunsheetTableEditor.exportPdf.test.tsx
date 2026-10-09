@@ -84,7 +84,7 @@ function pdfResponse(filename = 'Favor Runsheet 9AM.pdf') {
   };
 }
 
-const exportButton = () => screen.getByRole('button', { name: /^Export PDF –/ });
+const exportButton = () => screen.getByRole('button', { name: /^Export(?: PDF|ing…) –/ });
 
 describe('RunsheetTableEditor Export PDF button', () => {
   let fetchMock: jest.Mock;
@@ -166,6 +166,7 @@ describe('RunsheetTableEditor Export PDF button', () => {
     await waitFor(() => expect(exportButton()).toBeDisabled());
     expect(exportButton()).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByText('Exporting…')).toBeInTheDocument();
+    expect(exportButton()).toHaveAccessibleName(/^Exporting… – MNL Crowne/);
     fireEvent.click(exportButton());
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -176,6 +177,7 @@ describe('RunsheetTableEditor Export PDF button', () => {
   });
 
   test.each([
+    [401, /session has expired/i],
     [403, /permission/i],
     [404, /could not be found/i],
     [500, /failed to export/i],
@@ -191,6 +193,20 @@ describe('RunsheetTableEditor Export PDF button', () => {
     expect(clickedDownloads).toEqual([]);
     expect(URL.createObjectURL).not.toHaveBeenCalled();
     expect(exportButton()).not.toBeDisabled();
+  });
+
+  test('shows an error toast and does not download when a 200 response is not a PDF', async () => {
+    const html = new Blob(['<html>login</html>'], { type: 'text/html' });
+    fetchMock.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, blob: jest.fn().mockResolvedValue(html) });
+    renderEditor({ readOnly: true });
+
+    await act(async () => {
+      fireEvent.click(exportButton());
+    });
+
+    expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/did not return a pdf/i));
+    expect(clickedDownloads).toEqual([]);
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
   });
 
   test('shows an error toast on a network failure', async () => {
@@ -223,6 +239,39 @@ describe('RunsheetTableEditor Export PDF button', () => {
     expect(toast).toHaveBeenCalledWith(expect.stringMatching(/last saved version/i), expect.anything());
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(clickedDownloads).toHaveLength(2);
+    // The warning precedes the fetch.
+    expect((toast as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(fetchMock.mock.invocationCallOrder[1]);
+  });
+
+  test('still warns after toggling from edit to view with unsaved changes', async () => {
+    fetchMock.mockResolvedValue(pdfResponse());
+    const { rerender } = renderEditor({ readOnly: false });
+    fireEvent.change(screen.getByLabelText('Start:'), { target: { value: '09:30:00 AM' } });
+
+    rerender(
+      <RunsheetTableEditor
+        channelId={42}
+        channelName="MNL Crowne // Aug 16, 2026 // 9AM"
+        columns={columns}
+        initialItems={initialItems}
+        initialStartTime="10:00:00 AM"
+        readOnly
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(exportButton());
+    });
+
+    expect(toast).toHaveBeenCalledWith(expect.stringMatching(/last saved version/i), expect.anything());
+  });
+
+  test('does not warn in view mode when nothing was edited', async () => {
+    fetchMock.mockResolvedValue(pdfResponse());
+    renderEditor({ readOnly: true });
+    await act(async () => {
+      fireEvent.click(exportButton());
+    });
+    expect(toast).not.toHaveBeenCalled();
   });
 });
 

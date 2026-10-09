@@ -2390,7 +2390,7 @@ export function RunsheetTableEditor({
                 <span>Share</span>
               </button>
 
-              <ExportPdfButton channelId={channelId} channelName={channelName} hasUnsavedChanges={!readOnly && isDirty} />
+              <ExportPdfButton channelId={channelId} channelName={channelName} hasUnsavedChanges={isDirty} />
 
               {canEdit !== false && (
                 <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
