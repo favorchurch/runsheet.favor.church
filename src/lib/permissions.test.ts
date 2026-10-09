@@ -88,6 +88,11 @@ describe('getAccessGateState', () => {
     expect(getAccessGateState(user)).toBe('resolution-failed');
   });
 
+  it('returns resolution-failed when top-level rosterLookupFailed is set for a volunteer with no runsheet role', () => {
+    const user: AuthUser = { rolesMap: {}, isMinistryTeamVolunteer: true, rosterLookupFailed: true };
+    expect(getAccessGateState(user)).toBe('resolution-failed');
+  });
+
   it('returns resolution-failed when rosterLookupFailed is true for user with no runsheet role', () => {
     const user: AuthUser = {
       accessDiagnostics: {

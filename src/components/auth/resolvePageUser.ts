@@ -19,6 +19,7 @@ export async function resolvePageUser(rawUser?: any): Promise<AuthUser> {
       access: rockSession.access,
       isMinistryTeamVolunteer: rockSession.isMinistryTeamVolunteer,
       accessDiagnostics: rockSession.accessDiagnostics,
+      rosterLookupFailed: rockSession.rosterLookupFailed ?? rockSession.accessDiagnostics?.rosterLookupFailed,
     };
   } catch (err) {
     const errorClassName =
