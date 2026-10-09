@@ -30,11 +30,11 @@ describe('session cache key', () => {
     mockRedisCommand.mockClear();
   });
 
-  it('runsheet-session-key-v5', async () => {
+  it('runsheet-session-key-v6', async () => {
     await setSessionCache(42, [42], cacheEntry);
 
     const command = mockRedisCommand.mock.calls[0]?.[0];
-    expect(command?.[1]).toBe(`${REDIS_KEY_PREFIX}session:v5:42:none`);
+    expect(command?.[1]).toBe(`${REDIS_KEY_PREFIX}session:v6:42:none`);
   });
 
   it('gives two different id-sets sharing one primary id different cache keys; read and write use the same key (done-criteria 7)', async () => {

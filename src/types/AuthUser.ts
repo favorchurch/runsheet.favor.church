@@ -1,4 +1,5 @@
 import { UserProfile } from '@auth0/nextjs-auth0/client';
+import type { AccessDiagnostics } from '@/lib/accessDiagnostics';
 
 export interface AuthContact {
   id: number;
@@ -51,13 +52,19 @@ export interface AuthAccess {
    * sessions cached before it existed fall back to `runsheetCampuses`.
    */
   runsheetEditCampuses?: string[];
+  /** Whether the user has an active GroupType 23 (Ministry Team) membership. */
+  isMinistryTeamVolunteer?: boolean;
 }
 
 export type AuthRolesMap = Record<string, string[]>;
 
 export type AuthUser = UserProfile & {
-  contact?: AuthContact,
-  contacts?: string[],
-  rolesMap?: AuthRolesMap,
-  access?: AuthAccess,
+  contact?: AuthContact;
+  contacts?: string[];
+  rolesMap?: AuthRolesMap;
+  access?: AuthAccess;
+  isMinistryTeamVolunteer?: boolean;
+  accessResolutionFailed?: boolean;
+  rosterLookupFailed?: boolean;
+  accessDiagnostics?: AccessDiagnostics;
 };

@@ -20,9 +20,20 @@ export async function getSessionUser(): Promise<AuthUser> {
       contact: rockSession.contact,
       rolesMap: rockSession.rolesMap,
       access: rockSession.access,
+      isMinistryTeamVolunteer: rockSession.isMinistryTeamVolunteer,
+      rosterLookupFailed: rockSession.rosterLookupFailed ?? rockSession.accessDiagnostics?.rosterLookupFailed,
+      accessDiagnostics: rockSession.accessDiagnostics,
     };
   } catch (err) {
-    console.warn('[getSessionUser] getRockSession failed:', err);
-    return user;
+    const errorClassName =
+      (err && typeof err === 'object' && 'name' in err && typeof err.name === 'string' && err.name) ||
+      (err && typeof err === 'object' && err.constructor?.name) ||
+      'Error';
+    console.warn(`[getSessionUser] getRockSession failed: ${errorClassName}`);
+    const { rolesMap: _unused, ...safeUser } = user;
+    return {
+      ...safeUser,
+      accessResolutionFailed: true,
+    };
   }
 }
