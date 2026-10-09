@@ -11,6 +11,7 @@ import {
 } from '@/lib/runsheetAccessPolicy';
 import { CAMPUS_MINISTRY_TEAM_ROOT_IDS, CAMPUS_ORG_UNIT_ROOT_IDS } from '@/lib/runsheetAccessRoots';
 import { readRockObjectCache, writeRockObjectCache } from '@/server-actions/internal/rockObjectCache';
+import { AccessDiagnostics } from '@/lib/accessDiagnostics';
 import { AuthAccess, AuthContact, AuthRolesMap } from '@/types/AuthUser';
 import { resolveGrowAccess } from '@/lib/growAccessPolicy';
 import { GROW_EDITOR_ROLE, GROW_VIEWER_ROLE, ROSTERED_VIEWER_ROLE } from '@/lib/permissions';
@@ -311,6 +312,9 @@ export interface ResolveResult {
   contact: AuthContact;
   rolesMap: AuthRolesMap;
   access: AuthAccess;
+  isMinistryTeamVolunteer?: boolean;
+  rosterLookupFailed?: boolean;
+  accessDiagnostics?: AccessDiagnostics;
   /**
    * Set when a secondary (non-primary) id in the union failed its
    * `fetchPersonById` validity fetch (network/API error, not a plain
@@ -423,6 +427,9 @@ export async function rockResolveAccess(personIds: number[], fallbackEmail?: str
   const rolesMap: AuthRolesMap = {};
   const runsheetCampuses = new Set<string>();
   const runsheetEditCampuses = new Set<string>();
+  let isMinistryTeamVolunteer = false;
+  let rosterLookupFailed = false;
+  const membershipCountsByGroupType: Record<number, number> = {};
 
   if (membershipPersonIds.length > 0) {
     // The primary's membership fetch propagates (its failure is the signed-in
@@ -448,13 +455,22 @@ export async function rockResolveAccess(personIds: number[], fallbackEmail?: str
       }),
     );
     const memberships = membershipLists.flat();
+    for (const m of memberships) {
+      const typeId = Number(m.GroupTypeId ?? m.groupTypeId);
+      if (Number.isInteger(typeId) && typeId > 0) {
+        membershipCountsByGroupType[typeId] = (membershipCountsByGroupType[typeId] || 0) + 1;
+      }
+    }
     const hasGlobalMembership = memberships.some(
       (m: any) =>
         Number(m.GroupTypeId) === 1 ||
         (GLOBAL_EDIT_GROUP_IDS as readonly number[]).includes(Number(m.GroupId)),
     );
     const hasOrgUnitMembership = memberships.some((m: any) => Number(m.GroupTypeId) === 28);
-    const hasMinistryTeamMembership = memberships.some((m: any) => Number(m.GroupTypeId) === 23);
+    const hasMinistryTeamMembership = memberships.some(
+      (m: any) => Number(m.GroupTypeId ?? m.groupTypeId) === 23,
+    );
+    isMinistryTeamVolunteer = hasMinistryTeamMembership;
 
     // Only fetched when actually needed - most sessions hit the group-type
     // caches from `rockObjectCache` anyway, but this skips the round trip
@@ -524,6 +540,8 @@ export async function rockResolveAccess(personIds: number[], fallbackEmail?: str
       const rosteredKeys = buildRosteredViewerKeys(roster.attendances, growScheduleIds, kidsScheduleIds);
       if (rosteredKeys.length > 0) rolesMap[ROSTERED_VIEWER_ROLE] = rosteredKeys;
     } catch (error) {
+      rosterLookupFailed = true;
+      partial = true;
       console.warn('[runsheet-access] roster/Grow access lookup failed; granting no roster or Grow access', error);
     }
   }
@@ -532,6 +550,17 @@ export async function rockResolveAccess(personIds: number[], fallbackEmail?: str
   for (const key in rolesMap) {
     rolesMap[key] = [...new Set(rolesMap[key])];
   }
+
+  const personResolved = (contact.id ?? 0) > 0;
+  const rosterKeyCount = rolesMap[ROSTERED_VIEWER_ROLE]?.length ?? 0;
+  const accessDiagnostics: AccessDiagnostics = {
+    personId: contact.id > 0 ? contact.id : 0,
+    personResolved,
+    membershipCountsByGroupType,
+    membershipCounts: membershipCountsByGroupType,
+    rosterKeyCount,
+    rosterLookupFailed,
+  };
 
   return {
     contact,
@@ -544,7 +573,11 @@ export async function rockResolveAccess(personIds: number[], fallbackEmail?: str
       departmentHeadSections: [],
       runsheetCampuses: Array.from(runsheetCampuses),
       runsheetEditCampuses: Array.from(runsheetEditCampuses),
+      isMinistryTeamVolunteer,
     },
+    isMinistryTeamVolunteer,
+    rosterLookupFailed,
+    accessDiagnostics,
     ...(partial ? { partial: true } : {}),
   };
 }

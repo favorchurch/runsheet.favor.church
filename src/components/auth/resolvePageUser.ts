@@ -1,17 +1,14 @@
-'use server';
-
-import { AuthUser } from '@/types/AuthUser';
-import { getServerSession } from './getServerSession';
-import { getRockSession } from './getRockSession';
+import 'server-only';
+import { getRockSession } from '@/auth0-hooks/server/getRockSession';
+import type { AuthUser } from '@/types/AuthUser';
 
 /**
- * Get the authenticated user with Rock session data merged in.
- * Falls back to raw Auth0 user if Rock resolution fails.
+ * Resolves Rock session data for a page user.
+ * Catches Rock failures and surfaces `accessResolutionFailed: true`
+ * so the page renders a retry card rather than triggering the Next error boundary.
  */
-export async function getSessionUser(): Promise<AuthUser> {
-  const session = await getServerSession();
-  if (!session?.user) throw new Error('no user session');
-  const user = session.user as AuthUser;
+export async function resolvePageUser(rawUser?: any): Promise<AuthUser> {
+  const user = (rawUser || {}) as AuthUser;
   try {
     const rockSession = await getRockSession();
     return {
@@ -21,15 +18,15 @@ export async function getSessionUser(): Promise<AuthUser> {
       rolesMap: rockSession.rolesMap,
       access: rockSession.access,
       isMinistryTeamVolunteer: rockSession.isMinistryTeamVolunteer,
-      rosterLookupFailed: rockSession.rosterLookupFailed ?? rockSession.accessDiagnostics?.rosterLookupFailed,
       accessDiagnostics: rockSession.accessDiagnostics,
+      rosterLookupFailed: rockSession.rosterLookupFailed ?? rockSession.accessDiagnostics?.rosterLookupFailed,
     };
   } catch (err) {
     const errorClassName =
       (err && typeof err === 'object' && 'name' in err && typeof err.name === 'string' && err.name) ||
       (err && typeof err === 'object' && err.constructor?.name) ||
       'Error';
-    console.warn(`[getSessionUser] getRockSession failed: ${errorClassName}`);
+    console.warn(`[resolvePageUser] getRockSession failed: ${errorClassName}`);
     const { rolesMap: _unused, ...safeUser } = user;
     return {
       ...safeUser,
