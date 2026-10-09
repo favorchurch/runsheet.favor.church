@@ -1,42 +1,40 @@
 import { redirect } from 'next/navigation';
 import { requireServerSession } from '@/auth0-hooks/server/getServerSession';
-import { getRockSession } from '@/auth0-hooks/server/getRockSession';
-import { canUserAccessRunsheet, canUserEditRunsheet } from '@/lib/permissions';
+import { resolvePageUser } from '@/components/auth/resolvePageUser';
+import { canUserEditRunsheet, getAccessGateState } from '@/lib/permissions';
+import { logAccessDenial } from '@/lib/accessDiagnostics';
+import { Auth0LoginGate } from '@/components/auth/Auth0LoginGate';
 import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CreateRunsheetPage() {
-  await requireServerSession();
-  const session = await getRockSession();
-  const canAccess = canUserAccessRunsheet(session);
+  const session = await requireServerSession();
+  const sessionUser = await resolvePageUser(session.user);
+  const gateState = getAccessGateState(sessionUser);
 
   // View-only accounts have no business on this route at all — send them
   // home with a real server redirect rather than rendering `/create` and
   // relying on a client effect to clean it up after the fact.
-  if (canAccess && !canUserEditRunsheet(session)) {
+  if (gateState === 'allowed' && !canUserEditRunsheet(sessionUser)) {
     redirect('/');
   }
 
-  if (!canAccess) {
+  if (gateState !== 'allowed') {
+    logAccessDenial(sessionUser, gateState);
     return (
-      <div className="mx-auto max-w-xl py-16 text-center">
-        <h2 className="text-xl font-bold text-slate-900">Access Restricted</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          You do not have permission to access the Runsheet manager.
-        </p>
-      </div>
+      <Auth0LoginGate
+        type={gateState}
+        userEmail={sessionUser.email || sessionUser.contact?.email}
+        errorMessage={
+          gateState === 'ineligible'
+            ? 'Your account does not have an assigned team role or permission to access runsheets.'
+            : undefined
+        }
+        title={gateState === 'ineligible' ? 'Access Restricted' : undefined}
+      />
     );
   }
 
-  const user = {
-    sub: String(session.personId),
-    name: session.contact.fullName,
-    email: session.contact.email,
-    contact: session.contact,
-    rolesMap: session.rolesMap,
-    access: session.access,
-  };
-
-  return <RunsheetManager user={user} initialShowCreate={true} />;
+  return <RunsheetManager user={sessionUser} initialShowCreate={true} />;
 }

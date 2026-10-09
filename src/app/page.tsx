@@ -2,7 +2,8 @@ import { getServerSession } from '@/auth0-hooks/server/getServerSession';
 import { getSessionUser } from '@/auth0-hooks/server/getSessionUser';
 import { Auth0LoginGate } from '@/components/auth/Auth0LoginGate';
 import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
-import { canUserAccessRunsheet } from '@/lib/permissions';
+import { getAccessGateState } from '@/lib/permissions';
+import { logAccessDenial } from '@/lib/accessDiagnostics';
 import type { AuthUser } from '@/types/AuthUser';
 
 /*
@@ -31,32 +32,32 @@ export default async function Home() {
   let sessionUser: AuthUser;
   try {
     sessionUser = await getSessionUser();
-  } catch {
-    const raw = session.user as any;
+  } catch (err) {
+    console.warn('[Home] getSessionUser failed:', err);
     sessionUser = {
-      ...raw,
-      email: raw.email || '',
-      contact: {
-        id: 0,
-        email: raw.email || '',
-        fullName: raw.name || raw.nickname || raw.email || 'Volunteer User',
-      },
+      ...(session.user as any),
+      accessResolutionFailed: true,
     };
   }
 
-  // 3. Gate users without any roles/permissions
-  if (!canUserAccessRunsheet(sessionUser)) {
+  // 3. Gate users based on gate decision
+  const gateState = getAccessGateState(sessionUser);
+
+  if (gateState !== 'allowed') {
+    logAccessDenial(sessionUser, gateState);
     return (
       <Auth0LoginGate
-        type="ineligible"
+        type={gateState}
         userEmail={sessionUser.email || sessionUser.contact?.email}
-        errorMessage="Your account does not have an assigned team role or permission to access runsheets."
+        errorMessage={
+          gateState === 'ineligible'
+            ? 'Your account does not have an assigned team role or permission to access runsheets.'
+            : undefined
+        }
+        title={gateState === 'ineligible' ? 'Access Restricted' : undefined}
       />
     );
   }
-
-
-
 
   return (
     <main className="flex min-h-screen flex-col items-center px-3 py-0 sm:px-6 bg-slate-50 text-slate-900 w-full">

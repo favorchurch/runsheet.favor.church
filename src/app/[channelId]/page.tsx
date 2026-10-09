@@ -1,6 +1,8 @@
 import { requireServerSession } from '@/auth0-hooks/server/getServerSession';
-import { getRockSession } from '@/auth0-hooks/server/getRockSession';
-import { canUserAccessRunsheet } from '@/lib/permissions';
+import { resolvePageUser } from '@/components/auth/resolvePageUser';
+import { getAccessGateState } from '@/lib/permissions';
+import { logAccessDenial } from '@/lib/accessDiagnostics';
+import { Auth0LoginGate } from '@/components/auth/Auth0LoginGate';
 import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
 
 export const dynamic = 'force-dynamic';
@@ -13,9 +15,9 @@ export default async function DirectRunsheetPage({ params }: PageProps) {
   const { channelId } = await params;
   const parsedChannelId = parseInt(channelId, 10);
 
-  await requireServerSession();
-  const session = await getRockSession();
-  const canAccess = canUserAccessRunsheet(session);
+  const session = await requireServerSession();
+  const sessionUser = await resolvePageUser(session.user);
+  const gateState = getAccessGateState(sessionUser);
 
   // Whether this channel actually exists / is in scope is verified
   // client-side by RunsheetManager's own loadChannelDetails (it falls back
@@ -27,30 +29,26 @@ export default async function DirectRunsheetPage({ params }: PageProps) {
   // write could transiently omit the current channel, firing a real
   // redirect('/') that wiped all in-progress UI (an open propagate review,
   // unsaved edits) with no warning, looking like "the site refreshed".
-  if (!canAccess) {
+  if (gateState !== 'allowed') {
+    logAccessDenial(sessionUser, gateState);
     return (
-      <div className="mx-auto max-w-xl py-16 text-center">
-        <h2 className="text-xl font-bold text-slate-900">Access Restricted</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          You do not have permission to access the Runsheet manager.
-        </p>
-      </div>
+      <Auth0LoginGate
+        type={gateState}
+        userEmail={sessionUser.email || sessionUser.contact?.email}
+        errorMessage={
+          gateState === 'ineligible'
+            ? 'Your account does not have an assigned team role or permission to access runsheets.'
+            : undefined
+        }
+        title={gateState === 'ineligible' ? 'Access Restricted' : undefined}
+      />
     );
   }
-
-  const user = {
-    sub: String(session.personId),
-    name: session.contact.fullName,
-    email: session.contact.email,
-    contact: session.contact,
-    rolesMap: session.rolesMap,
-    access: session.access,
-  };
 
   return (
     <main className="flex min-h-screen flex-col items-center px-3 py-0 sm:px-6 bg-slate-50 text-slate-900 w-full">
       <RunsheetManager
-        user={user}
+        user={sessionUser}
         initialChannelId={isNaN(parsedChannelId) ? null : parsedChannelId}
       />
     </main>
