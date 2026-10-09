@@ -59,3 +59,8 @@ Controls verbose reporting during test execution.
 - **Default**: `false` (verbose output disabled).
 - Setting `JEST_VERBOSE=true` enables verbose test logging.
 - Any other value (e.g., `false`, `0`, `1`, `abc`, empty string) or leaving it unset leaves verbose disabled (`false`).
+
+## Performance Benchmarks
+
+Detailed empirical benchmark comparisons between `origin/main` (BASE) and the resource-aware configuration (After), including cold vs. warm cache metrics, CPU utilization, peak RSS, and test parity proofs, are documented in [docs/testing-benchmark.md](file:///Users/jerwyn/.local/state/auto-office/worktrees/62718e9b/T2/docs/testing-benchmark.md).
+
