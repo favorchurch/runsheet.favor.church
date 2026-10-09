@@ -65,5 +65,6 @@ export type AuthUser = UserProfile & {
   access?: AuthAccess;
   isMinistryTeamVolunteer?: boolean;
   accessResolutionFailed?: boolean;
+  rosterLookupFailed?: boolean;
   accessDiagnostics?: AccessDiagnostics;
 };

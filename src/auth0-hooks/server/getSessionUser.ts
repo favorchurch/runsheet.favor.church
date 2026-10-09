@@ -21,6 +21,7 @@ export async function getSessionUser(): Promise<AuthUser> {
       rolesMap: rockSession.rolesMap,
       access: rockSession.access,
       isMinistryTeamVolunteer: rockSession.isMinistryTeamVolunteer,
+      rosterLookupFailed: rockSession.rosterLookupFailed ?? rockSession.accessDiagnostics?.rosterLookupFailed,
       accessDiagnostics: rockSession.accessDiagnostics,
     };
   } catch (err) {

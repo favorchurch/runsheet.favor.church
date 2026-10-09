@@ -576,8 +576,8 @@ export async function rockResolveAccess(personIds: number[], fallbackEmail?: str
       isMinistryTeamVolunteer,
     },
     isMinistryTeamVolunteer,
+    rosterLookupFailed,
     accessDiagnostics,
-    ...(rosterLookupFailed ? { rosterLookupFailed: true } : {}),
     ...(partial ? { partial: true } : {}),
   };
 }
