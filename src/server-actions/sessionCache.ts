@@ -14,6 +14,7 @@ import NodeCache from 'node-cache';
 import { REDIS_KEY_PREFIX } from '@/constants/server';
 import { clampCacheTtlSeconds } from '@/lib/cacheTtl';
 import { isRedisEnabled, redisCommand } from '@/server-actions/internal/redisClient';
+import type { AccessDiagnostics } from '@/lib/accessDiagnostics';
 import type { AuthAccess, AuthContact, AuthRolesMap } from '@/types/AuthUser';
 
 /** Resolved authorization for a user, cached per Rock personId. */
@@ -21,6 +22,8 @@ export interface CachedSession {
   contact: AuthContact;
   rolesMap: AuthRolesMap;
   access: AuthAccess;
+  isMinistryTeamVolunteer?: boolean;
+  accessDiagnostics?: AccessDiagnostics;
 }
 
 /** Authorization revocation window; never allow configuration to exceed five minutes. */
@@ -52,7 +55,7 @@ export function sessionCacheKey(primaryId: number, unionIds: number[]): string {
   const digest = isPrimaryOnly
     ? 'none'
     : createHash('sha256').update(sortedUnion.join(',')).digest('hex').slice(0, 12);
-  return `${REDIS_KEY_PREFIX}session:v5:${primaryId}:${digest}`;
+  return `${REDIS_KEY_PREFIX}session:v6:${primaryId}:${digest}`;
 }
 
 /** Read a cached session; falls back to Redis when enabled, otherwise in-memory only. Returns `undefined` on miss. */

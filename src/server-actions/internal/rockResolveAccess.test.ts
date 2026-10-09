@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { CloudflareBlockError, rockResolveAccess } from './rockResolveAccess';
 import { readRockObjectCache, writeRockObjectCache } from './rockObjectCache';
+import { fetchKidsScheduleIds } from '@/server-actions/internal/rockKidsSchedules';
 
 jest.mock('./rockObjectCache', () => ({
   readRockObjectCache: jest.fn(async () => ({ hit: false })),
@@ -9,9 +10,13 @@ jest.mock('./rockObjectCache', () => ({
 jest.mock('@/auth0-hooks/server/assertAuthenticated', () => ({
   assertAuthenticated: jest.fn(async () => undefined),
 }));
+jest.mock('@/server-actions/internal/rockKidsSchedules', () => ({
+  fetchKidsScheduleIds: jest.fn(async () => new Set<number>()),
+}));
 
 const mockReadRockObjectCache = jest.mocked(readRockObjectCache);
 const mockWriteRockObjectCache = jest.mocked(writeRockObjectCache);
+const mockFetchKidsScheduleIds = jest.mocked(fetchKidsScheduleIds);
 
 function rockResponse(value: unknown): Response {
   return {
@@ -54,6 +59,7 @@ describe('rockResolveAccess', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockReadRockObjectCache.mockResolvedValue({ hit: false });
+    mockFetchKidsScheduleIds.mockResolvedValue(new Set<number>());
     mockFetch.mockImplementation(async (input) => {
       const url = new URL(String(input));
       return rockResponse(responseFor(url.pathname.replace(/^\/api/, ''), url));
@@ -653,5 +659,57 @@ describe('rockResolveAccess', () => {
       'MNL:2026-10-04:17:00:00',
     ]);
   });
+
+  it('sets isMinistryTeamVolunteer to true from active GroupType 23 memberships', async () => {
+    // Person 101 has GroupType 23 membership (GroupId 19109) in responseFor
+    const result = await rockResolveAccess([101]);
+
+    expect(result.isMinistryTeamVolunteer).toBe(true);
+    expect(result.access.isMinistryTeamVolunteer).toBe(true);
+    expect(result.accessDiagnostics?.membershipCountsByGroupType[23]).toBe(1);
+    expect(result.accessDiagnostics?.personResolved).toBe(true);
+  });
+
+  it('sets isMinistryTeamVolunteer to false for non-member with zero GroupType 23 memberships', async () => {
+    mockFetch.mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      const path = url.pathname.replace(/^\/api/, '');
+      if (path === '/People') {
+        return rockResponse([{ Id: 102, FirstName: 'Non', LastName: 'Volunteer', Email: 'non@example.com' }]);
+      }
+      if (path === '/GroupMembers') {
+        // Only GroupType 1 membership, no GroupType 23
+        return rockResponse([
+          { Id: 10, GroupId: 32879, GroupRoleId: 1, GroupTypeId: 1, GroupMemberStatus: '1' },
+        ]);
+      }
+      return rockResponse(responseFor(path, url));
+    });
+
+    const result = await rockResolveAccess([102]);
+
+    expect(result.isMinistryTeamVolunteer).toBe(false);
+    expect(result.access.isMinistryTeamVolunteer).toBe(false);
+    expect(result.accessDiagnostics?.membershipCountsByGroupType[23]).toBeUndefined();
+    expect(result.accessDiagnostics?.personResolved).toBe(true);
+  });
+
+  it('proves a failing fetchKidsScheduleIds yields rosterLookupFailed=true and partial=true', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mockFetchKidsScheduleIds.mockRejectedValueOnce(new Error('Rock Categories failure'));
+
+    const result = await rockResolveAccess([101]);
+
+    expect(result.rosterLookupFailed).toBe(true);
+    expect(result.partial).toBe(true);
+    expect(result.accessDiagnostics?.rosterLookupFailed).toBe(true);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[runsheet-access] roster/Grow access lookup failed'),
+      expect.any(Error),
+    );
+
+    warnSpy.mockRestore();
+  });
 });
+
 

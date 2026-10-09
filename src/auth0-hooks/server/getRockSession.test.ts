@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { getRockSession, invalidateRockSession, type ResolveResult } from './getRockSession';
 import { getServerSession } from './getServerSession';
+import { getSessionUser } from './getSessionUser';
+import { logAccessDenial } from '@/lib/accessDiagnostics';
 import { rockResolveAccess } from '@/server-actions/internal/rockResolveAccess';
 import { clearSessionCache, getSessionCache, setSessionCache } from '@/server-actions/sessionCache';
 
@@ -436,4 +438,120 @@ describe('getRockSession rock_person_ids claim', () => {
     expect(result.personId).toBe(101);
     expect(result.personIds).toEqual([101]);
   });
+
+  it('proves a failing fetchKidsScheduleIds yields rosterLookupFailed=true and no cache write', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        'https://auth.favor.church/rock_person_found': true,
+        'https://auth.favor.church/rock_person_id': 101,
+      }),
+    );
+    mockRockResolveAccess.mockResolvedValue({
+      ...resolvedResult(101),
+      partial: true,
+      rosterLookupFailed: true,
+    });
+
+    const result = await getRockSession();
+
+    expect(result.rosterLookupFailed).toBe(true);
+    expect(mockSetSessionCache).not.toHaveBeenCalled();
+  });
+
+  describe('getSessionUser', () => {
+    it('returns accessResolutionFailed=true (and no rolesMap) when getRockSession throws, and logs the error class name without secrets', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const secretToken = 'secret-auth-token-12345';
+      const secretUrl = 'https://rock.favor.church/api/People?key=supersecret';
+
+      mockGetServerSession.mockResolvedValue(
+        sessionFor({
+          email: 'user@example.com',
+          rolesMap: { editor: ['123'] },
+          'https://auth.favor.church/rock_person_found': true,
+          'https://auth.favor.church/rock_person_id': 101,
+        }),
+      );
+
+      // Make rockResolveAccess throw an error with sensitive info in message
+      const errorWithSecrets = new Error(`Request to ${secretUrl} failed with token ${secretToken}`);
+      errorWithSecrets.name = 'CustomRockApiError';
+      mockRockResolveAccess.mockRejectedValue(errorWithSecrets);
+
+      const user = await getSessionUser();
+
+      expect(user.accessResolutionFailed).toBe(true);
+      expect(user.rolesMap).toBeUndefined();
+
+      // Check the log call
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[getSessionUser] getRockSession failed: CustomRockApiError'),
+      );
+      const loggedArg = warnSpy.mock.calls.find((call) =>
+        String(call[0]).includes('[getSessionUser] getRockSession failed:'),
+      )?.[0];
+      expect(String(loggedArg)).not.toContain(secretToken);
+      expect(String(loggedArg)).not.toContain(secretUrl);
+      expect(String(loggedArg)).not.toContain('user@example.com');
+
+      warnSpy.mockRestore();
+    });
+
+    it('passes accessDiagnostics and isMinistryTeamVolunteer to AuthUser on cache hit, and logAccessDenial emits real counts', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      mockGetServerSession.mockResolvedValue(
+        sessionFor({
+          'https://auth.favor.church/rock_person_found': true,
+          'https://auth.favor.church/rock_person_id': 101,
+          email: 'cached.volunteer@favor.church',
+        }),
+      );
+
+      // Cached session entry with accessDiagnostics
+      mockGetSessionCache.mockResolvedValueOnce({
+        contact: { id: 101, email: 'cached.volunteer@favor.church' },
+        rolesMap: {},
+        access: {
+          campusIds: [1],
+          connectLeaderGroupIds: [],
+          regionalLeaderSections: [],
+          clusterHeadSections: [],
+          departmentHeadSections: [],
+          runsheetCampuses: [],
+          isMinistryTeamVolunteer: true,
+        },
+        isMinistryTeamVolunteer: true,
+        accessDiagnostics: {
+          personId: 101,
+          personResolved: true,
+          membershipCountsByGroupType: { 23: 1, 28: 2 },
+          rosterKeyCount: 0,
+          rosterLookupFailed: false,
+        },
+      });
+
+      const user = await getSessionUser();
+
+      expect(user.sub).toBe('101');
+      expect(user.isMinistryTeamVolunteer).toBe(true);
+      expect(user.accessDiagnostics).toBeDefined();
+      expect(user.accessDiagnostics?.membershipCountsByGroupType).toEqual({ 23: 1, 28: 2 });
+
+      // Now call logAccessDenial with this user and assert real counts
+      const output = logAccessDenial(user, 'volunteer-landing');
+
+      expect(output.startsWith('[runsheet-access] denial')).toBe(true);
+      expect(output).toContain('personId=101');
+      expect(output).toContain('personResolved=true');
+      expect(output).toContain('membershipCountsByGroupType={"23":1,"28":2}');
+      expect(output).toContain('rosterKeyCount=0');
+      expect(output).toContain('rosterLookupFailed=false');
+      expect(output).toContain('reason=volunteer-landing');
+      expect(output).not.toContain('cached.volunteer@favor.church');
+
+      warnSpy.mockRestore();
+    });
+  });
 });
+
