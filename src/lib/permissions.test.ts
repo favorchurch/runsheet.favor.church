@@ -78,12 +78,6 @@ describe('getAccessGateState', () => {
       },
     };
     expect(getAccessGateState(user)).toBe('allowed');
-
-    const topLevelFailed: AuthUser = {
-      rolesMap: { viewer: ['MNL'] },
-      ...({ rosterLookupFailed: true } as any),
-    };
-    expect(getAccessGateState(topLevelFailed)).toBe('allowed');
   });
 
   it('returns resolution-failed when accessResolutionFailed is true (covers getSessionUser failure)', () => {

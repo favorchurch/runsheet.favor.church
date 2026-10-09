@@ -21,7 +21,11 @@ export default async function Home() {
   try {
     session = await getServerSession();
   } catch (err) {
-    console.warn('Auth0 session check failed:', err);
+    const errorClassName =
+      (err && typeof err === 'object' && 'name' in err && typeof err.name === 'string' && err.name) ||
+      (err && typeof err === 'object' && err.constructor?.name) ||
+      'Error';
+    console.warn(`Auth0 session check failed: ${errorClassName}`);
   }
 
   if (!session?.user) {
@@ -33,7 +37,11 @@ export default async function Home() {
   try {
     sessionUser = await getSessionUser();
   } catch (err) {
-    console.warn('[Home] getSessionUser failed:', err);
+    const errorClassName =
+      (err && typeof err === 'object' && 'name' in err && typeof err.name === 'string' && err.name) ||
+      (err && typeof err === 'object' && err.constructor?.name) ||
+      'Error';
+    console.warn(`[Home] getSessionUser failed: ${errorClassName}`);
     sessionUser = {
       ...(session.user as any),
       accessResolutionFailed: true,

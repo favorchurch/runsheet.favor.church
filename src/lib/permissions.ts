@@ -69,8 +69,7 @@ export function getAccessGateState(user?: AuthUser | null): AccessGateState {
 
   const isFailed = Boolean(
     user?.accessResolutionFailed ||
-    user?.accessDiagnostics?.rosterLookupFailed ||
-    (user as any)?.rosterLookupFailed
+    user?.accessDiagnostics?.rosterLookupFailed
   );
 
   if (isFailed) {

@@ -67,10 +67,10 @@ describe('Auth0LoginGate component', () => {
       />
     );
 
-    expect(screen.getByText('Temporary Connection Error')).toBeInTheDocument();
+    expect(screen.getByText("We couldn't verify your access right now")).toBeInTheDocument();
     expect(screen.getByText('retry-user@example.com')).toBeInTheDocument();
     expect(
-      screen.getByText(/We couldn't check your runsheet permissions/i)
+      screen.getByText(/Please try again/i)
     ).toBeInTheDocument();
 
     // Reload button

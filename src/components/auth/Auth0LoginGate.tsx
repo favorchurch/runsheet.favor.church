@@ -58,7 +58,7 @@ export function Auth0LoginGate({ type = 'unauthenticated', userEmail, errorMessa
               (isUnauthenticated
                 ? 'Favor Runsheet Platform'
                 : isResolutionFailed
-                ? 'Temporary Connection Error'
+                ? "We couldn't verify your access right now"
                 : isVolunteerLanding
                 ? 'Volunteer Portal'
                 : 'Access Restricted')}
@@ -67,7 +67,7 @@ export function Auth0LoginGate({ type = 'unauthenticated', userEmail, errorMessa
             {isUnauthenticated
               ? 'Access Favor Church service runsheets with your Rock account!'
               : isResolutionFailed
-              ? "We couldn't check your runsheet permissions. Please try again."
+              ? 'Please try again.'
               : isVolunteerLanding
               ? 'Welcome to Favor Church service runsheets!'
               : 'This account does not have permissions to access this website.'}
