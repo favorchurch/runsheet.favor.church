@@ -71,6 +71,7 @@ export function formatAccessDenial(
   const rosterLookupFailed =
     params.rosterLookupFailed ??
     diagnostics?.rosterLookupFailed ??
+    user?.rosterLookupFailed ??
     false;
 
   // Sanitize reason to never leak email addresses

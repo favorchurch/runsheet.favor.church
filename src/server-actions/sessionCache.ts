@@ -23,6 +23,7 @@ export interface CachedSession {
   rolesMap: AuthRolesMap;
   access: AuthAccess;
   isMinistryTeamVolunteer?: boolean;
+  rosterLookupFailed?: boolean;
   accessDiagnostics?: AccessDiagnostics;
 }
 

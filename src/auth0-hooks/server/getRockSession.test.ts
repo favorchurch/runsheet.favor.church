@@ -288,6 +288,21 @@ describe('getRockSession rock_person_ids claim', () => {
     expect(mockSetSessionCache).not.toHaveBeenCalled();
   });
 
+  it('does not cache a resolve whose roster lookup failed (rosterLookupFailed + partial)', async () => {
+    mockGetServerSession.mockResolvedValue(
+      sessionFor({
+        'https://auth.favor.church/rock_person_found': true,
+        'https://auth.favor.church/rock_person_id': 101,
+      }),
+    );
+    mockRockResolveAccess.mockResolvedValue({ ...resolvedResult(101), rosterLookupFailed: true, partial: true });
+
+    const session = await getRockSession();
+
+    expect(session.rosterLookupFailed).toBe(true);
+    expect(mockSetSessionCache).not.toHaveBeenCalled();
+  });
+
   it('does not cache when resolved contact id is 0', async () => {
     mockGetServerSession.mockResolvedValue(
       sessionFor({
@@ -535,6 +550,7 @@ describe('getRockSession rock_person_ids claim', () => {
 
       expect(user.sub).toBe('101');
       expect(user.isMinistryTeamVolunteer).toBe(true);
+      expect(user.rosterLookupFailed).toBe(false);
       expect(user.accessDiagnostics).toBeDefined();
       expect(user.accessDiagnostics?.membershipCountsByGroupType).toEqual({ 23: 1, 28: 2 });
 
@@ -551,6 +567,41 @@ describe('getRockSession rock_person_ids claim', () => {
       expect(output).not.toContain('cached.volunteer@favor.church');
 
       warnSpy.mockRestore();
+    });
+
+    it('copies rosterLookupFailed from rockSession to AuthUser when rockResolveAccess sets rosterLookupFailed=true', async () => {
+      mockGetServerSession.mockResolvedValue(
+        sessionFor({
+          'https://auth.favor.church/rock_person_found': true,
+          'https://auth.favor.church/rock_person_id': 101,
+        }),
+      );
+
+      mockRockResolveAccess.mockResolvedValueOnce({
+        contact: { id: 101 },
+        rolesMap: {},
+        access: {
+          campusIds: [],
+          connectLeaderGroupIds: [],
+          regionalLeaderSections: [],
+          clusterHeadSections: [],
+          departmentHeadSections: [],
+          runsheetCampuses: [],
+        },
+        rosterLookupFailed: true,
+        partial: true,
+        accessDiagnostics: {
+          personId: 101,
+          personResolved: true,
+          membershipCountsByGroupType: {},
+          rosterKeyCount: 0,
+          rosterLookupFailed: true,
+        },
+      });
+
+      const user = await getSessionUser();
+      expect(user.rosterLookupFailed).toBe(true);
+      expect(user.accessDiagnostics?.rosterLookupFailed).toBe(true);
     });
   });
 });

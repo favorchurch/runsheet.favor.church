@@ -143,4 +143,20 @@ describe('accessDiagnostics', () => {
 
     warnSpy.mockRestore();
   });
+
+  it('reads rosterLookupFailed directly from AuthUser when diagnostics is omitted', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const user: AuthUser = {
+      sub: '42',
+      contact: { id: 42 },
+      rosterLookupFailed: true,
+    };
+
+    const output = logAccessDenial(user, 'roster-failure');
+    expect(output).toContain('personId=42');
+    expect(output).toContain('rosterLookupFailed=true');
+
+    warnSpy.mockRestore();
+  });
 });
