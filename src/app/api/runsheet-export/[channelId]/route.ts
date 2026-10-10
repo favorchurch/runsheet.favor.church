@@ -8,6 +8,7 @@ import {
   renderRunsheetPdf,
   RUNSHEET_ERROR_STATUS_MAP,
 } from '@/lib/runsheetExport';
+import { rockGetRosterAssignments } from '@/server-actions/rockGetRosterAssignments';
 import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 
@@ -62,9 +63,13 @@ export async function GET(
     return Response.json({ error: 'Failed to fetch runsheet details' }, { status: 500 });
   }
 
+  // The roster reads Rock the same way the app's roster card does; a failure
+  // falls back to the stored `Roster:` rows rather than failing the export.
+  const roster = await rockGetRosterAssignments(detailsResult.data.name || '').catch(() => null);
+
   let pdfBuffer: Buffer;
   try {
-    pdfBuffer = await renderRunsheetPdf(buildRunsheetExportModel(detailsResult.data));
+    pdfBuffer = await renderRunsheetPdf(buildRunsheetExportModel(detailsResult.data, { roster }));
   } catch {
     return Response.json({ error: PDF_GENERATION_ERROR_MESSAGE }, { status: 500 });
   }

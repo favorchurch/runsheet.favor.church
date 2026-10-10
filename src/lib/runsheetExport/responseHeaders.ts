@@ -1,5 +1,3 @@
-import { extractChannelDate, extractChannelTitleDisplay } from '@/lib/runsheetDate';
-
 export const EXPORT_CACHE_CONTROL = 'private, no-store';
 
 function slugify(text: string): string {
@@ -11,19 +9,10 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-function formatIsoDate(date: Date): string {
-  const y = String(date.getFullYear()).padStart(4, '0');
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-/** `<slug-of-title>-<yyyy-mm-dd>.pdf`; the date suffix is omitted when the name has no date. */
+/** Slug of the runsheet's full name, e.g. `bne-sunday-october-11-2026-9am.pdf`. */
 export function buildExportFilename(channelName: string, channelId: number): string {
-  const slug = slugify(extractChannelTitleDisplay(channelName)) || `runsheet-${channelId}`;
-  const date = extractChannelDate(channelName);
-  const suffix = date && !isNaN(date.getTime()) ? `-${formatIsoDate(date)}` : '';
-  return `${slug}${suffix}.pdf`;
+  const slug = slugify(channelName) || `runsheet-${channelId}`;
+  return `${slug}.pdf`;
 }
 
 function encodeRfc5987(value: string): string {

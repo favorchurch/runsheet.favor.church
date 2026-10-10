@@ -5,6 +5,13 @@ import {
   RESERVED_RUNSHEET_COLUMN_KEYS,
   ROCK_PERSON_FIELD_TYPE_ID,
 } from '@/constants/runsheetColumns';
+import {
+  computePlatformRoles,
+  getVitalRoleValue,
+  parsePeopleString,
+  VITAL_ROLES,
+  type RosterRockSource,
+} from '@/lib/eventTeamRoster';
 import { extractRunsheetCampus } from '@/lib/runsheetCampus';
 import {
   extractChannelTime,
@@ -44,6 +51,29 @@ export interface RunsheetExportRow {
   values: Record<string, string>;
 }
 
+export interface RunsheetExportRosterEntry {
+  label: string;
+  value: string;
+}
+
+export interface RunsheetExportRoster {
+  serviceRoles: RunsheetExportRosterEntry[];
+  platformRoles: RunsheetExportRosterEntry[];
+}
+
+/** Rock roster input for the export, shaped like `RockRosterAssignmentsResult`. */
+export interface RunsheetExportRosterInput {
+  success: boolean;
+  rockManaged: boolean;
+  linked: boolean;
+  roles: { roleTitle: string; people: { name: string }[] }[];
+}
+
+export interface RunsheetExportOptions {
+  /** Rock roster for this runsheet; `null`/absent falls back to the stored `Roster:` rows. */
+  roster?: RunsheetExportRosterInput | null;
+}
+
 export interface RunsheetExportModel {
   channelId: number;
   name: string;
@@ -57,6 +87,8 @@ export interface RunsheetExportModel {
   totalDuration: string;
   columns: RunsheetExportColumn[];
   rows: RunsheetExportRow[];
+  /** Event Team Roster, mirroring the app's roster card; `null` when the card is hidden. */
+  roster: RunsheetExportRoster | null;
 }
 
 /**
@@ -123,7 +155,10 @@ export function computeDynamicColumns(
  * - Only person-sourced columns are scrubbed for IDs/GUIDs/emails; authored free text renders verbatim.
  * - Text is deterministically sanitized against unsupported font glyphs.
  */
-export function buildRunsheetExportModel(details: RunsheetDetails): RunsheetExportModel {
+export function buildRunsheetExportModel(
+  details: RunsheetDetails,
+  options: RunsheetExportOptions = {},
+): RunsheetExportModel {
   const dynamicCols = computeDynamicColumns(details.columns, details.columnMetadata);
 
   const columns: RunsheetExportColumn[] = [
@@ -179,6 +214,7 @@ export function buildRunsheetExportModel(details: RunsheetDetails): RunsheetExpo
 
   const channelName = details.name || '';
   const parsedTitle = channelName ? extractChannelTitleDisplay(channelName) : '';
+  const roster = buildExportRoster(rawItems, dynamicCols, options.roster);
   const parsedDate = channelName ? formatChannelDateDisplay(channelName) : '';
   const parsedTime = channelName ? extractChannelTime(channelName) : '';
   const parsedCampus = channelName ? extractRunsheetCampus(channelName) : null;
@@ -188,7 +224,8 @@ export function buildRunsheetExportModel(details: RunsheetDetails): RunsheetExpo
   return {
     channelId: details.channelId,
     name: sanitizeTextForFont(channelName),
-    title: sanitizeTextForFont(parsedTitle),
+    // The heading is the runsheet's full name, exactly as the app shows it.
+    title: sanitizeTextForFont(channelName),
     date: sanitizeTextForFont(parsedDate),
     time: sanitizeTextForFont(parsedTime),
     campus: parsedCampus,
@@ -198,6 +235,50 @@ export function buildRunsheetExportModel(details: RunsheetDetails): RunsheetExpo
     totalDuration: formatDurationToHMS(totalDurationMinutes),
     columns,
     rows,
+    roster,
+  };
+}
+
+/**
+ * Mirrors EventTeamRosterCard: hidden when Rock manages this runsheet but has no
+ * roster for it; otherwise vital roles (Rock first, stored `Roster:` rows as the
+ * fallback) plus the platform roles read from the schedule rows.
+ */
+function buildExportRoster(
+  items: RunsheetItemRow[],
+  columns: DynamicAttributeColumn[],
+  input?: RunsheetExportRosterInput | null,
+): RunsheetExportRoster | null {
+  if (input && input.rockManaged && input.success && !input.linked) return null;
+
+  const rock: RosterRockSource | undefined = input
+    ? { linked: input.linked, readFailed: !input.success, roles: input.roles }
+    : undefined;
+  const platform = computePlatformRoles(items, columns);
+  const people = (value: string) =>
+    sanitizeTextForFont(
+      parsePeopleString(value)
+        .map((p) => scrubPersonValue(p.name))
+        .filter((name) => name && name !== '—')
+        .join(', '),
+    );
+
+  return {
+    serviceRoles: VITAL_ROLES.map((role) => ({
+      label: role,
+      value: people(getVitalRoleValue(role, items, columns, rock)),
+    })),
+    platformRoles: [
+      { label: 'Runsheet Huddle', value: people(platform.runsheetHuddle) },
+      { label: 'Huddle Hype', value: people(platform.huddleHype) },
+      { label: 'MC 1', value: people(platform.mc1) },
+      { label: 'MC 2', value: people(platform.mc2) },
+      { label: 'Preacher', value: people(platform.preacher) },
+      {
+        label: 'Wrap/Up Announcements',
+        value: sanitizeTextForFont(runsheetRichTextToPlainText(platform.wrapText)),
+      },
+    ],
   };
 }
 

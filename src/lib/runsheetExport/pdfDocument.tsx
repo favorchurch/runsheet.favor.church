@@ -9,7 +9,7 @@ import {
   Font,
   renderToBuffer,
 } from '@react-pdf/renderer';
-import type { RunsheetExportModel } from './model';
+import type { RunsheetExportModel, RunsheetExportRosterEntry } from './model';
 
 let fontsInitialized = false;
 
@@ -128,6 +128,53 @@ const styles = StyleSheet.create({
     borderRightWidth: 0.5,
     borderRightColor: '#e2e8f0',
   },
+  roster: {
+    marginBottom: 6,
+  },
+  rosterHeading: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#0f172a',
+    marginBottom: 3,
+  },
+  rosterGroupLabel: {
+    fontSize: 6.5,
+    fontWeight: 'bold',
+    color: '#475569',
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  rosterGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 4,
+    marginHorizontal: -2,
+  },
+  rosterBox: {
+    paddingVertical: 3,
+    paddingHorizontal: 4,
+    margin: 2,
+    borderWidth: 0.5,
+    borderColor: '#cbd5e1',
+    borderRadius: 3,
+  },
+  rosterLabel: {
+    fontSize: 6,
+    fontWeight: 'bold',
+    color: '#64748b',
+    textTransform: 'uppercase',
+  },
+  rosterValue: {
+    fontSize: 7.5,
+    fontWeight: 'bold',
+    color: '#0f172a',
+    marginTop: 1,
+  },
+  rosterEmpty: {
+    fontSize: 7,
+    color: '#94a3b8',
+    marginTop: 1,
+  },
   footer: {
     position: 'absolute',
     bottom: 14,
@@ -138,6 +185,28 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
   },
 });
+
+/** Usable width inside the page padding (A4 landscape 842pt - 2 x 24pt). */
+const CONTENT_WIDTH = 794;
+
+function RosterGrid({ entries, perRow }: { entries: RunsheetExportRosterEntry[]; perRow: number }) {
+  // Each box has 2pt margin on both sides; the grid's -2pt margins absorb the outer ones.
+  const boxWidth = Math.floor((CONTENT_WIDTH + 4) / perRow) - 5;
+  return (
+    <View style={styles.rosterGrid}>
+      {entries.map((entry) => (
+        <View key={entry.label} wrap={false} style={[styles.rosterBox, { width: boxWidth }]}>
+          <Text style={styles.rosterLabel}>{entry.label}</Text>
+          {entry.value ? (
+            <Text wrap style={styles.rosterValue}>{entry.value}</Text>
+          ) : (
+            <Text style={styles.rosterEmpty}>None</Text>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+}
 
 interface RunsheetPdfDocumentProps {
   model: RunsheetExportModel;
@@ -184,27 +253,39 @@ export function RunsheetPdfDocument({ model }: RunsheetPdfDocumentProps): React.
             </Text>
           ) : null}
 
-          {/* Table column headers */}
-          <View style={styles.tableHeaderRow}>
-            <Text wrap style={[styles.tableHeaderCell, { width: startWidth }]}>
-              Start
-            </Text>
-            <Text wrap style={[styles.tableHeaderCell, { width: durationWidth }]}>
-              Duration
-            </Text>
-            <Text wrap style={[styles.tableHeaderCell, { width: activityWidth }]}>
-              Activity Title
-            </Text>
-            {dynamicCols.map((col) => (
-              <Text
-                key={col.key}
-                wrap
-                style={[styles.tableHeaderCell, { width: dynamicColWidth }]}
-              >
-                {col.name}
-              </Text>
-            ))}
+        </View>
+
+        {/* Event Team Roster (first page only) */}
+        {model.roster ? (
+          <View style={styles.roster} wrap={false}>
+            <Text style={styles.rosterHeading}>Event Team Roster</Text>
+            <Text style={styles.rosterGroupLabel}>Service Roles</Text>
+            <RosterGrid entries={model.roster.serviceRoles} perRow={5} />
+            <Text style={styles.rosterGroupLabel}>Platform Roles</Text>
+            <RosterGrid entries={model.roster.platformRoles} perRow={6} />
           </View>
+        ) : null}
+
+        {/* Table column headers (repeat on every page) */}
+        <View fixed style={styles.tableHeaderRow}>
+          <Text wrap style={[styles.tableHeaderCell, { width: startWidth }]}>
+            Start
+          </Text>
+          <Text wrap style={[styles.tableHeaderCell, { width: durationWidth }]}>
+            Duration
+          </Text>
+          <Text wrap style={[styles.tableHeaderCell, { width: activityWidth }]}>
+            Activity Title
+          </Text>
+          {dynamicCols.map((col) => (
+            <Text
+              key={col.key}
+              wrap
+              style={[styles.tableHeaderCell, { width: dynamicColWidth }]}
+            >
+              {col.name}
+            </Text>
+          ))}
         </View>
 
         {/* Table Rows */}

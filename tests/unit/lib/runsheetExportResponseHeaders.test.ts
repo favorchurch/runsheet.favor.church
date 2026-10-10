@@ -7,16 +7,16 @@ describe('runsheetExport response headers', () => {
   });
 
   it.each([
-    ['MNL Crowne // October 11, 2026 // 10AM', 'mnl-crowne-2026-10-11.pdf'],
-    ['Sunday Service // 2026-03-07 // 9AM', 'sunday-service-2026-03-07.pdf'],
-    ['Café Ñandú // Nov 5, 2027', 'cafe-nandu-2027-11-05.pdf'],
+    ['MNL Crowne // October 11, 2026 // 10AM', 'mnl-crowne-october-11-2026-10am.pdf'],
+    ['Sunday Service // 2026-03-07 // 9AM', 'sunday-service-2026-03-07-9am.pdf'],
+    ['Café Ñandú // Nov 5, 2027', 'cafe-nandu-nov-5-2027.pdf'],
     ['Easter Special', 'easter-special.pdf'],
   ])('builds filename for %s', (name, expected) => {
     expect(buildExportFilename(name, 7)).toBe(expected);
   });
 
-  it('falls back to the channel id when the title has no ascii characters', () => {
-    expect(buildExportFilename('안녕 // Nov 5, 2027', 7)).toBe('runsheet-7-2027-11-05.pdf');
+  it('falls back to the channel id when the name has no ascii characters', () => {
+    expect(buildExportFilename('안녕', 7)).toBe('runsheet-7.pdf');
     expect(buildExportFilename('', 7)).toBe('runsheet-7.pdf');
   });
 

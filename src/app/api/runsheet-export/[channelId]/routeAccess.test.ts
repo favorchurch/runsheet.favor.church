@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { renderRunsheetPdf, RUNSHEET_ERROR_STATUS_MAP } from '@/lib/runsheetExport';
+import { rockGetRosterAssignments } from '@/server-actions/rockGetRosterAssignments';
 import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 import { GET } from './route';
@@ -22,10 +23,15 @@ jest.mock('@/server-actions/rockGetRunsheetDetails', () => ({
   rockGetRunsheetDetails: jest.fn(),
 }));
 
+jest.mock('@/server-actions/rockGetRosterAssignments', () => ({
+  rockGetRosterAssignments: jest.fn(),
+}));
+
 const mockRenderRunsheetPdf = jest.mocked(renderRunsheetPdf);
 const mockGetRockSession = jest.mocked(getRockSession);
 const mockAssertRunsheetViewAccess = jest.mocked(assertRunsheetViewAccess);
 const mockRockGetRunsheetDetails = jest.mocked(rockGetRunsheetDetails);
+const mockRockGetRosterAssignments = jest.mocked(rockGetRosterAssignments);
 
 function mockValidSession() {
   return {
@@ -37,6 +43,14 @@ function mockValidSession() {
 describe('GET /api/runsheet-export/[channelId] access and validation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRockGetRosterAssignments.mockResolvedValue({
+      success: true,
+      rockManaged: true,
+      linked: true,
+      scheduleId: 1,
+      isoDate: '2026-10-11',
+      roles: [{ roleTitle: 'Roster: Service Director', people: [{ personId: 1, name: 'Rock Director' }] }],
+    });
   });
 
   describe('channelId validation', () => {
@@ -202,7 +216,7 @@ describe('GET /api/runsheet-export/[channelId] access and validation', () => {
       expect(response.headers.get('Content-Type')).toBe('application/pdf');
 
       expect(response.headers.get('Content-Disposition')).toBe(
-        `attachment; filename="mnl-crowne-2026-10-11.pdf"; filename*=UTF-8''mnl-crowne-2026-10-11.pdf`,
+        `attachment; filename="mnl-crowne-october-11-2026-10am.pdf"; filename*=UTF-8''mnl-crowne-october-11-2026-10am.pdf`,
       );
       expect(response.headers.get('Cache-Control')).toBe('private, no-store');
 
@@ -210,6 +224,35 @@ describe('GET /api/runsheet-export/[channelId] access and validation', () => {
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       expect(buffer.slice(0, 4).toString('utf-8')).toBe('%PDF');
+
+      expect(mockRockGetRosterAssignments).toHaveBeenCalledWith('MNL Crowne // October 11, 2026 // 10AM');
+      const model = mockRenderRunsheetPdf.mock.calls[0][0];
+      expect(model.title).toBe('MNL Crowne // October 11, 2026 // 10AM');
+      expect(model.roster?.serviceRoles.find((r) => r.label === 'Service Director')?.value).toBe('Rock Director');
+    });
+
+    it('still exports when the roster read rejects, using the stored roster', async () => {
+      mockRockGetRosterAssignments.mockRejectedValue(new Error('rock down'));
+      mockRockGetRunsheetDetails.mockResolvedValue({
+        success: true,
+        data: {
+          channelId: 42,
+          name: 'MNL Crowne // October 11, 2026 // 10AM',
+          columns: [{ id: 1, key: 'PLATFORM', name: 'Platform', fieldTypeId: 18 }],
+          items: [
+            { id: 1, order: 1, title: 'Welcome', duration: 5, attributeValues: {} },
+            { id: 2, order: -100, title: 'Roster: Service Director', duration: 0, attributeValues: { PLATFORM: 'Stored Director' } },
+          ],
+          contentChannelTypeId: 13,
+        },
+      } as any);
+
+      const response = await GET(new Request('http://localhost:8000/api/runsheet-export/42'), {
+        params: Promise.resolve({ channelId: '42' }),
+      });
+      expect(response.status).toBe(200);
+      const model = mockRenderRunsheetPdf.mock.calls[0][0];
+      expect(model.roster?.serviceRoles.find((r) => r.label === 'Service Director')?.value).toBe('Stored Director');
     });
 
     it('returns 500 JSON with no PDF bytes when rendering throws', async () => {

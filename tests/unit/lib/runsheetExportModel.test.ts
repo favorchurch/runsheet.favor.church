@@ -167,7 +167,7 @@ describe('buildRunsheetExportModel pure function', () => {
     };
 
     const model = buildRunsheetExportModel(details);
-    expect(model.title).toBe('MNL Crowne');
+    expect(model.title).toBe(details.name);
     expect(model.time).toBe('10AM');
     expect(model.campus).toBe('MNL');
     expect(model.subtitle).toBe('Sunday Service');
@@ -323,5 +323,75 @@ describe('personScrubber', () => {
     expect(model.rows[0].values['PLATFORM']).toBe('—');
     expect(model.rows[0].values['DESCRIPTION']).toContain('12345');
     expect(model.rows[0].values['DESCRIPTION']).toContain('help@favor.church');
+  });
+});
+
+describe('buildRunsheetExportModel event team roster', () => {
+  const columns = [
+    { id: 1, key: 'PLATFORM', name: 'Platform', fieldTypeId: 18 },
+    { id: 2, key: 'DESCRIPTION', name: 'Detail' },
+  ];
+  const items = [
+    { id: 1, order: 1, title: 'Runsheet Huddle', duration: 5, attributeValues: { PLATFORM: 'Ana Cruz' } },
+    { id: 2, order: 2, title: 'MC1 Welcome', duration: 5, attributeValues: { PLATFORM: 'Ben Lim, Cara Tan (guest)' } },
+    { id: 3, order: 3, title: 'Sermon', duration: 30, attributeValues: { PLATFORM: '6f1c2b3a-1111-2222-3333-444455556666' } },
+    { id: 4, order: 4, title: 'Wrap-Up', duration: 5, detail: '<p>Give &amp; go</p>', attributeValues: {} },
+    { id: 90, order: -100, title: 'Roster: Service Director', duration: 0, attributeValues: { PLATFORM: 'Stored Director' } },
+    { id: 91, order: -99, title: 'Roster: Music Director', duration: 0, attributeValues: { PLATFORM: 'Stored Music' } },
+  ];
+  const details = {
+    channelId: 5,
+    name: 'MNL Crowne // October 11, 2026 // 10AM',
+    columns,
+    items,
+    contentChannelTypeId: 13,
+  } as unknown as RunsheetDetails;
+  const roleValue = (model: ReturnType<typeof buildRunsheetExportModel>, label: string) =>
+    model.roster?.serviceRoles.find((r) => r.label === label)?.value;
+  const platformValue = (model: ReturnType<typeof buildRunsheetExportModel>, label: string) =>
+    model.roster?.platformRoles.find((r) => r.label === label)?.value;
+
+  it('falls back to the stored Roster: rows and reads platform roles from the schedule', () => {
+    const model = buildRunsheetExportModel(details);
+    expect(model.roster?.serviceRoles).toHaveLength(10);
+    expect(roleValue(model, 'Service Director')).toBe('Stored Director');
+    expect(roleValue(model, 'Security Lead')).toBe('');
+    expect(platformValue(model, 'Runsheet Huddle')).toBe('Ana Cruz');
+    expect(platformValue(model, 'MC 1')).toBe('Ben Lim, Cara Tan');
+    expect(platformValue(model, 'Wrap/Up Announcements')).toBe('Give & go');
+    // Roster rows never leak into the segment table.
+    expect(model.rows.some((r) => r.title.startsWith('Roster:'))).toBe(false);
+  });
+
+  it('never prints an unresolved person id in the roster', () => {
+    const model = buildRunsheetExportModel(details);
+    expect(platformValue(model, 'Preacher')).toBe('');
+  });
+
+  it('prefers Rock names for linked roles and keeps the stored value for roles Rock lacks', () => {
+    const model = buildRunsheetExportModel(details, {
+      roster: {
+        success: true,
+        rockManaged: true,
+        linked: true,
+        roles: [{ roleTitle: 'Roster: Service Director', people: [{ name: 'Rock Director' }, { name: 'Second Person' }] }],
+      },
+    });
+    expect(roleValue(model, 'Service Director')).toBe('Rock Director, Second Person');
+    expect(roleValue(model, 'Music Director')).toBe('Stored Music');
+  });
+
+  it('uses the stored rows when Rock could not be read', () => {
+    const model = buildRunsheetExportModel(details, {
+      roster: { success: false, rockManaged: true, linked: false, roles: [] },
+    });
+    expect(roleValue(model, 'Service Director')).toBe('Stored Director');
+  });
+
+  it('omits the roster when Rock manages the runsheet but has no roster for it', () => {
+    const model = buildRunsheetExportModel(details, {
+      roster: { success: true, rockManaged: true, linked: false, roles: [] },
+    });
+    expect(model.roster).toBeNull();
   });
 });
