@@ -35,7 +35,11 @@ export function scrubPersonValue(value: string | undefined | null): string {
   // 3. Contains an email address
   const hasEmail = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(trimmed);
 
-  if (isGuid || isNumericId || hasEmail) {
+  // 4. Matches phone-shaped values (only digits, '+', spaces, dashes, parentheses, dots with 7+ digits)
+  const isPhoneShape =
+    /^[0-9+\s\-().]+$/.test(trimmed) && (trimmed.match(/\d/g) ?? []).length >= 7;
+
+  if (isGuid || isNumericId || hasEmail || isPhoneShape) {
     return '—';
   }
 

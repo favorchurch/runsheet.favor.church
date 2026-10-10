@@ -251,6 +251,13 @@ describe('personScrubber', () => {
     expect(scrubPersonValue('Pastor John <john@favor.church>')).toBe('—');
   });
 
+  it('renders "—" for phone-shaped values', () => {
+    expect(scrubPersonValue('+1 (555) 123-4567')).toBe('—');
+    expect(scrubPersonValue('+63 917 123 4567')).toBe('—');
+    expect(scrubPersonValue('0917-123-4567')).toBe('—');
+    expect(scrubPersonValue('123.456.7890')).toBe('—');
+  });
+
   it('renders empty string for null or empty values', () => {
     expect(scrubPersonValue('')).toBe('');
     expect(scrubPersonValue(null)).toBe('');

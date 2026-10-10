@@ -28,20 +28,22 @@ function mockValidSession() {
   } as any;
 }
 
-describe('GET /api/runsheet-export access and validation', () => {
+describe('GET /api/runsheet-export/[channelId] access and validation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   describe('channelId validation', () => {
     it.each([
-      ['missing channelId', 'http://localhost:8000/api/runsheet-export'],
-      ['non-numeric channelId', 'http://localhost:8000/api/runsheet-export?channelId=abc'],
-      ['zero channelId', 'http://localhost:8000/api/runsheet-export?channelId=0'],
-      ['negative channelId', 'http://localhost:8000/api/runsheet-export?channelId=-42'],
-      ['floating point channelId', 'http://localhost:8000/api/runsheet-export?channelId=42.5'],
-    ])('rejects %s with 400 before checking session or rock', async (_label, url) => {
-      const response = await GET(new Request(url));
+      ['missing channelId', ''],
+      ['non-numeric channelId', 'abc'],
+      ['zero channelId', '0'],
+      ['negative channelId', '-42'],
+      ['floating point channelId', '42.5'],
+    ])('rejects %s with 400 before checking session or rock', async (_label, channelIdVal) => {
+      const response = await GET(new Request('http://localhost:8000/api/runsheet-export/' + channelIdVal), {
+        params: Promise.resolve({ channelId: channelIdVal }),
+      });
       expect(response.status).toBe(400);
 
       const json = await response.json();
@@ -57,7 +59,9 @@ describe('GET /api/runsheet-export access and validation', () => {
     it('returns 401 when getRockSession throws', async () => {
       mockGetRockSession.mockRejectedValue(new Error('Session error'));
 
-      const response = await GET(new Request('http://localhost:8000/api/runsheet-export?channelId=42'));
+      const response = await GET(new Request('http://localhost:8000/api/runsheet-export/42'), {
+        params: Promise.resolve({ channelId: '42' }),
+      });
       expect(response.status).toBe(401);
 
       const json = await response.json();
@@ -70,7 +74,9 @@ describe('GET /api/runsheet-export access and validation', () => {
     it('returns 401 when getRockSession returns null', async () => {
       mockGetRockSession.mockResolvedValue(null as any);
 
-      const response = await GET(new Request('http://localhost:8000/api/runsheet-export?channelId=42'));
+      const response = await GET(new Request('http://localhost:8000/api/runsheet-export/42'), {
+        params: Promise.resolve({ channelId: '42' }),
+      });
       expect(response.status).toBe(401);
 
       const json = await response.json();
@@ -89,7 +95,9 @@ describe('GET /api/runsheet-export access and validation', () => {
         error: 'You do not have access to runsheets.',
       });
 
-      const response = await GET(new Request('http://localhost:8000/api/runsheet-export?channelId=42'));
+      const response = await GET(new Request('http://localhost:8000/api/runsheet-export/42'), {
+        params: Promise.resolve({ channelId: '42' }),
+      });
       expect(response.status).toBe(403);
 
       const json = await response.json();
@@ -113,7 +121,9 @@ describe('GET /api/runsheet-export access and validation', () => {
           error: errorString,
         } as any);
 
-        const response = await GET(new Request('http://localhost:8000/api/runsheet-export?channelId=42'));
+        const response = await GET(new Request('http://localhost:8000/api/runsheet-export/42'), {
+          params: Promise.resolve({ channelId: '42' }),
+        });
         expect(response.status).toBe(expectedStatus);
 
         const json = await response.json();
@@ -131,7 +141,9 @@ describe('GET /api/runsheet-export access and validation', () => {
         error: errorMsg,
       } as any);
 
-      const response = await GET(new Request('http://localhost:8000/api/runsheet-export?channelId=42'));
+      const response = await GET(new Request('http://localhost:8000/api/runsheet-export/42'), {
+        params: Promise.resolve({ channelId: '42' }),
+      });
       expect(response.status).toBe(500);
 
       const contentType = response.headers.get('Content-Type') || '';
@@ -177,7 +189,9 @@ describe('GET /api/runsheet-export access and validation', () => {
         },
       } as any);
 
-      const response = await GET(new Request('http://localhost:8000/api/runsheet-export?channelId=42'));
+      const response = await GET(new Request('http://localhost:8000/api/runsheet-export/42'), {
+        params: Promise.resolve({ channelId: '42' }),
+      });
       expect(response.status).toBe(200);
       expect(response.headers.get('Content-Type')).toBe('application/pdf');
 

@@ -11,9 +11,12 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-export async function GET(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const rawChannelId = url.searchParams.get('channelId');
+export async function GET(
+  _request: Request,
+  context: { params: Promise<{ channelId: string }> | { channelId: string } }
+): Promise<Response> {
+  const params = await context?.params;
+  const rawChannelId = params?.channelId;
 
   // 1. Rejects non-numeric or non-positive channelId -> 400
   if (!rawChannelId || !/^\d+$/.test(rawChannelId)) {

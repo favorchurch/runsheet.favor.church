@@ -11,6 +11,7 @@ const nextConfig = {
   },
   reactStrictMode: false,
   outputFileTracingIncludes: {
+    '/api/runsheet-export/**/*': ['./public/fonts/**/*'],
     '/api/runsheet-export': ['./public/fonts/**/*'],
   },
   experimental: {
