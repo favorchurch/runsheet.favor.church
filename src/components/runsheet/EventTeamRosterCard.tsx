@@ -3,66 +3,18 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
-import { isPersonColumn } from '@/constants/runsheetColumns';
-import { parsePeopleString } from './PeopleSearchDropdown';
+import {
+  VITAL_ROLES,
+  computePlatformRoles,
+  extractPeopleFromRow,
+  getVitalRoleValue,
+  parsePeopleString,
+} from '@/lib/eventTeamRoster';
 import { HiUserGroup, HiPencilSquare, HiChevronDown, HiChevronUp, HiXMark, HiUser } from 'react-icons/hi2';
 import { RichTextContent } from './RichTextContent';
 import { getRosterCollapsedPreference, setRosterCollapsedPreference } from '@/lib/userPreferences';
 
-export const VITAL_ROLES = [
-  'Service Director',
-  'Service Producer',
-  'Assistant Service Producers',
-  'Stage Manager Captain',
-  'Assistant Stage Managers',
-  'Music Director',
-  'Offstage Director',
-  'Worship Leaders',
-  'Host Core Cap',
-  'Security Lead',
-] as const;
-
-export function extractPeopleFromRow(item: RunsheetItemRow, columns: DynamicAttributeColumn[]): string[] {
-  const names: string[] = [];
-  columns.forEach((col) => {
-    if (isPersonColumn(col)) {
-      const val = item.attributeValues?.[col.key] || '';
-      if (val) {
-        parsePeopleString(val).forEach((p) => {
-          if (p.name && !names.includes(p.name)) {
-            names.push(p.name);
-          }
-        });
-      }
-    }
-  });
-  return names;
-}
-
-export function computePlatformRoles(items: RunsheetItemRow[], columns: DynamicAttributeColumn[]) {
-  const findRow = (queries: string[]) => {
-    return items.find((item) => {
-      const cleanTitle = (item.title || '').replace(/<[^>]*>/g, '').toLowerCase().trim();
-      return queries.some((q) => cleanTitle.includes(q.toLowerCase()));
-    });
-  };
-
-  const runsheetHuddleRow = findRow(['runsheet huddle']);
-  const huddleRow = findRow(['all-in huddle', 'huddle hype']);
-  const mc1Row = findRow(['mc1', 'mc 1']);
-  const mc2Row = findRow(['mc2', 'mc 2']);
-  const preacherRow = findRow(['sermon', 'preacher']);
-  const wrapRow = findRow(['wrap-up', 'wrap/up', 'announcements']);
-
-  return {
-    runsheetHuddle: runsheetHuddleRow ? extractPeopleFromRow(runsheetHuddleRow, columns).join(', ') : '',
-    huddleHype: huddleRow ? extractPeopleFromRow(huddleRow, columns).join(', ') : '',
-    mc1: mc1Row ? extractPeopleFromRow(mc1Row, columns).join(', ') : '',
-    mc2: mc2Row ? extractPeopleFromRow(mc2Row, columns).join(', ') : '',
-    preacher: preacherRow ? extractPeopleFromRow(preacherRow, columns).join(', ') : '',
-    wrapText: wrapRow ? (wrapRow.detail || wrapRow.title || '').trim() : '',
-  };
-}
+export { VITAL_ROLES, extractPeopleFromRow, computePlatformRoles };
 
 export function ensureRosterItems(items: RunsheetItemRow[]): RunsheetItemRow[] {
   const updated = [...items];
@@ -124,7 +76,6 @@ export function EventTeamRosterCard({
   const [activeModalData, setActiveModalData] = useState<RosterModalData | null>(null);
   const [mounted, setMounted] = useState(false);
   const platform = computePlatformRoles(items, columns);
-  const personCol = columns.find(isPersonColumn) || columns[0] || { key: 'PLATFORM' };
 
   useEffect(() => {
     setMounted(true);
@@ -166,15 +117,8 @@ export function EventTeamRosterCard({
    * `Roster: <role>` item stays as a mirror for propagate / compare / print, and
    * is what we fall back to when Rock could not be read.
    */
-  const getRosterValue = (role: string) => {
-    const title = `Roster: ${role}`;
-    if (rockLinked && !rockReadFailed) {
-      const fromRock = rockRoles.find((r) => r.roleTitle === title);
-      if (fromRock) return fromRock.people.map((p) => p.name).join(', ');
-    }
-    const row = items.find((item) => item.title === title);
-    return row?.attributeValues?.[personCol.key] || '';
-  };
+  const getRosterValue = (role: string) =>
+    getVitalRoleValue(role, items, columns, { linked: rockLinked, readFailed: rockReadFailed, roles: rockRoles });
 
   const assignedCount = VITAL_ROLES.filter((r) => !!getRosterValue(r)).length;
 

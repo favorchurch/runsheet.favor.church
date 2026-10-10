@@ -3,29 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { searchRockPeople, type RockPersonSearchResult } from '@/server-actions/searchRockPeople';
 import { CELL_ATTRIBUTE, FORMAT_BAR_ATTRIBUTE } from './RichTextCell';
+import { parsePeopleString, type PersonItem } from '@/lib/eventTeamRoster';
 
 const MIN_QUERY_LENGTH = 2;
 const SEARCH_DEBOUNCE_MS = 250;
 
-export interface PersonItem {
-  id: string;
-  name: string;
-  isGuest: boolean;
-}
-
-export function parsePeopleString(str: string): PersonItem[] {
-  if (!str || !str.trim()) return [];
-  const parts = str.split(/[,;\n]/).map((p) => p.trim()).filter(Boolean);
-  return parts.map((part, index) => {
-    const isGuest = /\(guest\)$/i.test(part);
-    const cleanName = part.replace(/\s*\(guest\)$/i, '').trim();
-    return {
-      id: `p_${index}_${cleanName.replace(/\s+/g, '_')}`,
-      name: cleanName,
-      isGuest,
-    };
-  });
-}
+export { parsePeopleString, type PersonItem };
 
 export function formatPeopleArray(items: PersonItem[]): string {
   return items
