@@ -22,6 +22,7 @@ const config: Config = {
     '\\.(svg|png|jpe?g|gif|webp|avif|ico|bmp)$': '<rootDir>/tests/mocks/fileMock.ts',
     '^@/(.*)$': '<rootDir>/src/$1',
     '^server-only$': '<rootDir>/tests/mocks/server-only.ts',
+    '^@react-pdf/hyphenate/(.*)$': '<rootDir>/node_modules/.pnpm/@react-pdf+hyphenate@0.1.0/node_modules/@react-pdf/hyphenate/lib/$1.js',
   },
   preset: 'ts-jest',
   watchman: false,
@@ -34,10 +35,11 @@ const config: Config = {
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {
       tsconfig: 'tsconfig.jest.json'
-    }]
+    }],
+    '^.+\\.jsx?$': '<rootDir>/src/lib/runsheetExport/jestJsTransform.cjs',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(jose|@auth0/nextjs-auth0|@uidotdev/usehooks|lodash-es)/)',
+    'node_modules/(?!(?:.*[\\/])?(@react-pdf|color-string|color-name|yoga-layout|jose|@auth0/nextjs-auth0|@uidotdev/usehooks|lodash-es)[\\/])',
     '\\.pnp\\.[^\\/]+$'
   ],
   verbose: true,

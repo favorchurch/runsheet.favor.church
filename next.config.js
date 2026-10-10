@@ -10,6 +10,9 @@ const nextConfig = {
         : process.env.AUTH0_BASE_URL,
   },
   reactStrictMode: false,
+  outputFileTracingIncludes: {
+    '/api/runsheet-export': ['./public/fonts/**/*'],
+  },
   experimental: {
     optimizePackageImports: [
       '@mui/material',

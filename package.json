@@ -1,6 +1,6 @@
 {
   "name": "runsheet-favor-church",
-  "version": "1.29.1",
+  "version": "1.30.0",
   "private": true,
   "ts-node": {
     "esm": true,
@@ -34,6 +34,7 @@
     "@mui/material": "^5.17.1",
     "@mui/x-data-grid": "^6.20.4",
     "@next/third-parties": "^15.3.2",
+    "@react-pdf/renderer": "4.9.0",
     "@tailwindcss/aspect-ratio": "^0.4.2",
     "@tiptap/extension-text-align": "^3.29.2",
     "@tiptap/extension-text-style": "^3.29.2",
@@ -85,6 +86,7 @@
     "cross-env": "^10.1.0",
     "eslint": "^8.57.1",
     "eslint-config-next": "15.5.14",
+    "fontkit": "2.0.4",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "node-fetch": "2",
