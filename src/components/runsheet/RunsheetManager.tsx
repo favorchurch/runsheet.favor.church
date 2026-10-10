@@ -620,7 +620,7 @@ export function RunsheetManager({
             <div className="relative">
               {canEditSelected && (
                 <PreacherNotesPanel
-                  key={runsheetData.channelId}
+                  key={`notes-${runsheetData.channelId}`}
                   channelId={runsheetData.channelId}
                 />
               )}
