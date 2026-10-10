@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
-import { RUNSHEET_ERROR_STATUS_MAP } from '@/lib/runsheetExport';
+import { renderRunsheetPdf, RUNSHEET_ERROR_STATUS_MAP } from '@/lib/runsheetExport';
 import { rockGetRunsheetDetails } from '@/server-actions/rockGetRunsheetDetails';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 import { GET } from './route';
@@ -8,6 +8,11 @@ import { GET } from './route';
 jest.mock('@/auth0-hooks/server/getRockSession', () => ({
   getRockSession: jest.fn(),
 }));
+
+jest.mock('@/lib/runsheetExport', () => {
+  const actual = jest.requireActual<typeof import('@/lib/runsheetExport')>('@/lib/runsheetExport');
+  return { ...actual, renderRunsheetPdf: jest.fn(actual.renderRunsheetPdf) };
+});
 
 jest.mock('@/server-actions/runsheetAuthorization', () => ({
   assertRunsheetViewAccess: jest.fn(),
@@ -17,6 +22,7 @@ jest.mock('@/server-actions/rockGetRunsheetDetails', () => ({
   rockGetRunsheetDetails: jest.fn(),
 }));
 
+const mockRenderRunsheetPdf = jest.mocked(renderRunsheetPdf);
 const mockGetRockSession = jest.mocked(getRockSession);
 const mockAssertRunsheetViewAccess = jest.mocked(assertRunsheetViewAccess);
 const mockRockGetRunsheetDetails = jest.mocked(rockGetRunsheetDetails);
@@ -195,16 +201,37 @@ describe('GET /api/runsheet-export/[channelId] access and validation', () => {
       expect(response.status).toBe(200);
       expect(response.headers.get('Content-Type')).toBe('application/pdf');
 
-      const disposition = response.headers.get('Content-Disposition');
-      expect(disposition).toBeDefined();
-      expect(disposition).toContain('attachment;');
-      expect(disposition).toContain('filename="');
-      expect(disposition).toContain("filename*=UTF-8''");
+      expect(response.headers.get('Content-Disposition')).toBe(
+        `attachment; filename="mnl-crowne-2026-10-11.pdf"; filename*=UTF-8''mnl-crowne-2026-10-11.pdf`,
+      );
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store');
 
       // Verify %PDF magic bytes
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       expect(buffer.slice(0, 4).toString('utf-8')).toBe('%PDF');
+    });
+
+    it('returns 500 JSON with no PDF bytes when rendering throws', async () => {
+      mockRenderRunsheetPdf.mockRejectedValueOnce(new Error('layout exploded: secret detail'));
+      mockRockGetRunsheetDetails.mockResolvedValue({
+        success: true,
+        data: {
+          channelId: 42,
+          name: 'MNL Crowne // October 11, 2026 // 10AM',
+          items: [],
+          columns: [],
+          contentChannelTypeId: 13,
+        },
+      } as any);
+
+      const response = await GET(new Request('http://localhost:8000/api/runsheet-export/42'), {
+        params: Promise.resolve({ channelId: '42' }),
+      });
+      expect(response.status).toBe(500);
+      expect(response.headers.get('Content-Type')).toContain('application/json');
+      expect(response.headers.get('Content-Disposition')).toBeNull();
+      expect(await response.json()).toEqual({ error: 'Failed to generate PDF' });
     });
   });
 });

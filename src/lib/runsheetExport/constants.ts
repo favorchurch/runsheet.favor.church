@@ -5,4 +5,4 @@ export const RUNSHEET_ERROR_STATUS_MAP: Readonly<Record<string, number>> = {
   'You do not have access to runsheets.': 403,
 };
 
-export const UNEXPECTED_ERROR_MESSAGE = 'An unexpected error occurred while generating the runsheet PDF.';
+export const PDF_GENERATION_ERROR_MESSAGE = 'Failed to generate PDF';

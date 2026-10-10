@@ -13,17 +13,31 @@ import type { RunsheetExportModel } from './model';
 
 let fontsInitialized = false;
 
+// react-pdf falls back to the next family per glyph
+const EXPORT_FONT_FAMILY = ['Noto Sans', 'Noto Sans KR'];
+
 export function initializeExportFonts(): void {
   if (fontsInitialized) return;
 
   const regularFont = path.join(process.cwd(), 'public/fonts/NotoSans-Regular.ttf');
   const boldFont = path.join(process.cwd(), 'public/fonts/NotoSans-Bold.ttf');
+  const krRegularFont = path.join(process.cwd(), 'public/fonts/NotoSansKR-Regular.ttf');
+  const krBoldFont = path.join(process.cwd(), 'public/fonts/NotoSansKR-Bold.ttf');
 
   Font.register({
     family: 'Noto Sans',
     fonts: [
       { src: regularFont, fontWeight: 'normal' },
       { src: boldFont, fontWeight: 'bold' },
+    ],
+  });
+
+  // Per-glyph fallback for Hangul / Hanja / kana (see EXPORT_FONT_FAMILY)
+  Font.register({
+    family: 'Noto Sans KR',
+    fonts: [
+      { src: krRegularFont, fontWeight: 'normal' },
+      { src: krBoldFont, fontWeight: 'bold' },
     ],
   });
 
@@ -42,7 +56,7 @@ export function initializeExportFonts(): void {
 
 const styles = StyleSheet.create({
   page: {
-    fontFamily: 'Noto Sans',
+    fontFamily: EXPORT_FONT_FAMILY,
     fontSize: 8,
     paddingTop: 24,
     paddingBottom: 36,
@@ -69,6 +83,12 @@ const styles = StyleSheet.create({
   meta: {
     fontSize: 8.5,
     color: '#475569',
+  },
+  scope: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#334155',
+    marginBottom: 2,
   },
   subtitle: {
     fontSize: 8,
@@ -153,6 +173,11 @@ export function RunsheetPdfDocument({ model }: RunsheetPdfDocumentProps): React.
             </Text>
             {metaString ? <Text wrap style={styles.meta}>{metaString}</Text> : null}
           </View>
+          {model.scope ? (
+            <Text wrap style={styles.scope}>
+              {model.scope}
+            </Text>
+          ) : null}
           {model.subtitle ? (
             <Text wrap style={styles.subtitle}>
               {model.subtitle}

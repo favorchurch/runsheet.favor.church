@@ -1,3 +1,7 @@
+import { NOTO_SANS_KR_RANGES } from './fontCoverageKr';
+
+export { NOTO_SANS_KR_RANGES };
+
 /**
  * Code point ranges present in the bundled Noto Sans (Regular and Bold share
  * one cmap), as [first, last] inclusive pairs. Anything outside them has no
@@ -73,16 +77,12 @@ export const NOTO_SANS_RANGES: ReadonlyArray<readonly [number, number]> = [
   [0x1DF00, 0x1DF1E],
 ];
 
-/**
- * Checks whether a Unicode code point has a corresponding glyph in the
- * bundled Noto Sans font.
- */
-export function isSupportedCodePoint(codePoint: number): boolean {
+function inRanges(ranges: ReadonlyArray<readonly [number, number]>, codePoint: number): boolean {
   let low = 0;
-  let high = NOTO_SANS_RANGES.length - 1;
+  let high = ranges.length - 1;
   while (low <= high) {
     const mid = (low + high) >> 1;
-    const [start, end] = NOTO_SANS_RANGES[mid];
+    const [start, end] = ranges[mid];
     if (codePoint < start) {
       high = mid - 1;
     } else if (codePoint > end) {
@@ -95,8 +95,16 @@ export function isSupportedCodePoint(codePoint: number): boolean {
 }
 
 /**
+ * Checks whether a Unicode code point has a glyph in the bundled Noto Sans or
+ * its Noto Sans KR fallback.
+ */
+export function isSupportedCodePoint(codePoint: number): boolean {
+  return inRanges(NOTO_SANS_RANGES, codePoint) || inRanges(NOTO_SANS_KR_RANGES, codePoint);
+}
+
+/**
  * Checks whether the given text contains any glyphs that cannot be rendered
- * by Noto Sans (excluding control/whitespace characters \n, \r, \t).
+ * by Noto Sans or Noto Sans KR (excluding control/whitespace characters \n, \r, \t).
  */
 export function hasUnsupportedGlyphs(text: string): boolean {
   if (!text) return false;
@@ -110,26 +118,28 @@ export function hasUnsupportedGlyphs(text: string): boolean {
   return false;
 }
 
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+function isLayoutWhitespace(char: string): boolean {
+  return char === '\n' || char === '\r' || char === '\t';
+}
+
 /**
- * Deterministically replaces any glyph that Noto Sans cannot render (e.g. emoji)
- * with a safe fallback glyph (defaults to '?').
+ * Deterministically replaces any grapheme cluster that the bundled fonts cannot
+ * fully render (e.g. emoji, including variation-selector and ZWJ sequences) with
+ * a single safe fallback glyph (defaults to '?').
  * Control characters \n, \r, \t are preserved for layout.
  */
 export function sanitizeTextForFont(text: string, fallback = '?'): string {
   if (!text) return '';
   let result = '';
-  for (const char of text) {
-    if (char === '\n' || char === '\r' || char === '\t') {
-      result += char;
-      continue;
-    }
-    const codePoint = char.codePointAt(0);
-    if (codePoint !== undefined && isSupportedCodePoint(codePoint)) {
-      result += char;
+  for (const { segment } of graphemeSegmenter.segment(text)) {
+    const chars = Array.from(segment);
+    if (chars.every((c) => isLayoutWhitespace(c) || isSupportedCodePoint(c.codePointAt(0)!))) {
+      result += segment;
     } else {
       result += fallback;
     }
   }
   return result;
 }
-

@@ -172,6 +172,38 @@ describe('buildRunsheetExportModel pure function', () => {
     expect(model.campus).toBe('MNL');
     expect(model.subtitle).toBe('Sunday Service');
     expect(model.date).toContain('2026');
+    expect(model.scope).toBe('Service: MNL Crowne 10AM');
+  });
+
+  it('trims the scope line when the name has no time', () => {
+    const model = buildRunsheetExportModel({
+      channelId: 102,
+      name: 'Easter Special',
+      items: [],
+      columns: [],
+      contentChannelTypeId: 13,
+    });
+    expect(model.scope).toBe('Service: Easter Special');
+  });
+
+  it('sanitizes the scope line and replaces whole emoji sequences with a single "?"', () => {
+    const model = buildRunsheetExportModel({
+      channelId: 103,
+      name: 'MNL 👨‍👩‍👧 Service // October 11, 2026 // 10AM',
+      items: [
+        {
+          id: 1,
+          order: 1,
+          title: 'Prayer',
+          duration: 5,
+          attributeValues: { DESCRIPTION: '<p>unity ❤️ and peace 🕊️</p>' },
+        },
+      ],
+      columns: [{ id: 1, key: 'DESCRIPTION', name: 'Detail' }],
+      contentChannelTypeId: 13,
+    });
+    expect(model.scope).toBe('Service: MNL ? Service 10AM');
+    expect(model.rows[0].values['DESCRIPTION']).toBe('unity ? and peace ?');
   });
 
   it('sanitizes all model strings deterministically with no unsupported glyphs', () => {

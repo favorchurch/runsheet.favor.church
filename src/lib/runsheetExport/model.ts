@@ -52,6 +52,7 @@ export interface RunsheetExportModel {
   time: string;
   campus: string | null;
   subtitle: string;
+  scope: string;
   startTime: string;
   totalDuration: string;
   columns: RunsheetExportColumn[];
@@ -182,6 +183,8 @@ export function buildRunsheetExportModel(details: RunsheetDetails): RunsheetExpo
   const parsedTime = channelName ? extractChannelTime(channelName) : '';
   const parsedCampus = channelName ? extractRunsheetCampus(channelName) : null;
 
+  const scope = `Service: ${parsedTitle} ${parsedTime}`.trim();
+
   return {
     channelId: details.channelId,
     name: sanitizeTextForFont(channelName),
@@ -190,6 +193,7 @@ export function buildRunsheetExportModel(details: RunsheetDetails): RunsheetExpo
     time: sanitizeTextForFont(parsedTime),
     campus: parsedCampus,
     subtitle: sanitizeTextForFont(details.subtitle || ''),
+    scope: sanitizeTextForFont(scope),
     startTime: startTimeRaw,
     totalDuration: formatDurationToHMS(totalDurationMinutes),
     columns,

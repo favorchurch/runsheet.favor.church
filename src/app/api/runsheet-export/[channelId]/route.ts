@@ -1,6 +1,10 @@
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import {
+  buildContentDisposition,
+  buildExportFilename,
   buildRunsheetExportModel,
+  EXPORT_CACHE_CONTROL,
+  PDF_GENERATION_ERROR_MESSAGE,
   renderRunsheetPdf,
   RUNSHEET_ERROR_STATUS_MAP,
 } from '@/lib/runsheetExport';
@@ -58,27 +62,21 @@ export async function GET(
     return Response.json({ error: 'Failed to fetch runsheet details' }, { status: 500 });
   }
 
-  // Build model and render PDF
-  const model = buildRunsheetExportModel(detailsResult.data);
-  const pdfBuffer = await renderRunsheetPdf(model);
+  let pdfBuffer: Buffer;
+  try {
+    pdfBuffer = await renderRunsheetPdf(buildRunsheetExportModel(detailsResult.data));
+  } catch {
+    return Response.json({ error: PDF_GENERATION_ERROR_MESSAGE }, { status: 500 });
+  }
 
-  const rawName = (detailsResult.data.name || `runsheet-${channelId}`).trim();
-  const asciiSlug =
-    rawName
-      .replace(/[^\w\s-]/g, '')
-      .trim()
-      .replace(/[-\s]+/g, '_') || `runsheet_${channelId}`;
-  const asciiFilename = `${asciiSlug}.pdf`;
-  const unicodeFilename = `${rawName}.pdf`;
-
-  const contentDisposition = `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(unicodeFilename)}`;
+  const filename = buildExportFilename(detailsResult.data.name || '', channelId);
 
   return new Response(new Uint8Array(pdfBuffer), {
     status: 200,
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': contentDisposition,
-      'Cache-Control': 'no-store, max-age=0',
+      'Content-Disposition': buildContentDisposition(filename),
+      'Cache-Control': EXPORT_CACHE_CONTROL,
     },
   });
 }

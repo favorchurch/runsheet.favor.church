@@ -1,9 +1,18 @@
 import { describe, expect, it } from '@jest/globals';
+import React from 'react';
 import {
   buildRunsheetExportModel,
+  RunsheetPdfDocument,
   renderRunsheetPdf,
 } from '@/lib/runsheetExport';
 import type { RunsheetDetails, RunsheetItemRow } from '@/types/Runsheet';
+
+function collectText(node: unknown): string[] {
+  if (typeof node === 'string' || typeof node === 'number') return [String(node)];
+  if (Array.isArray(node)) return node.flatMap(collectText);
+  if (React.isValidElement(node)) return collectText((node.props as { children?: unknown }).children);
+  return [];
+}
 
 describe('runsheetExport multi-page and safety rendering', () => {
   it('renders a fixture of at least 60 rows with cells over 2000 chars across multiple pages without truncation', async () => {
@@ -109,9 +118,36 @@ describe('runsheetExport multi-page and safety rendering', () => {
     };
 
     const model = buildRunsheetExportModel(details);
+    expect(model.scope).toBe('Service: BNE Service ? 10AM');
     const pdfBuffer = await renderRunsheetPdf(model);
 
     expect(pdfBuffer).toBeDefined();
     expect(pdfBuffer.slice(0, 4).toString('utf-8')).toBe('%PDF');
+  });
+
+  it('renders the scope line in the fixed header and a Korean fallback glyph run', async () => {
+    const model = buildRunsheetExportModel({
+      channelId: 777,
+      name: 'MNL Crowne // October 11, 2026 // 10AM',
+      items: [
+        {
+          id: 1,
+          order: 1,
+          title: '찬양',
+          duration: 5,
+          attributeValues: { ACTIVITYTITLE: '찬양 Worship' },
+        },
+      ],
+      columns: [],
+      contentChannelTypeId: 13,
+    });
+    expect(model.scope).toBe('Service: MNL Crowne 10AM');
+    expect(model.rows[0].activityTitle).toBe('찬양 Worship');
+
+    const doc = RunsheetPdfDocument({ model });
+    expect(collectText(doc)).toContain('Service: MNL Crowne 10AM');
+
+    const pdfBuffer = await renderRunsheetPdf(model);
+    expect(pdfBuffer.toString('binary')).toContain('NotoSansKR-Regular');
   });
 });
