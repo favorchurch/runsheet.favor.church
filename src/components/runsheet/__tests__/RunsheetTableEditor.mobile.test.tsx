@@ -318,6 +318,55 @@ describe('RunsheetTableEditor Mobile-first layout', () => {
 
       expect(screen.queryByRole('menu', { name: /More actions menu/i })).not.toBeInTheDocument();
     });
+
+    it('keeps subtitle and start time editable from the overflow menu', () => {
+      setViewportWidth(400);
+
+      render(
+        <RunsheetTableEditor
+          channelId={1}
+          channelName="Sun 10:00 AM"
+          columns={columns}
+          initialItems={multiSongItems}
+          initialStartTime="10:00 AM"
+          canEdit={true}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /More actions/i }));
+
+      const subtitle = screen.getByLabelText('Subtitle');
+      fireEvent.change(subtitle, { target: { value: 'Youth Night' } });
+      expect(subtitle).toHaveValue('Youth Night');
+
+      const start = screen.getByLabelText('Start');
+      fireEvent.change(start, { target: { value: '06:00 PM' } });
+      expect(start).toHaveValue('06:00 PM');
+
+      expect(screen.getByRole('button', { name: /Save Runsheet/i })).not.toBeDisabled();
+    });
+
+    it('keeps the menu open while exporting so the busy state is visible', () => {
+      setViewportWidth(400);
+
+      render(
+        <RunsheetTableEditor
+          channelId={1}
+          channelName="Sun 10:00 AM"
+          columns={columns}
+          initialItems={multiSongItems}
+          initialStartTime="10:00 AM"
+          canEdit={true}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /More actions/i }));
+      (global as any).fetch = jest.fn(() => new Promise(() => {}));
+      fireEvent.click(screen.getByRole('button', { name: /Export PDF/i }));
+
+      expect(screen.getByRole('menu', { name: /More actions menu/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Exporting/i })).toBeInTheDocument();
+    });
   });
 
   describe('ACCEPT 4: Mobile table mode overflow container and sticky column', () => {

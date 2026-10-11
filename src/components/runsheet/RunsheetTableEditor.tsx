@@ -212,15 +212,8 @@ function buildTemplateState() {
 
 export function checkIsMobile(): boolean {
   if (typeof window === 'undefined') return false;
-  if (typeof window.matchMedia === 'function') {
-    const mq = window.matchMedia('(max-width: 767.98px)');
-    if (mq.matches) return true;
-    const mq768 = window.matchMedia('(max-width: 768px)');
-    if (mq768.matches) return true;
-    const mq767 = window.matchMedia('(max-width: 767px)');
-    if (mq767.matches) return true;
-  }
-  return typeof window.innerWidth === 'number' && window.innerWidth > 0 && window.innerWidth < 768;
+  if (typeof window.matchMedia === 'function') return window.matchMedia('(max-width: 767.98px)').matches;
+  return window.innerWidth > 0 && window.innerWidth < 768;
 }
 
 export function getSegmentSongNames(item: RunsheetItemRow, isMusic: boolean): string[] {
@@ -239,7 +232,7 @@ export function getSegmentSongNames(item: RunsheetItemRow, isMusic: boolean): st
   if (item.attributeValues) {
     for (const [key, val] of Object.entries(item.attributeValues)) {
       const upper = key.toUpperCase();
-      if ((upper === 'SONGS' || upper === 'SONG' || upper.includes('SONG')) && val) {
+      if (upper.includes('SONG') && val) {
         const plain = htmlToPlainText(val).trim();
         if (plain) {
           const parts = plain.split(/\n|\r\n|,|•|;/).map((s) => s.trim()).filter(Boolean);
@@ -482,19 +475,12 @@ export function RunsheetTableEditor({
 
   const [isDirty, setIsDirty] = useState(() => !!initialTemplate);
 
-  const [isMobile, setIsMobile] = useState<boolean>(() => {
-    return checkIsMobile();
-  });
+  const [isMobile, setIsMobile] = useState(false);
 
   const [isOverflowOpen, setIsOverflowOpen] = useState(false);
   const [expandedDetailsMap, setExpandedDetailsMap] = useState<Record<string, boolean>>({});
 
-  const [mobileViewMode, setMobileViewMode] = useState<'cards' | 'grid'>(() => {
-    if (typeof window !== 'undefined' && window.localStorage?.getItem(STORAGE_KEY_VIEW_MODE)) {
-      return getViewModePreference();
-    }
-    return 'grid'; // MUTATION
-  });
+  const [mobileViewMode, setMobileViewMode] = useState<'cards' | 'grid'>('grid');
 
   useEffect(() => {
     const updateMobile = () => {
@@ -511,17 +497,13 @@ export function RunsheetTableEditor({
   }, []);
 
   useEffect(() => {
-    const hasStored = typeof window !== 'undefined' && !!window.localStorage?.getItem(STORAGE_KEY_VIEW_MODE);
-    if (!hasStored) {
-      if (checkIsMobile()) {
-        setMobileViewMode('cards');
-      } else {
-        setMobileViewMode('grid');
-      }
-    } else {
-      const preferredMode = getViewModePreference();
-      setMobileViewMode(preferredMode);
+    let hasStored = false;
+    try {
+      hasStored = !!window.localStorage.getItem(STORAGE_KEY_VIEW_MODE);
+    } catch {
+      // Storage blocked (private mode); fall back to the viewport default.
     }
+    setMobileViewMode(hasStored ? getViewModePreference() : checkIsMobile() ? 'cards' : 'grid');
   }, []);
 
   useEffect(() => {
@@ -2357,6 +2339,11 @@ export function RunsheetTableEditor({
                     Read Only
                   </span>
                 )}
+                {isTemplate && (
+                  <span className="rounded-md bg-pink-100 px-1.5 py-0.5 text-[10px] font-bold text-pink-800 shrink-0">
+                    Template
+                  </span>
+                )}
               </div>
 
               {/* Right: Save (when editing) + Edit mode toggle (when authorized) + Overflow menu */}
@@ -2431,6 +2418,40 @@ export function RunsheetTableEditor({
                         aria-orientation="vertical"
                         className="absolute right-0 top-full mt-1.5 z-50 min-w-[190px] rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl flex flex-col gap-1"
                       >
+                        {/* Subtitle and start time live here on mobile so the header stays one row. */}
+                        <div role="none" className="flex flex-col gap-1.5 px-2.5 py-1.5">
+                          <label className="flex flex-col gap-0.5 text-[10px] font-semibold text-slate-600">
+                            Subtitle
+                            <input
+                              type="text"
+                              disabled={readOnly}
+                              value={subtitle}
+                              onChange={(e) => {
+                                setSubtitle(e.target.value);
+                                setIsDirty(true);
+                              }}
+                              placeholder="Sunday Service"
+                              className="rounded border border-slate-300 bg-white px-1.5 py-1 text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
+                            />
+                          </label>
+                          {!isTemplate && (
+                            <label className="flex flex-col gap-0.5 text-[10px] font-semibold text-slate-600">
+                              Start
+                              <input
+                                type="text"
+                                disabled={readOnly}
+                                value={startTime}
+                                onChange={(event) => {
+                                  setStartTime(event.target.value);
+                                  setIsDirty(true);
+                                }}
+                                placeholder="08:00:00 AM"
+                                className="rounded border border-slate-300 bg-white px-1.5 py-1 font-mono text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
+                              />
+                            </label>
+                          )}
+                        </div>
+                        <div className="my-0.5 border-t border-slate-200" />
                         <button
                           type="button"
                           role="menuitem"
@@ -2444,11 +2465,7 @@ export function RunsheetTableEditor({
                           <span>Share</span>
                         </button>
 
-                        <div
-                          role="menuitem"
-                          onClick={() => setIsOverflowOpen(false)}
-                          className="w-full flex"
-                        >
+                        <div role="none" className="w-full flex">
                           <ExportPdfButton
                             channelId={channelId}
                             channelName={channelName}
@@ -3180,7 +3197,7 @@ export function RunsheetTableEditor({
                         rowSpan={spanInfo.count}
                         style={getColumnStyle('START', 'Start')}
                         data-testid="sticky-time-cell"
-                        className={`select-none border-b border-r border-slate-300 bg-slate-50/90 p-0.5 sm:p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px] sticky z-20 ${readOnly ? 'left-0' : 'left-[28px]'}`}
+                        className={`select-none border-b border-r border-slate-300 bg-slate-50 p-0.5 sm:p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px] sticky z-20 ${readOnly ? 'left-0' : 'left-[28px]'}`}
                       >
                         {spanInfo.startStr}
                       </td>
