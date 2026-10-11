@@ -3,10 +3,10 @@
 import type { Editor } from '@tiptap/react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiChevronDown, HiChevronUp, HiDocumentDuplicate, HiExclamationCircle, HiEye, HiLockClosed, HiMusicalNote, HiPencilSquare, HiPlus, HiRectangleStack, HiShare, HiTableCells, HiTrash } from 'react-icons/hi2';
+import { HiArrowPath, HiArrowUturnLeft, HiArrowUturnRight, HiBars3, HiCheck, HiChevronDown, HiChevronUp, HiDocumentDuplicate, HiEllipsisVertical, HiExclamationCircle, HiEye, HiLockClosed, HiMusicalNote, HiPencilSquare, HiPlus, HiRectangleStack, HiShare, HiTableCells, HiTrash } from 'react-icons/hi2';
 
 import { htmlToPlainText } from '@/lib/richText';
-import { getViewModePreference, setViewModePreference } from '@/lib/userPreferences';
+import { getViewModePreference, setViewModePreference, STORAGE_KEY_VIEW_MODE } from '@/lib/userPreferences';
 import toast from 'react-hot-toast';
 
 interface RunsheetSnapshot {
@@ -58,7 +58,7 @@ import { generateRunsheetTitle } from './CreateRunsheetForm';
 import { CELL_ATTRIBUTE, RichTextCell } from './RichTextCell';
 import { RichTextContent } from './RichTextContent';
 import { RichTextToolbar } from './RichTextToolbar';
-import { SongSearchDropdown } from './SongSearchDropdown';
+import { SongSearchDropdown, parseSongAndKey } from './SongSearchDropdown';
 import { SongDetailModal } from './SongDetailModal';
 import { ShareRunsheetModal } from './ShareRunsheetModal';
 import { ExportPdfButton } from './ExportPdfButton';
@@ -208,6 +208,62 @@ function buildTemplateState() {
   });
 
   return { templateRows, templateMusicMap };
+}
+
+export function checkIsMobile(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (typeof window.matchMedia === 'function') {
+    const mq = window.matchMedia('(max-width: 767.98px)');
+    if (mq.matches) return true;
+    const mq768 = window.matchMedia('(max-width: 768px)');
+    if (mq768.matches) return true;
+    const mq767 = window.matchMedia('(max-width: 767px)');
+    if (mq767.matches) return true;
+  }
+  return typeof window.innerWidth === 'number' && window.innerWidth > 0 && window.innerWidth < 768;
+}
+
+export function getSegmentSongNames(item: RunsheetItemRow, isMusic: boolean): string[] {
+  const songs: string[] = [];
+
+  if (Array.isArray((item as any).songs)) {
+    for (const s of (item as any).songs) {
+      if (typeof s === 'string' && s.trim()) {
+        if (!songs.includes(s.trim())) songs.push(s.trim());
+      } else if (s && typeof s.title === 'string' && s.title.trim()) {
+        if (!songs.includes(s.title.trim())) songs.push(s.title.trim());
+      }
+    }
+  }
+
+  if (item.attributeValues) {
+    for (const [key, val] of Object.entries(item.attributeValues)) {
+      const upper = key.toUpperCase();
+      if ((upper === 'SONGS' || upper === 'SONG' || upper.includes('SONG')) && val) {
+        const plain = htmlToPlainText(val).trim();
+        if (plain) {
+          const parts = plain.split(/\n|\r\n|,|•|;/).map((s) => s.trim()).filter(Boolean);
+          for (const p of parts) {
+            if (!songs.includes(p)) songs.push(p);
+          }
+        }
+      }
+    }
+  }
+
+  if (isMusic || item.songItemId) {
+    const rawTitle = item.attributeValues?.ACTIVITYTITLE || item.title || '';
+    const plain = htmlToPlainText(rawTitle).trim();
+    if (plain && plain !== 'New Segment') {
+      const parsed = parseSongAndKey(plain);
+      const titleToUse = parsed.songTitle || plain;
+      if (titleToUse && !songs.includes(titleToUse)) {
+        songs.push(titleToUse);
+      }
+    }
+  }
+
+  return songs;
 }
 
 export function RunsheetTableEditor({
@@ -425,14 +481,57 @@ export function RunsheetTableEditor({
   const [durationDrafts, setDurationDrafts] = useState<{ [id: string]: string }>({});
 
   const [isDirty, setIsDirty] = useState(() => !!initialTemplate);
-  const [mobileViewMode, setMobileViewMode] = useState<'cards' | 'grid'>('grid');
+
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    return checkIsMobile();
+  });
+
+  const [isOverflowOpen, setIsOverflowOpen] = useState(false);
+  const [expandedDetailsMap, setExpandedDetailsMap] = useState<Record<string, boolean>>({});
+
+  const [mobileViewMode, setMobileViewMode] = useState<'cards' | 'grid'>(() => {
+    if (typeof window !== 'undefined' && window.localStorage?.getItem(STORAGE_KEY_VIEW_MODE)) {
+      return getViewModePreference();
+    }
+    return 'grid'; // MUTATION
+  });
 
   useEffect(() => {
-    const preferredMode = getViewModePreference();
-    if (preferredMode !== 'grid') {
+    const updateMobile = () => {
+      setIsMobile(checkIsMobile());
+    };
+    updateMobile();
+    window.addEventListener('resize', updateMobile);
+    const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 767.98px)') : null;
+    mq?.addEventListener?.('change', updateMobile);
+    return () => {
+      window.removeEventListener('resize', updateMobile);
+      mq?.removeEventListener?.('change', updateMobile);
+    };
+  }, []);
+
+  useEffect(() => {
+    const hasStored = typeof window !== 'undefined' && !!window.localStorage?.getItem(STORAGE_KEY_VIEW_MODE);
+    if (!hasStored) {
+      if (checkIsMobile()) {
+        setMobileViewMode('cards');
+      } else {
+        setMobileViewMode('grid');
+      }
+    } else {
+      const preferredMode = getViewModePreference();
       setMobileViewMode(preferredMode);
     }
   }, []);
+
+  useEffect(() => {
+    if (!isOverflowOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOverflowOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOverflowOpen]);
   /** Displayed/persisted subtitle falls back to this when Rock has none set; the baseline for dirty-checking must use the same fallback or an untouched runsheet reads as dirty. */
   const normalizedInitialSubtitle = initialSubtitle || 'Sunday Service';
   const [subtitle, setSubtitle] = useState<string>(normalizedInitialSubtitle);
@@ -2244,186 +2343,388 @@ export function RunsheetTableEditor({
           style={{ top: stickyTopOffset }}
           className="sticky z-40 bg-white/95 backdrop-blur border-b border-slate-300 p-1.5 sm:p-2 shadow-xs space-y-1 rounded-t-xl -mx-2 -mt-2 sm:-mx-3 sm:-mt-3"
         >
-          <div className="flex flex-col justify-between gap-1.5 sm:flex-row sm:items-center">
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm sm:text-base font-bold leading-tight text-slate-900">{channelName}</h2>
+          {isMobile ? (
+            /* Mobile Single Compact Row */
+            <div className="flex items-center justify-between gap-1.5 min-h-[36px]">
+              {/* Left: Channel name & Read Only badge */}
+              <div className="flex items-center gap-1.5 min-w-0">
+                <h2 className="text-xs sm:text-sm font-bold leading-tight text-slate-900 truncate">
+                  {channelName}
+                </h2>
                 {readOnly && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.2 text-[10px] font-bold text-amber-900 border border-amber-300">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.2 text-[10px] font-bold text-amber-900 border border-amber-300 shrink-0">
                     <HiLockClosed className="h-3 w-3 text-amber-700" />
                     Read Only
                   </span>
                 )}
               </div>
-              <div className="mt-0.5 flex flex-col items-start gap-0.5">
-                <div className="inline-grid grid-cols-1 items-center rounded-md border border-slate-800 bg-slate-900 px-2 py-0.5 text-xs sm:text-sm font-medium text-white shadow-xs transition-all focus-within:border-slate-600 focus-within:ring-2 focus-within:ring-slate-700">
-                  <span className="col-start-1 row-start-1 text-xs sm:text-sm font-medium text-transparent select-none whitespace-pre pointer-events-none px-0.5">
-                    {subtitle || 'Sunday Service'}
-                  </span>
-                  <input
-                    type="text"
-                    disabled={readOnly}
-                    value={subtitle}
-                    onChange={(e) => {
-                      setSubtitle(e.target.value);
-                      setIsDirty(true);
-                    }}
-                    placeholder="Sunday Service"
-                    className="col-start-1 row-start-1 w-full bg-transparent text-xs sm:text-sm font-medium text-white placeholder:text-white focus:outline-none disabled:bg-transparent px-0.5"
-                  />
-                </div>
+
+              {/* Right: Save (when editing) + Edit mode toggle (when authorized) + Overflow menu */}
+              <div className="flex items-center gap-1.5 shrink-0">
                 {!readOnly && (
-                  <span className="text-[9px] font-semibold text-slate-500 select-none">
-                    (Click to edit subtitle)
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              {isTemplate && (
-                <span className="rounded-md bg-pink-100 px-2 py-0.5 text-[11px] font-bold text-pink-800">
-                  Master Template
-                </span>
-              )}
-              {!isTemplate && (
-                <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
-                  <label className="whitespace-nowrap text-[11px] font-semibold text-slate-700" htmlFor="runsheet-start-time">
-                    Start:
-                  </label>
-                  <input
-                    id="runsheet-start-time"
-                    type="text"
-                    disabled={readOnly}
-                    className="w-20 rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
-                    value={startTime}
-                    onChange={(event) => {
-                      setStartTime(event.target.value);
-                      setIsDirty(true);
-                    }}
-                    placeholder="08:00:00 AM"
-                  />
-                </div>
-              )}
-
-              {!readOnly && (
-                <>
                   <button
                     type="button"
-                    onClick={handleUndo}
-                    disabled={history.length === 0}
-                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                    title="Undo (⌘Z)"
-                  >
-                    <HiArrowUturnLeft className="h-3.5 w-3.5 text-slate-700" />
-                    <span>Undo</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleRedo}
-                    disabled={future.length === 0}
-                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                    title="Redo (⌘⇧Z)"
-                  >
-                    <HiArrowUturnRight className="h-3.5 w-3.5 text-slate-700" />
-                    <span>Redo</span>
-                  </button>
-
-                  <button
-                    onClick={handleResetFormClick}
-                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
-                    title="Reset to the standard Favor Runsheet template"
-                  >
-                    <HiArrowPath className="h-3.5 w-3.5 text-blue-600" />
-                    <span>Reset Form</span>
-                  </button>
-
-                  <button
-                    onClick={handleAddRow}
-                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
-                  >
-                    <HiPlus className="h-3.5 w-3.5 text-blue-600" />
-                    <span>Add Row</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDuplicateError('');
-                      setShowDuplicateModal(true);
-                    }}
-                    className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-slate-100 px-2.5 text-[11px] font-semibold text-slate-900 hover:bg-slate-200 active:bg-slate-300 transition-colors"
-                    title="Duplicate current runsheet as a different service time"
-                  >
-                    <HiDocumentDuplicate className="h-3.5 w-3.5 text-slate-700" />
-                    <span>Duplicate</span>
-                  </button>
-
-                  <button
-                    onClick={() => setShowDeleteModal(true)}
-                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-semibold text-rose-800 hover:bg-rose-100 focus:outline-none"
-                    title="Delete this Runsheet"
-                  >
-                    <HiTrash className="h-3.5 w-3.5 text-rose-600" />
-                    <span>Delete</span>
-                  </button>
-
-                  <button
                     onClick={handleSave}
                     disabled={status.type === 'saving' || !isDirty}
-                    className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-pink-700 px-3 text-[11px] font-semibold text-white hover:bg-pink-800 focus:outline-none active:bg-pink-900 disabled:opacity-40"
+                    aria-label="Save Runsheet"
+                    title="Save Runsheet"
+                    className="flex h-7 cursor-pointer items-center gap-1 rounded-md bg-pink-700 px-2 text-[11px] font-semibold text-white hover:bg-pink-800 focus:outline-none active:bg-pink-900 disabled:opacity-40"
                   >
                     <HiCheck className="h-3.5 w-3.5" />
-                    <span>{status.type === 'saving' ? 'Saving...' : 'Save Runsheet'}</span>
+                    <span>{status.type === 'saving' ? 'Saving...' : 'Save'}</span>
                   </button>
-                </>
-              )}
+                )}
 
-              <button
-                type="button"
-                onClick={() => setShowShareModal(true)}
-                className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
-                title="Share the runsheet app"
-              >
-                <HiShare className="h-3.5 w-3.5 text-blue-600" />
-                <span>Share</span>
-              </button>
+                {canEdit !== false && (
+                  <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
+                    <button
+                      type="button"
+                      aria-label="View mode"
+                      title="View mode"
+                      aria-pressed={editorMode ? editorMode === 'view' : readOnly}
+                      onClick={() => onModeChange?.('view')}
+                      className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${(editorMode ? editorMode === 'view' : readOnly)
+                        ? 'bg-white text-slate-900 shadow-xs font-bold'
+                        : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <HiEye className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Edit mode"
+                      title="Edit mode"
+                      aria-pressed={editorMode ? editorMode === 'edit' : !readOnly}
+                      onClick={() => onModeChange?.('edit')}
+                      className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${(editorMode ? editorMode === 'edit' : !readOnly)
+                        ? 'bg-white text-slate-900 shadow-xs font-bold'
+                        : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <HiPencilSquare className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
 
-              <ExportPdfButton channelId={channelId} channelName={channelName} hasUnsavedChanges={isDirty} />
-
-              {canEdit !== false && (
-                <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
+                <div className="relative">
                   <button
                     type="button"
-                    aria-label="View mode"
-                    title="View mode"
-                    aria-pressed={editorMode ? editorMode === 'view' : readOnly}
-                    onClick={() => onModeChange?.('view')}
-                    className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${(editorMode ? editorMode === 'view' : readOnly)
-                      ? 'bg-white text-slate-900 shadow-xs font-bold'
-                      : 'text-slate-500 hover:text-slate-800'
-                    }`}
+                    aria-label="More actions"
+                    title="More actions"
+                    aria-haspopup="true"
+                    aria-expanded={isOverflowOpen}
+                    onClick={() => setIsOverflowOpen((prev) => !prev)}
+                    className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-600"
                   >
-                    <HiEye className="h-4 w-4" />
+                    <HiEllipsisVertical className="h-4 w-4" />
                   </button>
-                  <button
-                    type="button"
-                    aria-label="Edit mode"
-                    title="Edit mode"
-                    aria-pressed={editorMode ? editorMode === 'edit' : !readOnly}
-                    onClick={() => onModeChange?.('edit')}
-                    className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${(editorMode ? editorMode === 'edit' : !readOnly)
-                      ? 'bg-white text-slate-900 shadow-xs font-bold'
-                      : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    <HiPencilSquare className="h-4 w-4" />
-                  </button>
+
+                  {isOverflowOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsOverflowOpen(false)}
+                      />
+                      <div
+                        role="menu"
+                        aria-label="More actions menu"
+                        aria-orientation="vertical"
+                        className="absolute right-0 top-full mt-1.5 z-50 min-w-[190px] rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl flex flex-col gap-1"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setShowShareModal(true);
+                            setIsOverflowOpen(false);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 cursor-pointer"
+                        >
+                          <HiShare className="h-3.5 w-3.5 text-blue-600" />
+                          <span>Share</span>
+                        </button>
+
+                        <div
+                          role="menuitem"
+                          onClick={() => setIsOverflowOpen(false)}
+                          className="w-full flex"
+                        >
+                          <ExportPdfButton
+                            channelId={channelId}
+                            channelName={channelName}
+                            hasUnsavedChanges={isDirty}
+                          />
+                        </div>
+
+                        {!readOnly && (
+                          <>
+                            <div className="my-0.5 border-t border-slate-200" />
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                handleAddRow();
+                                setIsOverflowOpen(false);
+                              }}
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 cursor-pointer"
+                            >
+                              <HiPlus className="h-3.5 w-3.5 text-blue-600" />
+                              <span>Add Row</span>
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                handleUndo();
+                                setIsOverflowOpen(false);
+                              }}
+                              disabled={history.length === 0}
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 cursor-pointer disabled:opacity-40"
+                            >
+                              <HiArrowUturnLeft className="h-3.5 w-3.5 text-slate-600" />
+                              <span>Undo</span>
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                handleRedo();
+                                setIsOverflowOpen(false);
+                              }}
+                              disabled={future.length === 0}
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 cursor-pointer disabled:opacity-40"
+                            >
+                              <HiArrowUturnRight className="h-3.5 w-3.5 text-slate-600" />
+                              <span>Redo</span>
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                setDuplicateError('');
+                                setShowDuplicateModal(true);
+                                setIsOverflowOpen(false);
+                              }}
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 cursor-pointer"
+                            >
+                              <HiDocumentDuplicate className="h-3.5 w-3.5 text-slate-600" />
+                              <span>Duplicate</span>
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                handleResetFormClick();
+                                setIsOverflowOpen(false);
+                              }}
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 cursor-pointer"
+                            >
+                              <HiArrowPath className="h-3.5 w-3.5 text-blue-600" />
+                              <span>Reset Form</span>
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                setShowDeleteModal(true);
+                                setIsOverflowOpen(false);
+                              }}
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 cursor-pointer"
+                            >
+                              <HiTrash className="h-3.5 w-3.5 text-rose-600" />
+                              <span>Delete</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
-              )}
+              </div>
+            </div>
+          ) : (
+            /* Desktop Full Header */
+            <div className="flex flex-col justify-between gap-1.5 sm:flex-row sm:items-center">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm sm:text-base font-bold leading-tight text-slate-900">{channelName}</h2>
+                  {readOnly && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.2 text-[10px] font-bold text-amber-900 border border-amber-300">
+                      <HiLockClosed className="h-3 w-3 text-amber-700" />
+                      Read Only
+                    </span>
+                  )}
+                </div>
+                <div className="mt-0.5 flex flex-col items-start gap-0.5">
+                  <div className="inline-grid grid-cols-1 items-center rounded-md border border-slate-800 bg-slate-900 px-2 py-0.5 text-xs sm:text-sm font-medium text-white shadow-xs transition-all focus-within:border-slate-600 focus-within:ring-2 focus-within:ring-slate-700">
+                    <span className="col-start-1 row-start-1 text-xs sm:text-sm font-medium text-transparent select-none whitespace-pre pointer-events-none px-0.5">
+                      {subtitle || 'Sunday Service'}
+                    </span>
+                    <input
+                      type="text"
+                      disabled={readOnly}
+                      value={subtitle}
+                      onChange={(e) => {
+                        setSubtitle(e.target.value);
+                        setIsDirty(true);
+                      }}
+                      placeholder="Sunday Service"
+                      className="col-start-1 row-start-1 w-full bg-transparent text-xs sm:text-sm font-medium text-white placeholder:text-white focus:outline-none disabled:bg-transparent px-0.5"
+                    />
+                  </div>
+                  {!readOnly && (
+                    <span className="text-[9px] font-semibold text-slate-500 select-none">
+                      (Click to edit subtitle)
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                {isTemplate && (
+                  <span className="rounded-md bg-pink-100 px-2 py-0.5 text-[11px] font-bold text-pink-800">
+                    Master Template
+                  </span>
+                )}
+                {!isTemplate && (
+                  <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">
+                    <label className="whitespace-nowrap text-[11px] font-semibold text-slate-700" htmlFor="runsheet-start-time">
+                      Start:
+                    </label>
+                    <input
+                      id="runsheet-start-time"
+                      type="text"
+                      disabled={readOnly}
+                      className="w-20 rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-900 focus:border-blue-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
+                      value={startTime}
+                      onChange={(event) => {
+                        setStartTime(event.target.value);
+                        setIsDirty(true);
+                      }}
+                      placeholder="08:00:00 AM"
+                    />
+                  </div>
+                )}
+
+                {!readOnly && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleUndo}
+                      disabled={history.length === 0}
+                      className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Undo (⌘Z)"
+                    >
+                      <HiArrowUturnLeft className="h-3.5 w-3.5 text-slate-700" />
+                      <span>Undo</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleRedo}
+                      disabled={future.length === 0}
+                      className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Redo (⌘⇧Z)"
+                    >
+                      <HiArrowUturnRight className="h-3.5 w-3.5 text-slate-700" />
+                      <span>Redo</span>
+                    </button>
+
+                    <button
+                      onClick={handleResetFormClick}
+                      className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+                      title="Reset to the standard Favor Runsheet template"
+                    >
+                      <HiArrowPath className="h-3.5 w-3.5 text-blue-600" />
+                      <span>Reset Form</span>
+                    </button>
+
+                    <button
+                      onClick={handleAddRow}
+                      className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+                    >
+                      <HiPlus className="h-3.5 w-3.5 text-blue-600" />
+                      <span>Add Row</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDuplicateError('');
+                        setShowDuplicateModal(true);
+                      }}
+                      className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-slate-100 px-2.5 text-[11px] font-semibold text-slate-900 hover:bg-slate-200 active:bg-slate-300 transition-colors"
+                      title="Duplicate current runsheet as a different service time"
+                    >
+                      <HiDocumentDuplicate className="h-3.5 w-3.5 text-slate-700" />
+                      <span>Duplicate</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowDeleteModal(true)}
+                      className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-semibold text-rose-800 hover:bg-rose-100 focus:outline-none"
+                      title="Delete this Runsheet"
+                    >
+                      <HiTrash className="h-3.5 w-3.5 text-rose-600" />
+                      <span>Delete</span>
+                    </button>
+
+                    <button
+                      onClick={handleSave}
+                      disabled={status.type === 'saving' || !isDirty}
+                      className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-pink-700 px-3 text-[11px] font-semibold text-white hover:bg-pink-800 focus:outline-none active:bg-pink-900 disabled:opacity-40"
+                    >
+                      <HiCheck className="h-3.5 w-3.5" />
+                      <span>{status.type === 'saving' ? 'Saving...' : 'Save Runsheet'}</span>
+                    </button>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setShowShareModal(true)}
+                  className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 active:bg-slate-100"
+                  title="Share the runsheet app"
+                >
+                  <HiShare className="h-3.5 w-3.5 text-blue-600" />
+                  <span>Share</span>
+                </button>
+
+                <ExportPdfButton channelId={channelId} channelName={channelName} hasUnsavedChanges={isDirty} />
+
+                {canEdit !== false && (
+                  <div role="group" aria-label="Runsheet mode" className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
+                    <button
+                      type="button"
+                      aria-label="View mode"
+                      title="View mode"
+                      aria-pressed={editorMode ? editorMode === 'view' : readOnly}
+                      onClick={() => onModeChange?.('view')}
+                      className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${(editorMode ? editorMode === 'view' : readOnly)
+                        ? 'bg-white text-slate-900 shadow-xs font-bold'
+                        : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <HiEye className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Edit mode"
+                      title="Edit mode"
+                      aria-pressed={editorMode ? editorMode === 'edit' : !readOnly}
+                      onClick={() => onModeChange?.('edit')}
+                      className={`flex items-center justify-center rounded-md p-1.5 transition-all cursor-pointer ${(editorMode ? editorMode === 'edit' : !readOnly)
+                        ? 'bg-white text-slate-900 shadow-xs font-bold'
+                        : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <HiPencilSquare className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Formatting bar for whichever cell is open (hidden in read-only mode) */}
         {!readOnly && <RichTextToolbar editor={activeEditor} />}
@@ -2708,7 +3009,7 @@ export function RunsheetTableEditor({
           </span>
         </div>
 
-        <div role="group" aria-label="Layout view mode" className="flex items-center gap-2 rounded-md border border-slate-300 bg-slate-100 p-0.5 sm:gap-0">
+        <div role="group" aria-label="Layout view mode" className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-100 p-1 shadow-2xs">
           <button
             type="button"
             aria-label="Card view"
@@ -2718,12 +3019,13 @@ export function RunsheetTableEditor({
               setMobileViewMode('cards');
               setViewModePreference('cards');
             }}
-            className={`flex min-h-11 min-w-11 items-center justify-center rounded p-1 transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0 ${mobileViewMode === 'cards'
-                ? 'bg-white text-slate-900 shadow-xs font-bold'
+            className={`flex min-h-11 sm:min-h-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-600 ${mobileViewMode === 'cards'
+                ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
               }`}
           >
-            <HiRectangleStack className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
+            <HiRectangleStack className="h-4 w-4" />
+            <span>Cards</span>
           </button>
           <button
             type="button"
@@ -2734,25 +3036,32 @@ export function RunsheetTableEditor({
               setMobileViewMode('grid');
               setViewModePreference('grid');
             }}
-            className={`flex min-h-11 min-w-11 items-center justify-center rounded p-1 transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-600 sm:min-h-0 sm:min-w-0 ${mobileViewMode === 'grid'
-                ? 'bg-white text-slate-900 shadow-xs font-bold'
+            className={`flex min-h-11 sm:min-h-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-600 ${mobileViewMode === 'grid'
+                ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
               }`}
           >
-            <HiTableCells className="h-5 w-5 sm:h-3.5 sm:w-3.5" />
+            <HiTableCells className="h-4 w-4" />
+            <span>Table</span>
           </button>
         </div>
       </div>
 
       {/* Spreadsheet Table View */}
       <div className={`w-full max-w-full min-w-0 flex flex-col gap-1.5 ${mobileViewMode === 'cards' ? 'hidden' : 'block'}`}>
-        <div className="w-full max-w-full overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-xs">
+        <div data-testid="table-overflow-container" className="w-full max-w-full overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-xs">
           <table className="w-full min-w-full border-collapse bg-white text-[11px] text-slate-900" style={{ tableLayout: 'fixed' }}>
             <thead className="sticky top-0 z-30 bg-slate-900 text-white shadow-xs">
               <tr className="border-b-2 border-slate-950 text-left font-semibold text-white text-xs tracking-normal">
-                {!readOnly && <th className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center" style={{ width: '28px', minWidth: '28px' }} />}
+                {!readOnly && (
+                  <th
+                    className="sticky top-0 left-0 z-40 bg-slate-900 border-r border-slate-800 p-1 text-center"
+                    style={{ width: '28px', minWidth: '28px' }}
+                  />
+                )}
                 <th
-                  className="sticky top-0 z-30 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100 relative group"
+                  data-testid="sticky-time-header"
+                  className={`sticky top-0 z-40 bg-slate-900 border-r border-slate-800 p-1 text-center font-semibold whitespace-nowrap select-none text-slate-100 relative group ${readOnly ? 'left-0' : 'left-[28px]'}`}
                   style={getColumnStyle('START', 'Start')}
                 >
                   <span>Start</span>
@@ -2859,7 +3168,7 @@ export function RunsheetTableEditor({
                     {!readOnly && (
                       <td
                         {...getRowDragHandleProps(index)}
-                        className="cursor-grab select-none border-r border-slate-200 p-0.5 text-center align-middle text-slate-400 hover:text-slate-700 active:cursor-grabbing"
+                        className="sticky left-0 z-20 bg-white cursor-grab select-none border-r border-slate-200 p-0.5 text-center align-middle text-slate-400 hover:text-slate-700 active:cursor-grabbing"
                         title="Drag handle cell to move whole row"
                       >
                         <HiBars3 className="mx-auto h-4 w-4 pointer-events-none" />
@@ -2870,7 +3179,8 @@ export function RunsheetTableEditor({
                       <td
                         rowSpan={spanInfo.count}
                         style={getColumnStyle('START', 'Start')}
-                        className="select-none border-b border-r border-slate-300 bg-slate-50/90 p-0.5 sm:p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px]"
+                        data-testid="sticky-time-cell"
+                        className={`select-none border-b border-r border-slate-300 bg-slate-50/90 p-0.5 sm:p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px] sticky z-20 ${readOnly ? 'left-0' : 'left-[28px]'}`}
                       >
                         {spanInfo.startStr}
                       </td>
@@ -3037,6 +3347,12 @@ export function RunsheetTableEditor({
             const dropEdge = rowDrag && rowDrag.overIndex === index && rowDrag.fromIndex !== index
               ? (rowDrag.overIndex > rowDrag.fromIndex ? 'bottom' : 'top')
               : null;
+            const songNames = getSegmentSongNames(item, isMusic);
+            const otherDeptCols = sortedAttrCols.filter(
+              (col) => !col.key.toUpperCase().includes('SONG') && !col.name.toUpperCase().includes('SONG')
+            );
+            const isExpanded = !!expandedDetailsMap[String(item.id)];
+            const populatedDeptCols = otherDeptCols.filter((col) => !!readRunsheetCellValue(item, col.key));
 
             return (
               <div
@@ -3129,23 +3445,70 @@ export function RunsheetTableEditor({
 
                 <h4 className="font-bold text-slate-900 text-xs sm:text-sm break-words whitespace-normal leading-tight my-0.5">{plainTitle}</h4>
 
-                {/* Populated attributes displayed fully with person cells topmost */}
-                <div className="flex flex-col gap-1">
-                  {sortedAttrCols.map((col) => {
-                    const val = readRunsheetCellValue(item, col.key);
-                    if (!val) return null;
-                    return (
-                      <div key={col.id} className="rounded-md bg-slate-50 border border-slate-200 p-1.5 text-xs">
-                        <span className="font-extrabold text-[9px] uppercase tracking-wider text-slate-500 block mb-0.5">
-                          {col.name}
+                {/* Song names at top of card */}
+                {songNames.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 my-0.5" data-testid="card-song-names">
+                    <HiMusicalNote className="h-3.5 w-3.5 text-pink-600 shrink-0" />
+                    <span className="text-xs font-semibold text-slate-700">Songs:</span>
+                    <div className="flex flex-wrap gap-1">
+                      {songNames.map((sName, sIdx) => (
+                        <span
+                          key={sIdx}
+                          className="inline-flex items-center rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 border border-purple-200"
+                        >
+                          {sName}
                         </span>
-                        <div className="break-words whitespace-normal text-slate-800 text-xs leading-normal">
-                          {renderCellContent(item.id, col.key, val, isPersonColumn(col))}
-                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Expandable Details Section for other department fields */}
+                {populatedDeptCols.length > 0 && (
+                  <div className="mt-1 pt-1 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      aria-expanded={isExpanded}
+                      aria-label={isExpanded ? `Hide details for ${plainTitle}` : `Show details for ${plainTitle}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedDetailsMap((prev) => ({
+                          ...prev,
+                          [String(item.id)]: !prev[String(item.id)],
+                        }));
+                      }}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer select-none py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-600 rounded"
+                    >
+                      <HiChevronDown
+                        className={`h-4 w-4 text-slate-500 transition-transform duration-200 ${
+                          isExpanded ? 'rotate-180' : ''
+                        }`}
+                      />
+                      <span>{isExpanded ? 'Hide details' : 'Show details'}</span>
+                      <span className="text-[11px] text-slate-400 font-normal">
+                        ({populatedDeptCols.length} {populatedDeptCols.length === 1 ? 'field' : 'fields'})
+                      </span>
+                    </button>
+
+                    {isExpanded && (
+                      <div className="flex flex-col gap-1.5 mt-1.5" data-testid={`card-details-${item.id}`}>
+                        {populatedDeptCols.map((col) => {
+                          const val = readRunsheetCellValue(item, col.key);
+                          return (
+                            <div key={col.id} className="rounded-md bg-slate-50 border border-slate-200 p-2 text-xs">
+                              <span className="font-extrabold text-[9px] uppercase tracking-wider text-slate-500 block mb-0.5">
+                                {col.name}
+                              </span>
+                              <div className="break-words whitespace-normal text-slate-800 text-xs leading-normal">
+                                {renderCellContent(item.id, col.key, val, isPersonColumn(col))}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

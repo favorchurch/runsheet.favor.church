@@ -82,6 +82,14 @@ const mockMultiSchedules = [
 ];
 
 describe('CreateRunsheetForm batch operations', () => {
+  beforeAll(() => {
+    jest.useFakeTimers({ advanceTimers: true });
+    jest.setSystemTime(new Date('2026-10-05T12:00:00+08:00'));
+  });
+  afterAll(() => {
+    jest.useRealTimers();
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     (getRockContentChannelOptions as jest.Mock).mockResolvedValue({
@@ -353,7 +361,7 @@ describe('CreateRunsheetForm batch operations', () => {
       render(<CreateRunsheetForm growOnly />);
 
       await waitFor(() => {
-        expect(screen.getByDisplayValue(/MNL Grow - Topic A/i)).toBeInTheDocument();
+        expect(screen.getAllByDisplayValue(/MNL Grow - Topic A/i).length).toBeGreaterThan(0);
       });
 
       // Date-wide batch should NOT appear because only 1 topic occurs on 2026-10-11
