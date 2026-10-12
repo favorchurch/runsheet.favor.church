@@ -20,15 +20,8 @@ function label(name: string, fallback?: string) {
 
 function checkIsMobile(): boolean {
   if (typeof window === 'undefined') return false;
-  if (typeof window.matchMedia === 'function') {
-    const mq = window.matchMedia('(max-width: 767.98px)');
-    if (mq.matches) return true;
-    const mq768 = window.matchMedia('(max-width: 768px)');
-    if (mq768.matches) return true;
-    const mq767 = window.matchMedia('(max-width: 767px)');
-    if (mq767.matches) return true;
-  }
-  return typeof window.innerWidth === 'number' && window.innerWidth > 0 && window.innerWidth < 768;
+  if (typeof window.matchMedia === 'function') return window.matchMedia('(max-width: 767.98px)').matches;
+  return window.innerWidth > 0 && window.innerWidth < 768;
 }
 
 function targetStart(details: RunsheetDetails) {
