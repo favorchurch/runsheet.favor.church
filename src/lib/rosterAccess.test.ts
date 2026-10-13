@@ -214,3 +214,26 @@ describe('rosteredAttendanceFromOccurrence', () => {
   });
 });
 
+describe('buildRosteredViewerKeys start-time parsing', () => {
+  it('defaults missing seconds to 00 and keeps explicit seconds', () => {
+    expect(
+      buildRosteredViewerKeys(
+        [
+          { campusId: 1, startDateTime: '2026-09-27T15:00', scheduleId: 311 },
+          { campusId: 1, startDateTime: '2026-09-27T09:30:15', scheduleId: 311 },
+        ],
+        new Set(),
+      ),
+    ).toEqual(['MNL:2026-09-27:15:00:00', 'MNL:2026-09-27:09:30:15']);
+  });
+
+  it('requires the timestamp to start the string', () => {
+    expect(
+      buildRosteredViewerKeys([{ campusId: 1, startDateTime: 'x2026-09-27T15:00:00', scheduleId: 311 }], new Set()),
+    ).toEqual([]);
+  });
+
+  it('skips a missing start time', () => {
+    expect(buildRosteredViewerKeys([{ campusId: 1, startDateTime: '', scheduleId: 311 }], new Set())).toEqual([]);
+  });
+});

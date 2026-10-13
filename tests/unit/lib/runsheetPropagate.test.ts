@@ -1,4 +1,4 @@
-import { buildPropagationPlan, type CellChange } from '@/lib/runsheetPropagate';
+import { buildPropagationPlan, isSkippedStatus, type CellChange } from '@/lib/runsheetPropagate';
 import type { RowMatch, MatchResult } from '@/lib/runsheetMatch';
 import type { SiblingChannel } from '@/lib/runsheetSiblings';
 import type { DynamicAttributeColumn, RunsheetItemRow } from '@/types/Runsheet';
@@ -220,5 +220,99 @@ describe('buildPropagationPlan', () => {
 
     expect(plan.targets[0].changes[0].status).toBe('unmatched');
     expect(plan.targets[0].changes[0].selected).toBe(false);
+  });
+
+  it('treats a missing target attribute as empty, so a first-time fill is clean', () => {
+    const noAttrs = { id: 10, title: 'Welcome', order: 10, duration: 5 } as RunsheetItemRow;
+    const matchResults = new Map<number, MatchResult>([
+      [2, { matches: [{ sourceRow: row(1, 'Welcome'), targetRow: noAttrs, via: 'title' }], backfill: [] }],
+    ]);
+
+    const plan = buildPropagationPlan(
+      [{ itemId: 1, itemTitle: 'Welcome', columnKey: 'NOTES', columnName: 'Notes', newValue: 'First note', previousValue: '' }],
+      matchResults,
+      [target],
+      columns,
+    );
+
+    expect(plan.targets[0].changes[0]).toMatchObject({ status: 'clean', targetCurrentValue: '', selected: true, targetItemId: 10 });
+  });
+
+  it('records the existing target id when a new row already exists there', () => {
+    const source = row(99, 'Favor News');
+    const matchResults = new Map<number, MatchResult>([
+      [2, { matches: [{ sourceRow: row(1, 'Welcome'), targetRow: row(5, 'Welcome'), via: 'title' }, { sourceRow: source, targetRow: row(50, 'Favor News'), via: 'title' }], backfill: [] }],
+    ]);
+
+    const plan = buildPropagationPlan(
+      [{ itemId: 99, itemTitle: 'Favor News', columnKey: 'NEW_ROW', columnName: 'New Segment', newValue: 'Added segment', previousValue: '', isNewRow: true, sourceRow: source }],
+      matchResults,
+      [target],
+      columns,
+    );
+
+    expect(plan.targets[0].changes[0]).toMatchObject({ status: 'exists', targetItemId: 50, isNewRow: true });
+  });
+
+  it('plans each target independently and treats a target with no match result as unmatched', () => {
+    const other: SiblingChannel = { ...target, channelId: 3 };
+    const matchResults = new Map<number, MatchResult>([
+      [2, { matches: [{ sourceRow: row(1, 'Welcome'), targetRow: row(10, 'Welcome', { NOTES: 'a' }), via: 'title' }], backfill: [] }],
+    ]);
+    const source = row(99, 'Favor News');
+
+    const plan = buildPropagationPlan(
+      [
+        { itemId: 1, itemTitle: 'Welcome', columnKey: 'NOTES', columnName: 'Notes', newValue: 'b', previousValue: 'a' },
+        { itemId: 99, itemTitle: 'Favor News', columnKey: 'NEW_ROW', columnName: 'New Segment', newValue: '', previousValue: '', isNewRow: true, sourceRow: source },
+      ],
+      matchResults,
+      [target, other],
+      columns,
+    );
+
+    expect(plan.targets.map((t) => t.channel.channelId)).toEqual([2, 3]);
+    expect(plan.targets[0].changes.map((c) => c.status)).toEqual(['clean', 'added']);
+    expect(plan.targets[1].changes.map((c) => c.status)).toEqual(['unmatched', 'added']);
+    expect(plan.targets[1].changes[1]).toMatchObject({ targetItemId: null, selected: true });
+  });
+});
+
+describe('buildPropagationPlan row lookup', () => {
+  it('locates edited and deleted rows by their own source id, not the first match', () => {
+    const matchResults = new Map<number, MatchResult>([
+      [
+        2,
+        {
+          matches: [
+            { sourceRow: row(1, 'Welcome'), targetRow: row(10, 'Welcome', { NOTES: 'x' }), via: 'title' },
+            { sourceRow: row(2, 'News'), targetRow: row(20, 'News', { NOTES: 'a' }), via: 'title' },
+          ],
+          backfill: [],
+        },
+      ],
+    ]);
+
+    const plan = buildPropagationPlan(
+      [
+        { itemId: 2, itemTitle: 'News', columnKey: 'NOTES', columnName: 'Notes', newValue: 'b', previousValue: 'a' },
+        { itemId: 2, itemTitle: 'News', columnKey: 'DELETED_ROW', columnName: 'Removed Segment', newValue: '', previousValue: '', isDeletedRow: true },
+      ],
+      matchResults,
+      [target],
+      columns,
+    );
+
+    expect(plan.targets[0].changes.map((c) => [c.status, c.targetItemId])).toEqual([
+      ['clean', 20],
+      ['removed', 20],
+    ]);
+  });
+});
+
+describe('isSkippedStatus', () => {
+  it('skips only statuses with nothing to apply', () => {
+    const statuses = ['clean', 'diverged', 'unmatched', 'added', 'exists', 'removed'] as const;
+    expect(statuses.filter(isSkippedStatus)).toEqual(['unmatched', 'exists']);
   });
 });

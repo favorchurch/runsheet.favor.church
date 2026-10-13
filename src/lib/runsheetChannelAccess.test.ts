@@ -1,5 +1,10 @@
 import { describe, expect, it } from '@jest/globals';
-import { canEditRunsheetChannel, canEditRunsheetTitle, canViewRunsheetChannel } from './runsheetChannelAccess';
+import {
+  canEditRunsheetChannel,
+  canEditRunsheetTitle,
+  canViewRunsheetChannel,
+  runsheetEditCampuses,
+} from './runsheetChannelAccess';
 import type { GrowSchedule } from './growRunsheets';
 
 const grow: GrowSchedule[] = [{ id: 477, name: 'MNL Grow - Bible Essentials', iCalendarContent: '' }];
@@ -104,5 +109,25 @@ describe('separate edit and view campuses', () => {
     const s = { rolesMap: { growEditor: ['19108'] }, access: { runsheetCampuses: [] } };
     expect(canEditRunsheetTitle(s, GROW_TITLE)).toBe(true);
     expect(canEditRunsheetTitle(s, SUNDAY)).toBe(false);
+  });
+});
+
+describe('runsheetChannelAccess with sparse sessions', () => {
+  it('reports no edit campuses for a session without access data', () => {
+    expect(runsheetEditCampuses({ rolesMap: { editor: ['1'] } })).toEqual([]);
+    expect(runsheetEditCampuses(null)).toEqual([]);
+  });
+
+  it('denies a Grow title to a session with no Grow roles at all', () => {
+    expect(canViewRunsheetChannel({ rolesMap: {}, access: { runsheetCampuses: [] } }, GROW_TITLE, grow)).toBe(false);
+  });
+
+  it('denies a Sunday title to a session with no rostered-viewer role', () => {
+    expect(canViewRunsheetChannel({ rolesMap: { growViewer: ['477:2026-09-29'] } }, SUNDAY, grow)).toBe(false);
+  });
+
+  it('fails closed on a Grow-looking title that matches no known schedule', () => {
+    const s = { rolesMap: { rosteredViewer: ['MNL:2026-09-27:15:00:00'] }, access: { runsheetCampuses: [] } };
+    expect(canViewRunsheetChannel(s, 'MNL Grow Unknown // September 27, 2026 // 3PM', grow)).toBe(false);
   });
 });

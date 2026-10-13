@@ -38,3 +38,20 @@ describe('resolveGrowAccess', () => {
     expect(result.growViewer).toEqual(['477:2026-09-29']);
   });
 });
+
+describe('resolveGrowAccess role names', () => {
+  it('matches editor role names regardless of case and padding', () => {
+    const names = new Map([[20, '  UNIT HEAD ']]);
+    expect(
+      resolveGrowAccess({ memberships: [{ groupId: 19108, groupRoleId: 20 }], roleNamesById: names, rostered: [], growScheduleIds })
+        .growEditor,
+    ).toBe(true);
+  });
+
+  it('treats an unknown role id as no role', () => {
+    expect(
+      resolveGrowAccess({ memberships: [{ groupId: 19108, groupRoleId: 999 }], roleNamesById, rostered: [], growScheduleIds })
+        .growEditor,
+    ).toBe(false);
+  });
+});

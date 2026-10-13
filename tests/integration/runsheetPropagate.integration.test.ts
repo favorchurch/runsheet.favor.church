@@ -62,8 +62,9 @@ describe('propagation write path (integration)', () => {
     expect(outcomes.find((o) => o.channelId === 2)?.appliedCount).toBe(1);
     expect(outcomes.find((o) => o.channelId === 3)?.appliedCount).toBe(0);
 
-    const attributePosts = postCalls.filter((c) => c.url.includes('AttributeValues'));
-    expect(attributePosts.length).toBeGreaterThanOrEqual(1);
+    const attributeWrites = postCalls.filter((c) => c.url === '/AttributeValues').map((c) => c.body);
+    expect(attributeWrites).toContainEqual({ AttributeId: 100, EntityId: 10, Value: 'new' });
+    expect(attributeWrites.some((body) => body.EntityId === 20)).toBe(false);
   });
 
   it('reports channel 3 as ok:false and leaves channel 2 ok:true when only channel 3 times out', async () => {

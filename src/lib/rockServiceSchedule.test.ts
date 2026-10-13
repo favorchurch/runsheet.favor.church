@@ -62,3 +62,53 @@ describe('matchRockSchedule', () => {
     expect(matchRockSchedule('BNE Crowne // September 27, 2026 // 3PM', SERVICES)).toBeNull();
   });
 });
+
+describe('matchRockSchedule schedule-name parsing', () => {
+  const CHANNEL = 'MNL Crowne // September 27, 2026 // 3PM';
+  const only = (name: string) => matchRockSchedule(CHANNEL, [{ scheduleId: 1, name }])?.scheduleId ?? null;
+
+  it.each(['MNL Crowne - 3PM', 'MNL Crowne | 3PM', 'MNL Crowne 3 PM', 'mnl crowne 3:00pm', '  MNL Crowne 3PM  '])(
+    'reads %p as the 3PM Crowne service',
+    (name) => {
+      expect(only(name)).toBe(1);
+    },
+  );
+
+  it('requires the time to end the schedule name', () => {
+    expect(only('MNL Crowne 3PM Overflow')).toBeNull();
+  });
+
+  it('requires a separator before the time', () => {
+    expect(only('MNL Crowne3PM')).toBeNull();
+  });
+
+  it('reads two-digit hours', () => {
+    expect(
+      matchRockSchedule('MNL Podium // September 27, 2026 // 11:30AM', [{ scheduleId: 7, name: 'MNL Podium 11:30AM' }])
+        ?.scheduleId,
+    ).toBe(7);
+  });
+
+  it('does not match a different time at the same venue', () => {
+    expect(only('MNL Crowne 10AM')).toBeNull();
+  });
+});
+
+describe('matchRockSchedule channel normalisation', () => {
+  it('ignores case and punctuation in the venue prefix', () => {
+    expect(matchRockSchedule('mnl-crowne // September 27, 2026 // 3PM', SERVICES)?.scheduleId).toBe(565);
+  });
+
+  it('collapses runs of punctuation and ignores trailing punctuation in the venue prefix', () => {
+    expect(matchRockSchedule('MNL -- Crowne! // September 27, 2026 // 3PM', SERVICES)?.scheduleId).toBe(565);
+  });
+
+  it('zero-pads the occurrence month and day', () => {
+    expect(matchRockSchedule('MNL Crowne // January 4, 2026 // 3PM', SERVICES)?.isoDate).toBe('2026-01-04');
+  });
+
+  it('matches a time-less channel only to a time-less schedule with the same name', () => {
+    expect(matchRockSchedule('MNL Family Night // September 30, 2026', SERVICES)?.scheduleId).toBe(35);
+    expect(matchRockSchedule('MNL Crowne // September 30, 2026', SERVICES)).toBeNull();
+  });
+});
