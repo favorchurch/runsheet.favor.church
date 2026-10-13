@@ -1,4 +1,9 @@
+/**
+ * @jest-environment jsdom
+ */
 import React from 'react';
+import { render, screen } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import CreateRunsheetPage from '@/app/create/page';
 import DirectRunsheetPage from '@/app/[channelId]/page';
 import { requireServerSession } from '@/auth0-hooks/server/getServerSession';
@@ -132,9 +137,8 @@ describe('Page Auth Gates', () => {
 
       const element = await CreateRunsheetPage();
       expect(mockRedirect).not.toHaveBeenCalled();
-      expect(React.isValidElement(element)).toBe(true);
-      // Access restricted JSX
-      expect(JSON.stringify(element)).toContain('Access Restricted');
+      render(element);
+      expect(screen.getByRole('heading', { name: 'Access Restricted' })).toBeInTheDocument();
     });
   });
 
@@ -176,8 +180,8 @@ describe('Page Auth Gates', () => {
 
       const element = await DirectRunsheetPage(pageParams);
       expect(mockRedirect).not.toHaveBeenCalled();
-      expect(React.isValidElement(element)).toBe(true);
-      expect(JSON.stringify(element)).toContain('Access Restricted');
+      render(element);
+      expect(screen.getByRole('heading', { name: 'Access Restricted' })).toBeInTheDocument();
     });
   });
 });
