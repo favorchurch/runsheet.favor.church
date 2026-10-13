@@ -471,14 +471,14 @@ describe('CreateRunsheetForm batch operations', () => {
 
     it('starts non-Grow upcoming batch at the chosen date and creates subsequent occurrences from that date', async () => {
       const onCreated = jest.fn();
-      const { container } = render(<CreateRunsheetForm onCreated={onCreated} />);
+      render(<CreateRunsheetForm onCreated={onCreated} />);
 
       await waitFor(() => {
         expect(screen.getByDisplayValue(/MNL Crowne 9AM/i)).toBeInTheDocument();
       });
 
       // Change date to 2026-10-25 (occurrences on or after: 2026-10-25, 2026-11-01, 2026-11-08)
-      const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement;
+      const dateInput = screen.getByLabelText('Date');
       fireEvent.change(dateInput, { target: { value: '2026-10-25' } });
 
       await waitFor(() => {
@@ -607,7 +607,7 @@ describe('CreateRunsheetForm batch operations', () => {
     });
 
     it('resets Date-wide batch when date changes, but preserves upcoming batch', async () => {
-      const { container } = render(<CreateRunsheetForm />);
+      render(<CreateRunsheetForm />);
 
       await waitFor(() => {
         expect(
@@ -625,7 +625,7 @@ describe('CreateRunsheetForm batch operations', () => {
       expect(screen.getByRole('button', { name: /Create All \(2\) Runsheets/i })).toBeInTheDocument();
 
       // Change date
-      const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement;
+      const dateInput = screen.getByLabelText('Date');
       fireEvent.change(dateInput, { target: { value: '2026-10-18' } });
 
       // Wait for schedules to reload for the new date (2 sessions on 2026-10-18)
