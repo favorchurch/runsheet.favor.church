@@ -369,8 +369,8 @@ describe('RunsheetTableEditor Mobile-first layout', () => {
     });
   });
 
-  describe('ACCEPT 4: Mobile table mode overflow container and sticky column', () => {
-    it('wraps table in overflow-x container with sticky start column and min column widths', () => {
+  describe('ACCEPT 4: Mobile table mode', () => {
+    it('keeps schedule data available with a horizontally scrollable table and sticky start column', () => {
       setViewportWidth(400);
 
       const { container } = render(
@@ -387,21 +387,14 @@ describe('RunsheetTableEditor Mobile-first layout', () => {
       const tableViewButton = screen.getByRole('button', { name: /Table view/i });
       fireEvent.click(tableViewButton);
 
-      // Overflow-x container
-      const scrollContainer = screen.getByTestId('table-overflow-container');
-      expect(scrollContainer).toHaveClass('overflow-x-auto');
+      expect(screen.getByRole('table')).toBeInTheDocument();
+      expect(screen.getByRole('columnheader', { name: /Start/i })).toBeInTheDocument();
+      expect(screen.getByText('10:00:00 AM')).toBeInTheDocument();
 
-      // Sticky time header
-      const stickyHeader = screen.getByTestId('sticky-time-header');
-      expect(stickyHeader).toHaveClass('sticky');
-
-      // Sticky time body cell
-      const stickyCell = screen.getAllByTestId('sticky-time-cell')[0];
-      expect(stickyCell).toHaveClass('sticky');
-
-      // Outer editor has overflow-x-hidden to prevent document horizontal scroll
-      const editorWrapper = container.firstChild as HTMLElement;
-      expect(editorWrapper.className).toMatch(/overflow-x-hidden|max-w-full/);
+      expect(screen.getByTestId('table-overflow-container')).toHaveClass('overflow-x-auto');
+      expect(screen.getByTestId('sticky-time-header')).toHaveClass('sticky');
+      expect(screen.getAllByTestId('sticky-time-cell')[0]).toHaveClass('sticky');
+      expect((container.firstChild as HTMLElement).className).toMatch(/overflow-x-hidden|max-w-full/);
     });
   });
 });

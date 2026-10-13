@@ -137,7 +137,7 @@ describe('CreateRunsheetForm Grow course creation', () => {
 
   it('allows the user to manually change the date to any day without being reverted to nextDate', async () => {
     const onCreated = jest.fn();
-    const { container } = render(<CreateRunsheetForm growOnly onCreated={onCreated} />);
+    render(<CreateRunsheetForm growOnly onCreated={onCreated} />);
 
     await waitFor(() => {
       const elements = screen.getAllByDisplayValue(/MNL Grow - Build x FDNA/i);
@@ -145,7 +145,7 @@ describe('CreateRunsheetForm Grow course creation', () => {
     });
 
     // The date input initially holds the schedule's nextDate (2026-10-04)
-    const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement;
+    const dateInput = screen.getByLabelText('Date');
     expect(dateInput).toHaveValue('2026-10-04');
 
     // User chooses a different date (e.g. Wednesday 2026-09-30)

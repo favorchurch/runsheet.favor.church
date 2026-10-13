@@ -307,7 +307,7 @@ describe('RunsheetTableEditor dirty state', () => {
     (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
     let saveFn: (() => Promise<boolean>) | undefined;
 
-    const { container } = render(
+    render(
       <RunsheetTableEditor
         channelId={1}
         channelName="Sun 10:00 AM"
@@ -325,11 +325,9 @@ describe('RunsheetTableEditor dirty state', () => {
 
     const dragHandles = screen.getAllByTitle('Drag handle cell to move whole row');
     expect(dragHandles).toHaveLength(3);
+    expect(screen.getByRole('row', { name: /New Segment/ })).toBeInTheDocument();
 
-    const rows = container.querySelectorAll('tbody tr');
-    expect(rows).toHaveLength(3);
-
-    dragRowTo(dragHandles[2], rows[0]);
+    dragRowTo(dragHandles[2], screen.getByRole('row', { name: /Welcome & Announcements/ }));
 
     await saveFn?.();
 
@@ -344,7 +342,7 @@ describe('RunsheetTableEditor dirty state', () => {
     (rockBulkSaveRunsheetItems as jest.Mock).mockResolvedValue({ success: true, results: [] });
     let saveFn: (() => Promise<boolean>) | undefined;
 
-    const { container } = render(
+    render(
       <RunsheetTableEditor
         channelId={1}
         channelName="Sun 10:00 AM"
@@ -357,9 +355,8 @@ describe('RunsheetTableEditor dirty state', () => {
 
     fireEvent.click(screen.getByText('Add Row'));
     const dragHandles = screen.getAllByTitle('Drag handle cell to move whole row');
-    const rows = container.querySelectorAll('tbody tr');
 
-    dragRowTo(dragHandles[0], rows[1]);
+    dragRowTo(dragHandles[0], screen.getByRole('row', { name: /Praise & Worship/ }));
 
     await saveFn?.();
 
@@ -494,7 +491,7 @@ describe('RunsheetTableEditor dirty state', () => {
       ...initialItems,
     ];
 
-    const { container } = render(
+    render(
       <RunsheetTableEditor
         channelId={1}
         channelName="Sun 10:00 AM"
@@ -512,8 +509,7 @@ describe('RunsheetTableEditor dirty state', () => {
     expect(durationCells).toHaveLength(2);
     fireEvent.click(durationCells[1]);
 
-    const durationInput = container.querySelector('tbody input') as HTMLInputElement;
-    expect(durationInput).toBeTruthy();
+    const durationInput = screen.getByPlaceholderText('00:00:00');
     fireEvent.change(durationInput, { target: { value: '00:20:00' } });
     fireEvent.blur(durationInput);
 
