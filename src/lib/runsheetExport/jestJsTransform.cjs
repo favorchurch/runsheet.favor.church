@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
 const ts = require('typescript');
 const crypto = require('crypto');
 
