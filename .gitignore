@@ -318,3 +318,10 @@ ts_errors.txt
 pnpm-workspace.yaml
 
 __pycache__/
+
+# Stryker mutation testing
+.stryker-tmp/
+reports/mutation/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
