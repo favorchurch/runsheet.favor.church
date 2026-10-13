@@ -14,8 +14,7 @@ The repository provides explicit npm scripts for running tests:
 | `pnpm test:integration` | Runs integration tests | Tests located in `tests/integration/` |
 | `pnpm test:changed` | Runs tests related to changed files | Git working tree diff (`jest --onlyChanged`) |
 
-> [!IMPORTANT]
-> Neither `pnpm test:changed` nor `pnpm test:unit` serves as the full gate. `pnpm test` (or `pnpm test:full`) must always be run to validate the complete suite before merging or completing tasks.
+Which tier to run when (changeset checks, final-ready PR proof, deep runs) is defined once in the testing section of [AGENTS.md](../AGENTS.md).
 
 ## Test Tiers
 
@@ -62,5 +61,8 @@ Controls verbose reporting during test execution.
 
 ## Performance Benchmarks
 
-Detailed empirical benchmark comparisons between `origin/main` (BASE) and the resource-aware configuration (After), including cold vs. warm cache metrics, CPU utilization, peak RSS, and test parity proofs, are documented in [docs/testing-benchmark.md](file:///Users/jerwyn/.local/state/auto-office/worktrees/62718e9b/T2/docs/testing-benchmark.md).
+Detailed empirical benchmark comparisons between `origin/main` (BASE) and the resource-aware configuration (After), including cold vs. warm cache metrics, CPU utilization, peak RSS, and test parity proofs, are documented in [docs/testing-benchmark.md](testing-benchmark.md).
 
+## Mutation Testing
+
+`pnpm test:mutation` runs StrykerJS over the business-rule allowlist in `stryker.config.mjs`. Reports are written to `reports/mutation/` (gitignored). Scores and surviving-mutant notes are in [docs/mutation/baseline.md](mutation/baseline.md) and [docs/mutation/after.md](mutation/after.md). When to run it is set in AGENTS.md.

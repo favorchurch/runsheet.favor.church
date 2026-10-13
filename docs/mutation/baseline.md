@@ -4,6 +4,7 @@
 - Source commit: `987644b` (main)
 - Tooling: StrykerJS 10.0.0 (`@stryker-mutator/core`, `jest-runner`, `typescript-checker`), concurrency 2, `perTest` coverage
 - Config: `stryker.config.mjs`, sha256 `58c676f5e5f4b455ce999417e235b4874ecc03d1b82ee598daadfca228cceab4`
+- Rerun under the amended config (sha `6957fe5a…`, which adds the pageAuthGates ignore): 69.94%. Per-module numbers and the before/after comparison are in [after.md](after.md).
 - Command: `pnpm test:mutation` (about 22 minutes on the 16 GiB Mac)
 - Reports (gitignored): `reports/mutation/mutation.html`, `reports/mutation/mutation.json`
 

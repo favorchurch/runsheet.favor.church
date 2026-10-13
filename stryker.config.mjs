@@ -11,7 +11,7 @@ const config = {
     projectType: 'custom',
     configFile: 'jest.config.ts',
     enableFindRelatedTests: true,
-    // jsdom docblock suites (components, userPreferences) bypass Stryker's coverage env, and
+    // jsdom docblock suites (components, userPreferences, pageAuthGates) bypass Stryker's coverage env, and
     // integration suites hit live services. Neither exercises the mutated modules.
     config: {
       testPathIgnorePatterns: [
@@ -20,6 +20,7 @@ const config = {
         '<rootDir>/tests/integration/',
         '/components/',
         '<rootDir>/src/lib/userPreferences.test.ts',
+        '<rootDir>/tests/unit/pages/pageAuthGates.test.tsx',
       ],
     },
   },
