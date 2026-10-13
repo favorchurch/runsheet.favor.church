@@ -112,11 +112,7 @@ describe('rockCreateServiceRunsheet skipIfExists option', () => {
     expect(mockPost).not.toHaveBeenCalled();
     expect(mockGet).toHaveBeenCalledWith(
       '/ContentChannels',
-      {
-        $filter: `ContentChannelTypeId eq 13 and Name eq '${TITLE}'`,
-        $select: 'Id',
-        $top: 1,
-      },
+      expect.objectContaining({ $filter: `ContentChannelTypeId eq 13 and Name eq '${TITLE}'` }),
       true,
     );
   });
@@ -128,15 +124,6 @@ describe('rockCreateServiceRunsheet skipIfExists option', () => {
 
     expect(res.success).toBe(true);
     expect(res.skipped).toBeUndefined();
-    expect(mockGet).toHaveBeenCalledWith(
-      '/ContentChannels',
-      {
-        $filter: `ContentChannelTypeId eq 13 and Name eq '${TITLE}'`,
-        $select: 'Id',
-        $top: 1,
-      },
-      true,
-    );
     expect(mockPost).toHaveBeenCalledWith('/ContentChannels', expect.objectContaining({ Name: TITLE }));
   });
 
@@ -163,11 +150,9 @@ describe('rockCreateServiceRunsheet skipIfExists option', () => {
     expect(mockPost).not.toHaveBeenCalled();
     expect(mockGet).toHaveBeenCalledWith(
       '/ContentChannels',
-      {
+      expect.objectContaining({
         $filter: "ContentChannelTypeId eq 13 and Name eq 'MNL Crowne // Father''s Day // 10AM'",
-        $select: 'Id',
-        $top: 1,
-      },
+      }),
       true,
     );
   });

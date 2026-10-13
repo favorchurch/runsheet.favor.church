@@ -118,3 +118,13 @@ describe('planRosterSlots', () => {
     expect(plan.error).toBe('The same person cannot be assigned to this role twice.');
   });
 });
+
+describe('mergeRosterOccupants ties', () => {
+  it('keeps arrival order within the same slot', () => {
+    const merged = mergeRosterOccupants(
+      [occ(1, 10, 'B', 800), occ(2, 20, 'A', 799), occ(3, 30, 'C', 800), occ(4, 40, 'D', 799)],
+      WL,
+    );
+    expect(merged.map((o) => o.name)).toEqual(['A', 'D', 'B', 'C']);
+  });
+});

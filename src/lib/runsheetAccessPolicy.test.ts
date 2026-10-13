@@ -313,4 +313,101 @@ describe('runsheet access policy', () => {
     expect(result.viewerGroupIds).toEqual(expectedViewer);
     expect(result.runsheetCampuses).toEqual(expectedCampuses);
   });
+
+  describe('team-name matching', () => {
+    const root = new Map([[57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' as const }]]);
+    const resolveFor = (name: string, groupRoleId: number) =>
+      resolveRunsheetAccessPolicy(
+        [{ groupId: 19109, groupTypeId: 23, groupRoleId }],
+        new Map([[19109, { groupId: 19109, groupTypeId: 23, name, parentGroupId: 57 }]]),
+        root,
+      );
+
+    it('recognises an Events Team name with surrounding whitespace or other casing', () => {
+      expect(resolveFor('  MNL Events Team  ', 55).runsheetEditCampuses).toEqual(['MNL']);
+      expect(resolveFor('mnl EVENTS TEAM', 20).runsheetEditCampuses).toEqual(['MNL']);
+    });
+
+    it('requires "Events Team" to end the name', () => {
+      const result = resolveFor('MNL Events Team Volunteers', 55);
+      expect(result.viewerGroupIds).toEqual([]);
+      expect(result.runsheetCampuses).toEqual([]);
+    });
+
+    it('gives Deaf Ministry Overall and Unit Heads a view-only campus scope', () => {
+      for (const role of [20, 55]) {
+        const result = resolveFor('MNL Deaf Ministry', role);
+        expect(result.runsheetCampuses).toEqual(['MNL']);
+        expect(result.runsheetEditCampuses).toEqual([]);
+        expect(result.editorGroupIds).toEqual([]);
+      }
+    });
+
+    it('gives other Deaf Ministry roles, and names not ending in "Deaf Ministry", nothing', () => {
+      expect(resolveFor('MNL Deaf Ministry', 19).runsheetCampuses).toEqual([]);
+      expect(resolveFor('MNL Deaf Ministry Interpreters', 55).runsheetCampuses).toEqual([]);
+    });
+  });
+
+  it('ignores Deaf Ministry and Events Team names outside GroupType 23', () => {
+    const result = resolveRunsheetAccessPolicy(
+      [
+        { groupId: 501, groupTypeId: 99, groupRoleId: 55 },
+        { groupId: 502, groupTypeId: 99, groupRoleId: 55 },
+      ],
+      new Map([
+        [501, { groupId: 501, groupTypeId: 99, name: 'MNL Deaf Ministry', parentGroupId: 57 }],
+        [502, { groupId: 502, groupTypeId: 99, name: 'MNL Events Team', parentGroupId: 57 }],
+      ]),
+      new Map([[57, { groupId: 57, groupTypeId: 99, parentGroupId: null, campus: 'MNL' as const }]]),
+    );
+    expect(result.runsheetCampuses).toEqual([]);
+  });
+
+  it('reports no leader-role fallback unless the lookup failed', () => {
+    expect(resolveRunsheetAccessPolicy([], new Map(), new Map()).usedLeaderRoleFallback).toBe(false);
+  });
+
+  it('grants the Web Developer name regardless of case and padding', () => {
+    const result = resolveRunsheetAccessPolicy(
+      [{ groupId: 8123, groupTypeId: 1 }],
+      new Map([[8123, { groupId: 8123, groupTypeId: 1, name: '  GLB | WEB Developer ' }]]),
+      new Map(),
+    );
+    expect(result.runsheetEditCampuses).toEqual([ALL_CAMPUSES]);
+  });
+
+  it('terminates on a cyclic ancestry and grants nothing', () => {
+    const result = resolveRunsheetAccessPolicy(
+      [{ groupId: 1, groupTypeId: 28, groupRoleId: 1 }],
+      new Map([
+        [1, { groupId: 1, groupTypeId: 28, name: 'A', parentGroupId: 2 }],
+        [2, { groupId: 2, groupTypeId: 28, name: 'B', parentGroupId: 1 }],
+      ]),
+      new Map(),
+    );
+    expect(result.runsheetCampuses).toEqual([]);
+    expect(result.editorGroupIds).toEqual([]);
+  });
+
+  it('lists each campus and group once across overlapping memberships', () => {
+    const groups = new Map([
+      [7001, { groupId: 7001, groupTypeId: 28, name: 'MNL Staff', parentGroupId: 32893 }],
+      [7002, { groupId: 7002, groupTypeId: 28, name: 'MNL Creative', parentGroupId: 32893 }],
+    ]);
+    const roots = new Map([[32893, { groupId: 32893, groupTypeId: 28, parentGroupId: null, campus: 'MNL' as const }]]);
+    const result = resolveRunsheetAccessPolicy(
+      [
+        { groupId: 7001, groupTypeId: 28, groupRoleId: 1 },
+        { groupId: 7001, groupTypeId: 28, groupRoleId: 2 },
+        { groupId: 7002, groupTypeId: 28, groupRoleId: 1 },
+      ],
+      groups,
+      roots,
+    );
+    expect(result.editorGroupIds).toEqual(['7001', '7002']);
+    expect(result.viewerGroupIds).toEqual(['7001', '7002']);
+    expect(result.runsheetCampuses).toEqual(['MNL']);
+    expect(result.runsheetEditCampuses).toEqual(['MNL']);
+  });
 });
