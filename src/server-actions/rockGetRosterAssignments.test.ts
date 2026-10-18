@@ -266,11 +266,13 @@ describe('rockGetRosterAssignments campus scoping', () => {
   });
 
   it.each([
-    [['BNE', 'MNL'], true],
-    [['SEL', 'MNL'], true],
-    [['BNE', 'SEL'], false],
-  ])('a viewer of %j reading an MNL roster: allowed=%s', async (campuses, allowed) => {
+    [['BNE', 'MNL'], 1, true],
+    [['SEL', 'MNL'], 1, true],
+    [['BNE', 'SEL'], 2, false],
+    [['BNE', 'MNL'], 2, false],
+  ])('a viewer of %j with home campus %s reading MNL roster: allowed=%s', async (campuses, campusId, allowed) => {
     mockSession.mockResolvedValue({
+      contact: { campusId },
       rolesMap: { viewer: ['7002'] },
       access: { runsheetCampuses: campuses, runsheetEditCampuses: [] },
     } as any);
