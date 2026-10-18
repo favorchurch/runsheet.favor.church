@@ -10,6 +10,7 @@ import {
   HiMagnifyingGlass,
   HiXMark,
   HiDocumentText,
+  HiLockClosed,
 } from 'react-icons/hi2';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import type { RunsheetDetails } from '@/types/Runsheet';
@@ -33,10 +34,19 @@ import {
 } from '@/lib/userPreferences';
 
 import type { RunsheetCampusCode } from '@/lib/runsheetCampus';
+import {
+  CampusSwitcher,
+  getCampusSwitcherPreference,
+  hasAllCampusAccess,
+  setCampusSwitcherPreference,
+  type CampusSwitcherValue,
+} from './CampusSwitcher';
 
 export interface RunsheetLandingViewProps {
   channels: RunsheetChannelOption[];
   isLoading: boolean;
+  /** The channel list failed to load, so an empty list says nothing about access. */
+  loadFailed?: boolean;
   canEdit: boolean;
   showArchived: boolean;
   onToggleShowArchived?: (show: boolean) => void;
@@ -47,6 +57,8 @@ export interface RunsheetLandingViewProps {
   templateCampuses?: RunsheetCampusCode[];
   onPrefetchChannel?: (channelId: number) => void;
   accessScope?: string;
+  /** `access.runsheetCampuses`: the campus switcher shows only when it includes 'ALL'. */
+  runsheetCampuses?: string[];
 }
 
 function getCampusBadgeStyle(campus: string | null) {
@@ -186,6 +198,7 @@ function RunsheetCardSkeleton() {
 export function RunsheetLandingView({
   channels,
   isLoading,
+  loadFailed = false,
   canEdit,
   showArchived,
   onToggleShowArchived,
@@ -195,10 +208,13 @@ export function RunsheetLandingView({
   templateCampuses = [],
   onPrefetchChannel,
   accessScope = 'anonymous',
+  runsheetCampuses,
 }: RunsheetLandingViewProps) {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCampusFilter, setSelectedCampusFilter] = useState<string>('ALL');
+  const showCampusSwitcher = hasAllCampusAccess(runsheetCampuses);
+  const [selectedCampus, setSelectedCampus] = useState<CampusSwitcherValue>('ALL');
+  useEffect(() => setSelectedCampus(getCampusSwitcherPreference()), []);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const [selectedKind, setSelectedKind] = useState<RunsheetKindPreference>('all');
   useEffect(() => setSelectedKind(getRunsheetKindPreference()), []);
@@ -233,22 +249,16 @@ export function RunsheetLandingView({
     }
   };
 
-  // Discover distinct campuses present in channels
-  const distinctCampuses = useMemo(() => {
-    const set = new Set<string>();
-    channels.forEach((c) => {
-      const campus = extractRunsheetCampus(c.name);
-      if (campus) set.add(campus);
-    });
-    return Array.from(set);
-  }, [channels]);
+  // No campus scope and nothing rostered or Grow-matched to show.
+  const hasNoAccess = !isLoading && !loadFailed && channels.length === 0 && !runsheetCampuses?.length;
+  // One-campus users keep cross-campus rostered runsheets; only the switcher filters by campus.
+  const campusFilter = showCampusSwitcher ? selectedCampus : 'ALL';
 
   // Filter channels by search and campus, sorted chronologically with time signatures
   const filteredChannels = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const matches = channels.filter((c) => {
-      const campus = extractRunsheetCampus(c.name);
-      if (selectedCampusFilter !== 'ALL' && campus !== selectedCampusFilter) {
+      if (campusFilter !== 'ALL' && extractRunsheetCampus(c.name) !== campusFilter) {
         return false;
       }
       if (effectiveKind !== 'all' && getRunsheetKind(c.name) !== effectiveKind) {
@@ -262,7 +272,7 @@ export function RunsheetLandingView({
     });
     const { upcoming, past } = partitionRunsheetChannelsByRecency(matches);
     return [...sortRunsheetChannels(upcoming), ...sortRunsheetChannels(past, 'desc')];
-  }, [channels, searchQuery, selectedCampusFilter, effectiveKind]);
+  }, [channels, searchQuery, campusFilter, effectiveKind]);
 
   return (
     <div className="w-full max-w-6xl mx-auto py-3 sm:py-5 px-1 space-y-3.5 sm:space-y-4">
@@ -340,35 +350,14 @@ export function RunsheetLandingView({
           )}
         </div>
 
-        {/* Campus Filter Pills (if more than 1 campus) */}
-        {distinctCampuses.length > 1 && (
-          <div className="flex items-center gap-1 overflow-x-auto py-0.5">
-            <button
-              type="button"
-              onClick={() => setSelectedCampusFilter('ALL')}
-              className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
-                selectedCampusFilter === 'ALL'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-              }`}
-            >
-              All
-            </button>
-            {distinctCampuses.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setSelectedCampusFilter(c)}
-                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
-                  selectedCampusFilter === c
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                }`}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
+        {showCampusSwitcher && (
+          <CampusSwitcher
+            value={selectedCampus}
+            onChange={(campus) => {
+              setSelectedCampus(campus);
+              setCampusSwitcherPreference(campus);
+            }}
+          />
         )}
 
         {/* Kind Filter Pills (if more than 1 kind) */}
@@ -409,7 +398,31 @@ export function RunsheetLandingView({
       </div>
 
       {/* Grid of Runsheet Cards */}
-      {isLoading ? (
+      {hasNoAccess ? (
+        <div
+          data-testid="runsheet-no-access"
+          className="flex flex-col items-center justify-center p-12 text-center rounded-2xl border-2 border-dashed border-slate-200 bg-white/60"
+        >
+          <div className="p-3 rounded-full bg-slate-100 text-slate-400 mb-3">
+            <HiLockClosed className="h-8 w-8" />
+          </div>
+          <h3 className="text-base font-bold text-slate-900">No campus access</h3>
+          <p className="mt-1 text-xs sm:text-sm text-slate-500 max-w-sm">
+            Your account isn&apos;t linked to a campus, and no rostered or Grow runsheets are scheduled for you
+            right now. If you expected to see runsheets here, ask your campus staff for access.
+          </p>
+          {canEdit && onCreateNew && (
+            <button
+              type="button"
+              onClick={onCreateNew}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer"
+            >
+              <HiPlus className="h-4 w-4" />
+              <span>Create New Runsheet</span>
+            </button>
+          )}
+        </div>
+      ) : isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 xl:gap-5">
           <RunsheetCardSkeleton />
           <RunsheetCardSkeleton />
@@ -429,7 +442,9 @@ export function RunsheetLandingView({
           <p className="mt-1 text-xs sm:text-sm text-slate-500 max-w-sm">
             {searchQuery
               ? `No runsheets matched "${searchQuery}". Try adjusting your search query.`
-              : 'There are currently no active runsheets scheduled for your campus.'}
+              : campusFilter !== 'ALL'
+                ? `There are currently no active runsheets scheduled for ${campusFilter}.`
+                : 'There are currently no active runsheets scheduled for your campus.'}
           </p>
           {canEdit && onCreateNew && (
             <button

@@ -6,7 +6,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { RunsheetManager } from '@/components/runsheet/RunsheetManager';
-import { canUserEditRunsheet } from '@/lib/permissions';
+import { canUserEditRunsheet, hasFullEditorRole } from '@/lib/permissions';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockDelete, rockGet, rockPatch, rockPost } from '@/server-actions/internal/rockFetch';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
@@ -39,13 +39,15 @@ jest.mock('@/components/runsheet/RunsheetTableEditor', () => ({
     canEdit,
     editorMode,
     onModeChange,
+    growOnly,
   }: {
     readOnly?: boolean;
+    growOnly?: boolean;
     canEdit?: boolean;
     editorMode?: 'view' | 'edit';
     onModeChange?: (mode: 'view' | 'edit') => void;
   }) => (
-    <div data-testid="runsheet-editor" data-readonly={String(Boolean(readOnly))}>
+    <div data-testid="runsheet-editor" data-readonly={String(Boolean(readOnly))} data-grow-only={String(growOnly)}>
       {canEdit && (
         <div role="group" aria-label="Runsheet mode">
           <button
@@ -242,5 +244,48 @@ describe('RunsheetManager View/Edit toggle', () => {
     expect(mockRockPost).not.toHaveBeenCalled();
     expect(mockRockPatch).not.toHaveBeenCalled();
     expect(mockRockDelete).not.toHaveBeenCalled();
+  });
+});
+
+describe('RunsheetManager landing campus scope', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    window.localStorage.clear();
+    mockCanUserEditRunsheet.mockReturnValue(false);
+    mockRunsheetReads();
+  });
+
+  it('shows the campus switcher to a Global user', async () => {
+    renderManager(<RunsheetManager user={{ rolesMap: { viewer: ['v'] }, access: { runsheetCampuses: ['ALL'] } } as any} />);
+    await waitFor(() => expect(screen.getByRole('group', { name: 'Campus' })).toBeInTheDocument());
+  });
+
+  it('hides the campus switcher from a one-campus user', async () => {
+    renderManager(<RunsheetManager user={viewerUser} />);
+    await waitFor(() => expect(screen.getByTestId('runsheet-card-1')).toBeInTheDocument());
+    expect(screen.queryByRole('group', { name: 'Campus' })).not.toBeInTheDocument();
+  });
+
+  it('shows the no-campus-access state when access resolves to nothing', async () => {
+    mockGetAvailableRunsheetChannels.mockResolvedValue({ success: true, channels: [] });
+    renderManager(<RunsheetManager user={{ rolesMap: {}, access: { runsheetCampuses: [] } } as any} />);
+    await waitFor(() => expect(screen.getByTestId('runsheet-no-access')).toBeInTheDocument());
+  });
+});
+
+describe('RunsheetManager editor Grow scope', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCanUserEditRunsheet.mockReturnValue(true);
+    mockRunsheetReads();
+  });
+
+  it.each([
+    [true, 'false'],
+    [false, 'true'],
+  ])('passes growOnly to the editor (full editor role: %s)', async (fullEditor, expected) => {
+    jest.mocked(hasFullEditorRole).mockReturnValue(fullEditor);
+    renderManager(<RunsheetManager user={editorUser} initialChannelId={1} />);
+    await waitFor(() => expect(screen.getByTestId('runsheet-editor')).toHaveAttribute('data-grow-only', expected));
   });
 });

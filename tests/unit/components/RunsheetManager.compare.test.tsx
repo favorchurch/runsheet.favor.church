@@ -31,6 +31,7 @@ jest.mock('@/server-actions/rockGetRunsheetDetails');
 jest.mock('@/lib/permissions', () => ({
   canUserEditRunsheet: jest.fn().mockReturnValue(true),
   canUserAccessRunsheet: jest.fn().mockReturnValue(true),
+  hasFullEditorRole: jest.fn().mockReturnValue(true),
 }));
 jest.mock('@/components/runsheet/RunsheetCompareView', () => ({
   RunsheetCompareView: ({ channelIds, availableChannels, onSelectionChange, onClose }: {

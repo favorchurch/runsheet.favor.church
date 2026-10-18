@@ -31,7 +31,7 @@ import {
   parseDurationInputToMinutes,
   parseTimeToMinutes,
 } from '@/lib/runsheetTime';
-import { ALL_CAMPUSES, extractRunsheetCampus, RunsheetCampusCode } from '@/lib/runsheetCampus';
+import { extractRunsheetCampus } from '@/lib/runsheetCampus';
 import { rockBulkSaveRunsheetItems } from '@/server-actions/rockBulkSaveRunsheetItems';
 import { rockDeleteServiceRunsheet } from '@/server-actions/rockDeleteServiceRunsheet';
 import { getRockContentChannelOptions, ContentChannelCategoryOption } from '@/server-actions/getRockContentChannelOptions';
@@ -54,7 +54,7 @@ function extractChannelDateLabel(name: string): string {
   const parts = name.split('//');
   return parts.length >= 2 ? parts[1].trim() : '';
 }
-import { generateRunsheetTitle } from './CreateRunsheetForm';
+import { filterCategoriesForCampuses, generateRunsheetTitle, titleCampusError } from './CreateRunsheetForm';
 import { CELL_ATTRIBUTE, RichTextCell } from './RichTextCell';
 import { RichTextContent } from './RichTextContent';
 import { RichTextToolbar } from './RichTextToolbar';
@@ -65,15 +65,6 @@ import { ExportPdfButton } from './ExportPdfButton';
 import { isMasterTemplateName } from '@/lib/runsheetTemplate';
 import { EventTeamRosterCard, ensureRosterItems } from './EventTeamRosterCard';
 import { REORDER_INDEX_ATTR, usePointerReorder } from './usePointerReorder';
-
-function extractCategoryCampus(catName: string): RunsheetCampusCode | null {
-  if (!catName) return null;
-  const upper = catName.toUpperCase();
-  if (upper.includes('MNL') || upper.includes('MANILA')) return 'MNL';
-  if (upper.includes('BNE') || upper.includes('BRISBANE')) return 'BNE';
-  if (upper.includes('SEL') || upper.includes('SEOUL')) return 'SEL';
-  return null;
-}
 
 function getNextSunday() {
   const d = new Date();
@@ -116,6 +107,8 @@ interface RunsheetTableEditorProps {
   editorMode?: 'view' | 'edit';
   onModeChange?: (mode: 'view' | 'edit') => void;
   runsheetCampuses?: string[];
+  /** Grow-only editors duplicate Grow runsheets only; see filterCategoriesForCampuses. */
+  growOnly?: boolean;
   /** Cache discriminator for the authorized result set; see getRunsheetAccessScope. */
   accessScope?: string;
   onCreated?: (
@@ -273,6 +266,7 @@ export function RunsheetTableEditor({
   editorMode,
   onModeChange,
   runsheetCampuses,
+  growOnly = false,
   accessScope = 'anonymous',
   onCreated,
   onDeleted,
@@ -711,15 +705,6 @@ export function RunsheetTableEditor({
   const [loadingDuplicateOptions, setLoadingDuplicateOptions] = useState(false);
   const [loadingDuplicateSchedules, setLoadingDuplicateSchedules] = useState(false);
 
-  const isGlobalStaffOrAdmin = React.useMemo(
-    () => !runsheetCampuses || runsheetCampuses.includes(ALL_CAMPUSES),
-    [runsheetCampuses]
-  );
-  const userAllowedCampuses = React.useMemo(
-    () => (runsheetCampuses || []).filter((c) => c !== ALL_CAMPUSES) as RunsheetCampusCode[],
-    [runsheetCampuses]
-  );
-
   useEffect(() => {
     if (!showDuplicateModal) return;
     let cancelled = false;
@@ -730,21 +715,12 @@ export function RunsheetTableEditor({
         const res = await getRockContentChannelOptions();
         if (cancelled) return;
         if (res.success) {
-          const isGlobal = !runsheetCampuses || runsheetCampuses.includes(ALL_CAMPUSES);
-          const allowed = (runsheetCampuses || []).filter((c) => c !== ALL_CAMPUSES) as RunsheetCampusCode[];
-
-          let filteredCats = res.categories;
-          if (!isGlobal && allowed.length > 0) {
-            filteredCats = res.categories.filter((cat) => {
-              const catCampus = extractCategoryCampus(cat.name);
-              return catCampus === null || allowed.includes(catCampus);
-            });
-          }
+          const filteredCats = filterCategoriesForCampuses(res.categories, runsheetCampuses, growOnly);
           setDuplicateCategories(filteredCats);
 
           const currentCampus = extractRunsheetCampus(channelName);
           const matchedCat = filteredCats.find((c) => {
-            const catCampus = extractCategoryCampus(c.name);
+            const catCampus = extractRunsheetCampus(c.name);
             return catCampus === currentCampus;
           });
 
@@ -1355,12 +1331,10 @@ export function RunsheetTableEditor({
     }
 
     const finalTitle = duplicateTitle.trim();
-    if (!isGlobalStaffOrAdmin && userAllowedCampuses.length > 0) {
-      const titleCampus = extractRunsheetCampus(finalTitle);
-      if (titleCampus && !userAllowedCampuses.includes(titleCampus)) {
-        setDuplicateError(`You are only authorized to create runsheets for your assigned campus (${userAllowedCampuses.join(', ')}).`);
-        return;
-      }
+    const campusError = titleCampusError(finalTitle, runsheetCampuses, growOnly);
+    if (campusError) {
+      setDuplicateError(campusError);
+      return;
     }
 
     setIsDuplicating(true);

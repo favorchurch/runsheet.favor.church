@@ -137,7 +137,7 @@ describe('CreateRunsheetForm batch operations', () => {
         ],
       });
 
-      render(<CreateRunsheetForm />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} />);
 
       const sessionSelect = await screen.findByRole('combobox', { name: /Session \/ Service Schedule/i });
       await waitFor(() => expect(sessionSelect).toHaveValue('MNL Crowne 9AM'));
@@ -163,7 +163,7 @@ describe('CreateRunsheetForm batch operations', () => {
         ],
       });
 
-      render(<CreateRunsheetForm />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} />);
 
       const sessionSelect = await screen.findByRole('combobox', { name: /Session \/ Service Schedule/i });
       fireEvent.change(sessionSelect, { target: { value: 'MNL Sunday AM Huddle' } });
@@ -175,7 +175,7 @@ describe('CreateRunsheetForm batch operations', () => {
     });
 
     it('appears when schedules.length >= 2, and updates the submit button label when checked', async () => {
-      render(<CreateRunsheetForm />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} />);
 
       await waitFor(() => {
         expect(
@@ -198,7 +198,7 @@ describe('CreateRunsheetForm batch operations', () => {
         schedules: [mockMultiSchedules[0]],
       });
 
-      render(<CreateRunsheetForm />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} />);
 
       await waitFor(() => {
         expect(screen.getByDisplayValue(/MNL Crowne 9AM/i)).toBeInTheDocument();
@@ -211,7 +211,7 @@ describe('CreateRunsheetForm batch operations', () => {
 
     it('creates runsheets for all schedules on that date with skipIfExists: true and auto-titles', async () => {
       const onCreated = jest.fn();
-      render(<CreateRunsheetForm onCreated={onCreated} />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} onCreated={onCreated} />);
 
       await waitFor(() => {
         expect(
@@ -285,7 +285,7 @@ describe('CreateRunsheetForm batch operations', () => {
         ],
       });
 
-      render(<CreateRunsheetForm />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} />);
 
       // On 2026-10-11 (next Sunday), only 2 of the 3 schedules occur
       await waitFor(() => {
@@ -373,7 +373,7 @@ describe('CreateRunsheetForm batch operations', () => {
 
   describe('Non-Grow upcoming batch with count', () => {
     it('appears for non-Grow schedule with >= 2 upcoming occurrences, defaulting to min(4, occurrences)', async () => {
-      render(<CreateRunsheetForm />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} />);
 
       await waitFor(() => {
         expect(
@@ -393,7 +393,7 @@ describe('CreateRunsheetForm batch operations', () => {
     });
 
     it('allows changing count input clamped between 1 and available occurrences', async () => {
-      render(<CreateRunsheetForm />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} />);
 
       await waitFor(() => {
         expect(screen.getByLabelText(/Upcoming sessions count/i)).toBeInTheDocument();
@@ -419,7 +419,7 @@ describe('CreateRunsheetForm batch operations', () => {
 
     it('submits exactly the earliest count of occurrences with skipIfExists: true', async () => {
       const onCreated = jest.fn();
-      render(<CreateRunsheetForm onCreated={onCreated} />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} onCreated={onCreated} />);
 
       await waitFor(() => {
         expect(screen.getByLabelText(/Upcoming sessions count/i)).toBeInTheDocument();
@@ -452,7 +452,7 @@ describe('CreateRunsheetForm batch operations', () => {
     });
 
     it('does not show upcoming batch when occurrences < 2', async () => {
-      render(<CreateRunsheetForm />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} />);
 
       await waitFor(() => {
         expect(screen.getByDisplayValue(/MNL Crowne 9AM/i)).toBeInTheDocument();
@@ -471,7 +471,7 @@ describe('CreateRunsheetForm batch operations', () => {
 
     it('starts non-Grow upcoming batch at the chosen date and creates subsequent occurrences from that date', async () => {
       const onCreated = jest.fn();
-      render(<CreateRunsheetForm onCreated={onCreated} />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} onCreated={onCreated} />);
 
       await waitFor(() => {
         expect(screen.getByDisplayValue(/MNL Crowne 9AM/i)).toBeInTheDocument();
@@ -530,7 +530,7 @@ describe('CreateRunsheetForm batch operations', () => {
 
   describe('Mutual exclusion and resets', () => {
     it('clears Date-wide when Upcoming is checked, and clears Upcoming when Date-wide is checked', async () => {
-      render(<CreateRunsheetForm />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} />);
 
       await waitFor(() => {
         expect(
@@ -558,7 +558,7 @@ describe('CreateRunsheetForm batch operations', () => {
     });
 
     it('resets both checkboxes when session changes', async () => {
-      render(<CreateRunsheetForm />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} />);
 
       await waitFor(() => {
         expect(
@@ -584,7 +584,7 @@ describe('CreateRunsheetForm batch operations', () => {
     });
 
     it('resets both checkboxes when category changes', async () => {
-      render(<CreateRunsheetForm />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} />);
 
       await waitFor(() => {
         expect(
@@ -607,7 +607,7 @@ describe('CreateRunsheetForm batch operations', () => {
     });
 
     it('resets Date-wide batch when date changes, but preserves upcoming batch', async () => {
-      render(<CreateRunsheetForm />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} />);
 
       await waitFor(() => {
         expect(
@@ -670,7 +670,7 @@ describe('CreateRunsheetForm batch operations', () => {
           id: 702,
         });
 
-      render(<CreateRunsheetForm onCreated={onCreated} />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} onCreated={onCreated} />);
 
       await waitFor(() => {
         expect(screen.getByLabelText(/Upcoming sessions count/i)).toBeInTheDocument();
@@ -702,7 +702,7 @@ describe('CreateRunsheetForm batch operations', () => {
         id: 888,
       });
 
-      render(<CreateRunsheetForm onCreated={onCreated} />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} onCreated={onCreated} />);
 
       await waitFor(() => {
         expect(screen.getByLabelText(/Upcoming sessions count/i)).toBeInTheDocument();
@@ -740,7 +740,7 @@ describe('CreateRunsheetForm batch operations', () => {
         ],
       });
 
-      render(<CreateRunsheetForm onCreated={onCreated} />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} onCreated={onCreated} />);
 
       await waitFor(() => {
         expect(screen.getByLabelText(/Upcoming sessions count/i)).toBeInTheDocument();
@@ -764,7 +764,7 @@ describe('CreateRunsheetForm batch operations', () => {
         error: 'Campus unauthorized',
       });
 
-      render(<CreateRunsheetForm onCreated={onCreated} />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} onCreated={onCreated} />);
 
       await waitFor(() => {
         expect(screen.getByLabelText(/Upcoming sessions count/i)).toBeInTheDocument();
@@ -797,7 +797,7 @@ describe('CreateRunsheetForm batch operations', () => {
           error: 'Rock network timeout',
         });
 
-      render(<CreateRunsheetForm onCreated={onCreated} />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} onCreated={onCreated} />);
 
       await waitFor(() => {
         expect(screen.getByLabelText(/Upcoming sessions count/i)).toBeInTheDocument();
@@ -835,7 +835,7 @@ describe('CreateRunsheetForm batch operations', () => {
           error: 'Unauthorized',
         });
 
-      render(<CreateRunsheetForm onCreated={onCreated} />);
+      render(<CreateRunsheetForm runsheetCampuses={['ALL']} onCreated={onCreated} />);
 
       await waitFor(() => {
         expect(screen.getByLabelText(/Upcoming sessions count/i)).toBeInTheDocument();
