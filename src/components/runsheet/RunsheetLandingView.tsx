@@ -10,6 +10,7 @@ import {
   HiMagnifyingGlass,
   HiXMark,
   HiDocumentText,
+  HiLockClosed,
 } from 'react-icons/hi2';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import type { RunsheetDetails } from '@/types/Runsheet';
@@ -33,6 +34,13 @@ import {
 } from '@/lib/userPreferences';
 
 import type { RunsheetCampusCode } from '@/lib/runsheetCampus';
+import {
+  CampusSwitcher,
+  getCampusSwitcherPreference,
+  hasAllCampusAccess,
+  setCampusSwitcherPreference,
+  type CampusSwitcherValue,
+} from './CampusSwitcher';
 
 export interface RunsheetLandingViewProps {
   channels: RunsheetChannelOption[];
@@ -47,6 +55,8 @@ export interface RunsheetLandingViewProps {
   templateCampuses?: RunsheetCampusCode[];
   onPrefetchChannel?: (channelId: number) => void;
   accessScope?: string;
+  /** `access.runsheetCampuses`: the campus switcher shows only when it includes 'ALL'. */
+  runsheetCampuses?: string[];
 }
 
 function getCampusBadgeStyle(campus: string | null) {
@@ -195,10 +205,13 @@ export function RunsheetLandingView({
   templateCampuses = [],
   onPrefetchChannel,
   accessScope = 'anonymous',
+  runsheetCampuses,
 }: RunsheetLandingViewProps) {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCampusFilter, setSelectedCampusFilter] = useState<string>('ALL');
+  const showCampusSwitcher = hasAllCampusAccess(runsheetCampuses);
+  const [selectedCampus, setSelectedCampus] = useState<CampusSwitcherValue>('ALL');
+  useEffect(() => setSelectedCampus(getCampusSwitcherPreference()), []);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const [selectedKind, setSelectedKind] = useState<RunsheetKindPreference>('all');
   useEffect(() => setSelectedKind(getRunsheetKindPreference()), []);
@@ -233,22 +246,16 @@ export function RunsheetLandingView({
     }
   };
 
-  // Discover distinct campuses present in channels
-  const distinctCampuses = useMemo(() => {
-    const set = new Set<string>();
-    channels.forEach((c) => {
-      const campus = extractRunsheetCampus(c.name);
-      if (campus) set.add(campus);
-    });
-    return Array.from(set);
-  }, [channels]);
+  // No campus scope and nothing rostered or Grow-matched to show.
+  const hasNoAccess = !isLoading && channels.length === 0 && !runsheetCampuses?.length;
+  // One-campus users keep cross-campus rostered runsheets; only the switcher filters by campus.
+  const campusFilter = showCampusSwitcher ? selectedCampus : 'ALL';
 
   // Filter channels by search and campus, sorted chronologically with time signatures
   const filteredChannels = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const matches = channels.filter((c) => {
-      const campus = extractRunsheetCampus(c.name);
-      if (selectedCampusFilter !== 'ALL' && campus !== selectedCampusFilter) {
+      if (campusFilter !== 'ALL' && extractRunsheetCampus(c.name) !== campusFilter) {
         return false;
       }
       if (effectiveKind !== 'all' && getRunsheetKind(c.name) !== effectiveKind) {
@@ -262,7 +269,7 @@ export function RunsheetLandingView({
     });
     const { upcoming, past } = partitionRunsheetChannelsByRecency(matches);
     return [...sortRunsheetChannels(upcoming), ...sortRunsheetChannels(past, 'desc')];
-  }, [channels, searchQuery, selectedCampusFilter, effectiveKind]);
+  }, [channels, searchQuery, campusFilter, effectiveKind]);
 
   return (
     <div className="w-full max-w-6xl mx-auto py-3 sm:py-5 px-1 space-y-3.5 sm:space-y-4">
@@ -318,98 +325,103 @@ export function RunsheetLandingView({
       </div>
 
       {/* Filter & Controls Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-xl border border-slate-200/80 bg-white shadow-xs">
-        {/* Search input */}
-        <div className="relative flex-1 min-w-[200px]">
-          <HiMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by campus, service time, or date..."
-            className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-9 pr-8 py-1.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-          {searchQuery && (
+      {!hasNoAccess && (
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-xl border border-slate-200/80 bg-white shadow-xs">
+          {/* Search input */}
+          <div className="relative flex-1 min-w-[200px]">
+            <HiMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by campus, service time, or date..."
+              className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-9 pr-8 py-1.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded"
+              >
+                <HiXMark className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {showCampusSwitcher && (
+            <CampusSwitcher
+              value={selectedCampus}
+              onChange={(campus) => {
+                setSelectedCampus(campus);
+                setCampusSwitcherPreference(campus);
+              }}
+            />
+          )}
+
+          {/* Kind Filter Pills (if more than 1 kind) */}
+          {distinctKinds.length > 1 && (
+            <div className="flex items-center gap-1 overflow-x-auto py-0.5">
+              {(['all', ...distinctKinds] as RunsheetKindPreference[]).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => {
+                    setSelectedKind(kind);
+                    setRunsheetKindPreference(kind);
+                  }}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
+                    effectiveKind === kind
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                  }`}
+                >
+                  {kind === 'all' ? 'All' : RUNSHEET_KIND_LABELS[kind]}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Archived Toggle */}
+          {canEdit && onToggleShowArchived && (
+            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none whitespace-nowrap px-1">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => onToggleShowArchived(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+              />
+              <span>Show Archived</span>
+            </label>
+          )}
+        </div>
+      )}
+
+      {/* Grid of Runsheet Cards */}
+      {hasNoAccess ? (
+        <div
+          data-testid="runsheet-no-access"
+          className="flex flex-col items-center justify-center p-12 text-center rounded-2xl border-2 border-dashed border-slate-200 bg-white/60"
+        >
+          <div className="p-3 rounded-full bg-slate-100 text-slate-400 mb-3">
+            <HiLockClosed className="h-8 w-8" />
+          </div>
+          <h3 className="text-base font-bold text-slate-900">No campus access</h3>
+          <p className="mt-1 text-xs sm:text-sm text-slate-500 max-w-sm">
+            Your account isn&apos;t linked to a campus and you aren&apos;t rostered on any runsheets yet. Ask your
+            campus staff to give you access.
+          </p>
+          {canEdit && onCreateNew && (
             <button
               type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded"
+              onClick={onCreateNew}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 cursor-pointer"
             >
-              <HiXMark className="h-3.5 w-3.5" />
+              <HiPlus className="h-4 w-4" />
+              <span>Create New Runsheet</span>
             </button>
           )}
         </div>
-
-        {/* Campus Filter Pills (if more than 1 campus) */}
-        {distinctCampuses.length > 1 && (
-          <div className="flex items-center gap-1 overflow-x-auto py-0.5">
-            <button
-              type="button"
-              onClick={() => setSelectedCampusFilter('ALL')}
-              className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
-                selectedCampusFilter === 'ALL'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-              }`}
-            >
-              All
-            </button>
-            {distinctCampuses.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setSelectedCampusFilter(c)}
-                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
-                  selectedCampusFilter === c
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                }`}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Kind Filter Pills (if more than 1 kind) */}
-        {distinctKinds.length > 1 && (
-          <div className="flex items-center gap-1 overflow-x-auto py-0.5">
-            {(['all', ...distinctKinds] as RunsheetKindPreference[]).map((kind) => (
-              <button
-                key={kind}
-                type="button"
-                onClick={() => {
-                  setSelectedKind(kind);
-                  setRunsheetKindPreference(kind);
-                }}
-                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
-                  effectiveKind === kind
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                }`}
-              >
-                {kind === 'all' ? 'All' : RUNSHEET_KIND_LABELS[kind]}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Archived Toggle */}
-        {canEdit && onToggleShowArchived && (
-          <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none whitespace-nowrap px-1">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(e) => onToggleShowArchived(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-            />
-            <span>Show Archived</span>
-          </label>
-        )}
-      </div>
-
-      {/* Grid of Runsheet Cards */}
-      {isLoading ? (
+      ) : isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 xl:gap-5">
           <RunsheetCardSkeleton />
           <RunsheetCardSkeleton />
@@ -429,7 +441,9 @@ export function RunsheetLandingView({
           <p className="mt-1 text-xs sm:text-sm text-slate-500 max-w-sm">
             {searchQuery
               ? `No runsheets matched "${searchQuery}". Try adjusting your search query.`
-              : 'There are currently no active runsheets scheduled for your campus.'}
+              : campusFilter !== 'ALL'
+                ? `There are currently no active runsheets scheduled for ${campusFilter}.`
+                : 'There are currently no active runsheets scheduled for your campus.'}
           </p>
           {canEdit && onCreateNew && (
             <button

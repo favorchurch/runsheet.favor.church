@@ -86,15 +86,53 @@ export function generateRunsheetTitle(
 }
 
 import { ALL_CAMPUSES, extractRunsheetCampus, RunsheetCampusCode } from '@/lib/runsheetCampus';
+import { isGrowRunsheetTitle } from '@/lib/runsheetKind';
 import type { RunsheetDetails } from '@/types/Runsheet';
 
-function extractCategoryCampus(catName: string): RunsheetCampusCode | null {
+export function extractCategoryCampus(catName: string): RunsheetCampusCode | null {
   if (!catName) return null;
   const upper = catName.toUpperCase();
   if (upper.includes('MNL') || upper.includes('MANILA')) return 'MNL';
   if (upper.includes('BNE') || upper.includes('BRISBANE')) return 'BNE';
   if (upper.includes('SEL') || upper.includes('SEOUL')) return 'SEL';
   return null;
+}
+
+/**
+ * Categories this campus scope may create under. Fails closed: only an 'ALL'
+ * scope sees every campus, and a missing or empty scope gets no campus
+ * categories. A Grow-only editor sees just the Grow category, which the server
+ * authorizes by role rather than campus.
+ */
+export function filterCategoriesForCampuses<T extends { id: number; name: string }>(
+  categories: T[],
+  runsheetCampuses: string[] | undefined,
+  growOnly = false,
+): T[] {
+  if (growOnly) return categories.filter((cat) => cat.id === GROW_CONTENT_CHANNEL_CATEGORY_ID);
+  if (runsheetCampuses?.includes(ALL_CAMPUSES)) return categories;
+  return categories.filter((cat) => {
+    const catCampus = extractCategoryCampus(cat.name);
+    return catCampus === null || (runsheetCampuses || []).includes(catCampus);
+  });
+}
+
+/**
+ * Client-side hint mirroring the server's campus check for a new title; null
+ * when allowed. Fails closed like {@link filterCategoriesForCampuses}.
+ */
+export function titleCampusError(
+  title: string,
+  runsheetCampuses: string[] | undefined,
+  growOnly = false,
+): string | null {
+  if (runsheetCampuses?.includes(ALL_CAMPUSES)) return null;
+  if (growOnly && isGrowRunsheetTitle(title)) return null;
+  const titleCampus = extractRunsheetCampus(title);
+  if (!titleCampus || runsheetCampuses?.includes(titleCampus)) return null;
+  return runsheetCampuses?.length
+    ? `You are only authorized to create runsheets for your assigned campus (${runsheetCampuses.join(', ')}).`
+    : 'You are not authorized to create runsheets for any campus.';
 }
 
 interface CreateRunsheetFormProps {
@@ -147,15 +185,6 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
     return selectedSchedule.upcomingOccurrences.filter((o) => o.date >= date);
   }, [selectedSchedule, date]);
 
-  const isGlobalStaffOrAdmin = React.useMemo(
-    () => !runsheetCampuses || runsheetCampuses.includes(ALL_CAMPUSES),
-    [runsheetCampuses]
-  );
-  const userAllowedCampuses = React.useMemo(
-    () => (runsheetCampuses || []).filter((c) => c !== ALL_CAMPUSES) as RunsheetCampusCode[],
-    [runsheetCampuses]
-  );
-
   useEffect(() => {
     let cancelled = false;
 
@@ -165,22 +194,7 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
         const res = await getRockContentChannelOptions();
         if (cancelled) return;
         if (res.success) {
-          const isGlobal = !runsheetCampuses || runsheetCampuses.includes(ALL_CAMPUSES);
-          const allowed = (runsheetCampuses || []).filter((c) => c !== ALL_CAMPUSES) as RunsheetCampusCode[];
-
-          let filteredCats = res.categories;
-
-          if (!isGlobal && allowed.length > 0) {
-            filteredCats = res.categories.filter((cat) => {
-              const catCampus = extractCategoryCampus(cat.name);
-              return catCampus === null || allowed.includes(catCampus);
-            });
-          }
-
-          // A Grow-only editor may create Grow runsheets only (under MNL | ALL EVENTS).
-          if (growOnly) {
-            filteredCats = filteredCats.filter((cat) => cat.id === GROW_CONTENT_CHANNEL_CATEGORY_ID);
-          }
+          const filteredCats = filterCategoriesForCampuses(res.categories, runsheetCampuses, growOnly);
 
           setCategories(filteredCats);
 
@@ -312,15 +326,10 @@ export function CreateRunsheetForm({ runsheetCampuses, growOnly, onCreated, onCa
         return;
       }
 
-      if (!isGlobalStaffOrAdmin && userAllowedCampuses.length > 0) {
-        const titleCampus = extractRunsheetCampus(finalTitle);
-        if (titleCampus && !userAllowedCampuses.includes(titleCampus)) {
-          setStatus({
-            type: 'error',
-            message: `You are only authorized to create runsheets for your assigned campus (${userAllowedCampuses.join(', ')}).`,
-          });
-          return;
-        }
+      const campusError = titleCampusError(finalTitle, runsheetCampuses, growOnly);
+      if (campusError) {
+        setStatus({ type: 'error', message: campusError });
+        return;
       }
     }
 

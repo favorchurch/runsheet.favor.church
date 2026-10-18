@@ -244,3 +244,29 @@ describe('RunsheetManager View/Edit toggle', () => {
     expect(mockRockDelete).not.toHaveBeenCalled();
   });
 });
+
+describe('RunsheetManager landing campus scope', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    window.localStorage.clear();
+    mockCanUserEditRunsheet.mockReturnValue(false);
+    mockRunsheetReads();
+  });
+
+  it('shows the campus switcher to a Global user', async () => {
+    renderManager(<RunsheetManager user={{ rolesMap: { viewer: ['v'] }, access: { runsheetCampuses: ['ALL'] } } as any} />);
+    await waitFor(() => expect(screen.getByRole('group', { name: 'Campus' })).toBeInTheDocument());
+  });
+
+  it('hides the campus switcher from a one-campus user', async () => {
+    renderManager(<RunsheetManager user={viewerUser} />);
+    await waitFor(() => expect(screen.getByTestId('runsheet-card-1')).toBeInTheDocument());
+    expect(screen.queryByRole('group', { name: 'Campus' })).not.toBeInTheDocument();
+  });
+
+  it('shows the no-campus-access state when access resolves to nothing', async () => {
+    mockGetAvailableRunsheetChannels.mockResolvedValue({ success: true, channels: [] });
+    renderManager(<RunsheetManager user={{ rolesMap: {}, access: { runsheetCampuses: [] } } as any} />);
+    await waitFor(() => expect(screen.getByTestId('runsheet-no-access')).toBeInTheDocument());
+  });
+});

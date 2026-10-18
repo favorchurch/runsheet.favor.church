@@ -95,6 +95,7 @@ export function RunsheetManager({
   const accessScope = getRunsheetAccessScope(user);
   // Templates and new runsheets follow the campuses the user may edit.
   const userCampuses = runsheetEditCampuses(user);
+  const growOnly = !hasFullEditorRole(user);
   const templateCampuses: RunsheetCampusCode[] = userCampuses.includes(ALL_CAMPUSES)
     ? RUNSHEET_CAMPUS_CODES
     : RUNSHEET_CAMPUS_CODES.filter((code) => userCampuses.includes(code));
@@ -489,6 +490,7 @@ export function RunsheetManager({
           onEditTemplate={canEdit ? handleEditTemplate : undefined}
           templateCampuses={templateCampuses}
           accessScope={accessScope}
+          runsheetCampuses={user?.access?.runsheetCampuses ?? []}
         />
       ) : (
         <>
@@ -585,7 +587,7 @@ export function RunsheetManager({
             <div className="mx-auto max-w-lg">
               <CreateRunsheetForm
                 runsheetCampuses={userCampuses}
-                growOnly={!hasFullEditorRole(user)}
+                growOnly={growOnly}
                 onCreated={handleRunsheetCreated}
                 onCancel={handleToggleCreateForm}
               />
@@ -644,6 +646,7 @@ export function RunsheetManager({
                 editorMode={editorMode}
                 onModeChange={handleModeChange}
                 runsheetCampuses={userCampuses}
+                growOnly={growOnly}
                 accessScope={accessScope}
                 onCreated={handleRunsheetCreated}
                 onDeleted={() => handleRunsheetDeleted(runsheetData.channelId)}
