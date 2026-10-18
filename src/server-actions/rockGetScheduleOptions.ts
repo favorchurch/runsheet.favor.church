@@ -11,7 +11,7 @@ import {
 } from '@/lib/runsheetCampus';
 import { GROW_CONTENT_CHANNEL_CATEGORY_ID } from '@/lib/growRunsheets';
 import { GROW_EDITOR_ROLE, hasFullEditorRole } from '@/lib/permissions';
-import { runsheetEditCampuses } from '@/lib/runsheetChannelAccess';
+import { runsheetIdentityCampusScope, runsheetViewCampusScope } from '@/lib/runsheetChannelAccess';
 import { expandIcalOccurrences } from '@/lib/scheduleOccurrences';
 import {
   CAMPUS_EVENT_SCHEDULE_ROOT_IDS,
@@ -109,7 +109,8 @@ export async function rockGetScheduleOptions(
     const access = assertRunsheetViewAccess(session);
     if (!access.allowed) return { success: false, schedules: [], error: access.error };
 
-    const scope = session?.access?.runsheetCampuses || [];
+    const scope = runsheetViewCampusScope(session);
+    const identityCampus = runsheetIdentityCampusScope(session);
     const isGlobal = scope.includes(ALL_CAMPUSES);
     const scopeCampuses = scopeCampusCodes(scope);
 
@@ -122,7 +123,9 @@ export async function rockGetScheduleOptions(
     const seesManila = isGlobal || scopeCampuses.includes('MNL');
     if (categoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID && (!hasFullEditorRole(session) || (isGrowEditor && !seesManila))) {
       // Grow schedules are Manila's: anyone else needs the Grow editor role.
-      if (!isGrowEditor && !seesManila) return { success: true, schedules: [] };
+      if ((!isGrowEditor && !seesManila) || (!identityCampus.includes('MNL') && !identityCampus.includes(ALL_CAMPUSES))) {
+        return { success: true, schedules: [] };
+      }
       const today = manilaToday();
       const schedules: ScheduleOption[] = [];
       for (const s of await fetchGrowSchedules()) {
@@ -156,8 +159,7 @@ export async function rockGetScheduleOptions(
     // An unmarked category (or none) resolves to the caller's own campus,
     // the one they view or else the one they edit, rather than to the
     // all-campus tree. Holding several with no single one fails closed below.
-    const editCampuses = scopeCampusCodes(runsheetEditCampuses(session));
-    const ownCampus = scopeCampuses.length === 1 ? scopeCampuses[0] : editCampuses.length === 1 ? editCampuses[0] : null;
+    const ownCampus = scopeCampuses.length === 1 ? scopeCampuses[0] : null;
     const campus =
       (contentCategory?.Name ? extractRunsheetCampus(contentCategory.Name.replace(/\|/g, ' ')) : null) ??
       (isGlobal ? null : ownCampus);
