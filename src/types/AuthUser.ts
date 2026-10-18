@@ -48,8 +48,8 @@ export interface AuthAccess {
    */
   runsheetCampuses: string[];
   /**
-   * Campuses the user may edit (subset of `runsheetCampuses`). Optional so
-   * sessions cached before it existed fall back to `runsheetCampuses`.
+   * Campuses the user may edit (subset of `runsheetCampuses`). Optional for
+   * legacy session decoding, but missing edit scope never grants edit access.
    */
   runsheetEditCampuses?: string[];
   /** Whether the user has an active GroupType 23 (Ministry Team) membership. */
