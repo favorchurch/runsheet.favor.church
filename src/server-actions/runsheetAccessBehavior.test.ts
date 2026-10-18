@@ -171,7 +171,11 @@ describe('server-action access enforcement', () => {
 
     const result = await rockBulkSaveRunsheetItems(42, [], []);
 
-    expect(result.success).toBe(false);
+    mockRockGet.mockReset();
+    mockRockGet.mockRejectedValue(new Error('Rock API error: 404 '));
+    expect(result).toEqual(await rockBulkSaveRunsheetItems(42, [], []));
+    expect(result.error).toMatch(/no longer exists/);
+    expect(result.error).not.toMatch(/campus/i);
     expectNoRockWrites();
   });
 
@@ -337,6 +341,30 @@ describe('server-action access enforcement', () => {
     const result = await rockGetRunsheetDetails(42);
 
     expect(result).toEqual({ success: false, error: 'Runsheet not found.' });
+  });
+
+  it.each([
+    ['details', () => rockGetRunsheetDetails(42)],
+    ['edit gate', () => rockBulkSaveRunsheetItems(42, [], [])],
+  ])('makes the same Rock calls for a Grow session on a missing id as on a cross-campus one (%s)', async (_label, call) => {
+    mockGetRockSession.mockResolvedValue({
+      rolesMap: { editor: ['7001'], viewer: ['7001'], growEditor: ['19108'] },
+      access: { runsheetCampuses: ['MNL'], runsheetEditCampuses: ['MNL'] },
+    } as any);
+    const callsFor = async (channel: () => Promise<unknown>) => {
+      mockRockGet.mockReset();
+      mockRockGet.mockImplementation((async (url: string) => (url === '/ContentChannels/42' ? channel() : [])) as any);
+      const result = await call();
+      return { result, urls: mockRockGet.mock.calls.map(([url]) => url) };
+    };
+
+    const crossCampus = await callsFor(async () => ({ Id: 42, Name: 'BNE Service // August 17, 2026 // 10AM', ContentChannelTypeId: 13 }));
+    const missing = await callsFor(async () => {
+      throw new Error('Rock API error: 404 ');
+    });
+
+    expect(crossCampus).toEqual(missing);
+    expect(missing.urls).toContain('/Schedules');
   });
 
   it('still reports a non-404 Rock failure on the channel read as a generic error', async () => {

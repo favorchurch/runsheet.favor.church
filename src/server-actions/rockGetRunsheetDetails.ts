@@ -177,24 +177,28 @@ export async function rockGetRunsheetDetails(channelId: number) {
       return { success: false, error: access.error };
     }
 
-    const channel = (await rockGet(`/ContentChannels/${channelId}`).catch((error: unknown) => {
-      if (isRockNotFound(error)) return null;
-      throw error;
-    })) as {
+    // Grow schedules are fetched on every branch, so a missing id and another
+    // campus's runsheet make the same Rock calls.
+    const [channel, growSchedules] = (await Promise.all([
+      rockGet(`/ContentChannels/${channelId}`).catch((error: unknown) => {
+        if (isRockNotFound(error)) return null;
+        throw error;
+      }),
+      hasGrowRole(session) ? fetchGrowSchedules() : [],
+    ])) as [{
       Id: number;
       Name: string;
       Description?: string;
       ForeignKey?: string;
       ChannelUrl?: string;
       ContentChannelTypeId: number;
-    } | null;
+    } | null, Awaited<ReturnType<typeof fetchGrowSchedules>>];
 
     if (!channel) return notFound(channelId, 'missing');
     if (channel.ContentChannelTypeId !== RUNSHEET_CONTENT_CHANNEL_TYPE_ID) return notFound(channelId, 'not-runsheet');
 
     // Defense in depth: the channel list already scopes by campus, but this
     // blocks a direct/shared link to a channel outside the user's campus too.
-    const growSchedules = hasGrowRole(session) ? await fetchGrowSchedules() : [];
     if (!canViewRunsheetChannel(session, channel.Name, growSchedules)) {
       return notFound(channelId, 'outside-view-scope');
     }

@@ -105,7 +105,13 @@ export async function assertRunsheetEditAccess(
 
     let channelName: string;
     if (typeof channelIdOrTitle === 'number') {
-      const lookup = await resolveChannelName(channelIdOrTitle);
+      // A Grow session fetches its schedules on every branch, so a missing id
+      // and another campus's runsheet cost the same Rock round trips.
+      const [lookup, schedules] = await Promise.all([
+        resolveChannelName(channelIdOrTitle),
+        hasGrowRole(session) ? fetchGrowSchedules() : undefined,
+      ]);
+      growSchedules = schedules;
       if (lookup.status !== 'found') {
         console.warn('[runsheet-access] edit denied as not found', { channelId: channelIdOrTitle, reason: lookup.status });
         return NOT_FOUND_DECISION;

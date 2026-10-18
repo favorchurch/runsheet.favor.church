@@ -77,7 +77,6 @@ const CAMPUSES: RunsheetCampusCode[] = ['MNL', 'BNE', 'SEL'];
 const EDIT_DENIAL = 'Unauthorized: Only runsheet editors can perform this action.';
 const CAMPUS_DENIAL = 'You are not authorized for this runsheet campus.';
 const EDIT_NOT_FOUND = 'This runsheet no longer exists. It may have been deleted already.';
-const GATE_DENIALS = [EDIT_DENIAL, CAMPUS_DENIAL, EDIT_NOT_FOUND];
 
 type Tier = { label: string; view: string[]; edit: string[]; session: unknown };
 
@@ -228,7 +227,13 @@ describe.each(TIERS)('$label', (tier) => {
 
       if (canEdit) {
         expect(save.success).toBe(true);
-        expect(GATE_DENIALS).not.toContain(roster.error);
+        // Past the gate, the sync reaches Rock's own checks: only MNL is
+        // Rock-linked, and the mocked Rock has no matching service for it.
+        expect(roster).toEqual({
+          success: false,
+          people: [],
+          error: campus === 'MNL' ? 'This runsheet does not match a Rock service.' : 'This role is not linked to Rock.',
+        });
         expect(notes.success).toBe(true);
         expect(unlink.success).toBe(true);
         expect(upload.status).toBe(200);
@@ -266,7 +271,7 @@ describe.each(TIERS)('$label', (tier) => {
       expectNoRockWrites();
       expect(mockRockGet).not.toHaveBeenCalledWith('/ContentChannelItems', expect.anything(), true);
       if (canView) {
-        expect(result.success).toBe(false);
+        expect(result).toEqual({ success: false, error: isEditor ? CAMPUS_DENIAL : EDIT_DENIAL });
       } else {
         // Exactly what a missing id returns.
         routeRock('missing');
