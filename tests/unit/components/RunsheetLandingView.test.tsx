@@ -295,15 +295,12 @@ describe('RunsheetLandingView', () => {
 
     it('hides the switcher and campus pills from a one-campus user', () => {
       window.localStorage.setItem('runsheet_pref_campus', 'BNE');
-      renderLandingView({
-        runsheetCampuses: ['MNL'],
-        channels: [sampleChannels[0], { id: 104, name: 'MNL Crowne // August 9, 2026 // 5PM', time: '5PM' }],
-      });
+      renderLandingView({ runsheetCampuses: ['MNL'] });
 
       expect(screen.queryByRole('group', { name: 'Campus' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'MNL' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'All' })).not.toBeInTheDocument();
-      expect(cardIds().sort()).toEqual([101, 104]);
+      expect(cardIds().sort()).toEqual([101, 102, 103]);
     });
 
     it('keeps cross-campus rostered runsheets listed for a one-campus user, with no campus filter', () => {
@@ -322,8 +319,24 @@ describe('RunsheetLandingView', () => {
       expect(screen.getByTestId('runsheet-no-access')).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: /no campus access/i })).toBeInTheDocument();
       expect(screen.queryByText(/no upcoming runsheets/i)).not.toBeInTheDocument();
-      expect(screen.queryByPlaceholderText(/search by campus/i)).not.toBeInTheDocument();
       expect(screen.queryByRole('group', { name: 'Campus' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /create new runsheet/i })).not.toBeInTheDocument();
+    });
+
+    it('lets a no-campus editor still create and reach archived runsheets', () => {
+      const { props } = renderLandingView({ runsheetCampuses: [], channels: [], canEdit: true });
+
+      expect(screen.getByTestId('runsheet-no-access')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /create new runsheet/i }));
+      expect(props.onCreateNew).toHaveBeenCalled();
+      fireEvent.click(screen.getByLabelText(/show archived/i));
+      expect(props.onToggleShowArchived).toHaveBeenCalledWith(true);
+    });
+
+    it('does not report a failed list load as missing campus access', () => {
+      renderLandingView({ runsheetCampuses: [], channels: [], loadFailed: true, canEdit: false });
+      expect(screen.queryByTestId('runsheet-no-access')).not.toBeInTheDocument();
+      expect(screen.getByText(/no upcoming runsheets/i)).toBeInTheDocument();
     });
 
     it('treats a missing campus scope as no access', () => {

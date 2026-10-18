@@ -45,6 +45,8 @@ import {
 export interface RunsheetLandingViewProps {
   channels: RunsheetChannelOption[];
   isLoading: boolean;
+  /** The channel list failed to load, so an empty list says nothing about access. */
+  loadFailed?: boolean;
   canEdit: boolean;
   showArchived: boolean;
   onToggleShowArchived?: (show: boolean) => void;
@@ -196,6 +198,7 @@ function RunsheetCardSkeleton() {
 export function RunsheetLandingView({
   channels,
   isLoading,
+  loadFailed = false,
   canEdit,
   showArchived,
   onToggleShowArchived,
@@ -247,7 +250,7 @@ export function RunsheetLandingView({
   };
 
   // No campus scope and nothing rostered or Grow-matched to show.
-  const hasNoAccess = !isLoading && channels.length === 0 && !runsheetCampuses?.length;
+  const hasNoAccess = !isLoading && !loadFailed && channels.length === 0 && !runsheetCampuses?.length;
   // One-campus users keep cross-campus rostered runsheets; only the switcher filters by campus.
   const campusFilter = showCampusSwitcher ? selectedCampus : 'ALL';
 
@@ -325,76 +328,74 @@ export function RunsheetLandingView({
       </div>
 
       {/* Filter & Controls Bar */}
-      {!hasNoAccess && (
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-xl border border-slate-200/80 bg-white shadow-xs">
-          {/* Search input */}
-          <div className="relative flex-1 min-w-[200px]">
-            <HiMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by campus, service time, or date..."
-              className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-9 pr-8 py-1.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded"
-              >
-                <HiXMark className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-
-          {showCampusSwitcher && (
-            <CampusSwitcher
-              value={selectedCampus}
-              onChange={(campus) => {
-                setSelectedCampus(campus);
-                setCampusSwitcherPreference(campus);
-              }}
-            />
-          )}
-
-          {/* Kind Filter Pills (if more than 1 kind) */}
-          {distinctKinds.length > 1 && (
-            <div className="flex items-center gap-1 overflow-x-auto py-0.5">
-              {(['all', ...distinctKinds] as RunsheetKindPreference[]).map((kind) => (
-                <button
-                  key={kind}
-                  type="button"
-                  onClick={() => {
-                    setSelectedKind(kind);
-                    setRunsheetKindPreference(kind);
-                  }}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
-                    effectiveKind === kind
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                  }`}
-                >
-                  {kind === 'all' ? 'All' : RUNSHEET_KIND_LABELS[kind]}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Archived Toggle */}
-          {canEdit && onToggleShowArchived && (
-            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none whitespace-nowrap px-1">
-              <input
-                type="checkbox"
-                checked={showArchived}
-                onChange={(e) => onToggleShowArchived(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-              />
-              <span>Show Archived</span>
-            </label>
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-xl border border-slate-200/80 bg-white shadow-xs">
+        {/* Search input */}
+        <div className="relative flex-1 min-w-[200px]">
+          <HiMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by campus, service time, or date..."
+            className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-9 pr-8 py-1.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded"
+            >
+              <HiXMark className="h-3.5 w-3.5" />
+            </button>
           )}
         </div>
-      )}
+
+        {showCampusSwitcher && (
+          <CampusSwitcher
+            value={selectedCampus}
+            onChange={(campus) => {
+              setSelectedCampus(campus);
+              setCampusSwitcherPreference(campus);
+            }}
+          />
+        )}
+
+        {/* Kind Filter Pills (if more than 1 kind) */}
+        {distinctKinds.length > 1 && (
+          <div className="flex items-center gap-1 overflow-x-auto py-0.5">
+            {(['all', ...distinctKinds] as RunsheetKindPreference[]).map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => {
+                  setSelectedKind(kind);
+                  setRunsheetKindPreference(kind);
+                }}
+                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
+                  effectiveKind === kind
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                }`}
+              >
+                {kind === 'all' ? 'All' : RUNSHEET_KIND_LABELS[kind]}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Archived Toggle */}
+        {canEdit && onToggleShowArchived && (
+          <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700 select-none whitespace-nowrap px-1">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => onToggleShowArchived(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+            />
+            <span>Show Archived</span>
+          </label>
+        )}
+      </div>
 
       {/* Grid of Runsheet Cards */}
       {hasNoAccess ? (

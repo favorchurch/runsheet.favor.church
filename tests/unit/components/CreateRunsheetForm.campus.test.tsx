@@ -16,7 +16,7 @@ jest.mock('@/server-actions/rockCreateServiceRunsheet');
 jest.mock('react-hot-toast', () => ({ success: jest.fn(), error: jest.fn() }));
 
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import {
   CreateRunsheetForm,
@@ -25,6 +25,7 @@ import {
 } from '@/components/runsheet/CreateRunsheetForm';
 import { getRockContentChannelOptions } from '@/server-actions/getRockContentChannelOptions';
 import { rockGetScheduleOptions } from '@/server-actions/rockGetScheduleOptions';
+import { rockCreateServiceRunsheet } from '@/server-actions/rockCreateServiceRunsheet';
 
 const categories = [
   { id: 10, name: 'MNL | SUNDAY SERVICES' },
@@ -96,7 +97,23 @@ describe('CreateRunsheetForm campus options', () => {
   it('offers no campus categories when runsheetCampuses is undefined', async () => {
     render(<CreateRunsheetForm />);
     const options = await categoryOptions();
+    expect(screen.getByRole('option', { name: /no categories/i })).toBeInTheDocument();
     expect(options.filter((o) => /MNL|BNE|SEL/.test(o || ''))).toEqual([]);
+  });
+
+  it('refuses to submit a title for a campus outside a one-campus scope', async () => {
+    render(<CreateRunsheetForm runsheetCampuses={['MNL']} />);
+    await waitFor(() => expect(screen.getByRole('option', { name: 'MNL | SUNDAY SERVICES' })).toBeInTheDocument());
+
+    // Let the schedule load settle: it resets the session and regenerates the title.
+    const titleInput = screen.getByRole('textbox');
+    await waitFor(() => expect((titleInput as HTMLInputElement).value).toMatch(/^AM \/\/ .+ \/\/ AM$/));
+    await waitFor(() => expect(screen.getAllByRole('combobox')[1]).not.toBeDisabled());
+    fireEvent.change(titleInput, { target: { value: 'BNE Service // October 4, 2026 // 10AM' } });
+    fireEvent.click(screen.getByRole('button', { name: /save runsheet/i }));
+
+    expect(await screen.findByText(/assigned campus \(MNL\)/)).toBeInTheDocument();
+    expect(rockCreateServiceRunsheet).not.toHaveBeenCalled();
   });
 
   it('offers every campus to a Global user', async () => {

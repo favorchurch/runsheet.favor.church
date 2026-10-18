@@ -482,6 +482,7 @@ export function RunsheetManager({
         <RunsheetLandingView
           channels={availableChannels}
           isLoading={channelsLoading}
+          loadFailed={channelsQuery.isError}
           canEdit={canEdit}
           showArchived={showArchived}
           onToggleShowArchived={(show) => setShowArchived(show)}
