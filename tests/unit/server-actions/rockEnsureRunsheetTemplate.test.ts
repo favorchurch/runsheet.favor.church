@@ -14,7 +14,7 @@ const mockPost = jest.mocked(rockPost);
 const mockSave = jest.mocked(rockBulkSaveRunsheetItems);
 
 function editor(campuses: string[]) {
-  return { rolesMap: { editor: ['editor-1'] }, access: { runsheetCampuses: campuses } } as any;
+  return { rolesMap: { editor: ['editor-1'] }, access: { runsheetCampuses: campuses, runsheetEditCampuses: campuses } } as any;
 }
 
 describe('rockEnsureRunsheetTemplate', () => {

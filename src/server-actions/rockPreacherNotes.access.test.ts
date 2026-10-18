@@ -42,7 +42,7 @@ const mockMutateAttribute = jest.mocked(mutatePreacherNotesAttribute);
 function session(campus: 'MNL' | 'BNE', editor: boolean) {
   return {
     rolesMap: editor ? { editor: ['7001'], viewer: ['7001'] } : { viewer: ['7001'] },
-    access: { runsheetCampuses: [campus] },
+    access: { runsheetCampuses: [campus], runsheetEditCampuses: editor ? [campus] : [] },
   } as any;
 }
 
@@ -90,7 +90,7 @@ describe('rockPreacherNotes server actions access control', () => {
       const result = await rockGetPreacherNotes(42);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('not authorized for this runsheet campus');
+      expect(result.error).toMatch(/no longer exists/);
       expectNoRockAttributeCalls();
     });
 
@@ -143,7 +143,7 @@ describe('rockPreacherNotes server actions access control', () => {
       const result = await rockUnlinkPreacherNote(42, targetPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('not authorized for this runsheet campus');
+      expect(result.error).toMatch(/no longer exists/);
       expectNoRockAttributeCalls();
     });
 

@@ -23,7 +23,7 @@ const mockRockDelete = jest.mocked(rockDelete);
 function session(campus: 'MNL' | 'BNE', editor: boolean) {
   return {
     rolesMap: editor ? { editor: ['7001'], viewer: ['7001'] } : { viewer: ['7001'] },
-    access: { runsheetCampuses: [campus] },
+    access: { runsheetCampuses: [campus], runsheetEditCampuses: editor ? [campus] : [] },
   } as any;
 }
 

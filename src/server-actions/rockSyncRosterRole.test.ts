@@ -15,10 +15,10 @@ const mockSession = jest.mocked(getRockSession);
 const mockRockPut = jest.mocked(rockPut);
 const mockRockGet = jest.mocked(rockGet);
 
-const EDITOR = { rolesMap: { editor: ['7001'] }, access: { runsheetCampuses: ['MNL'] } } as any;
+const EDITOR = { rolesMap: { editor: ['7001'] }, access: { runsheetCampuses: ['MNL'], runsheetEditCampuses: ['MNL'] } } as any;
 const VIEWER = { rolesMap: { viewer: ['7001'] }, access: { runsheetCampuses: ['MNL'] } } as any;
 /** An editor scoped to another campus entirely. */
-const BNE_EDITOR = { rolesMap: { editor: ['7002'] }, access: { runsheetCampuses: ['BNE'] } } as any;
+const BNE_EDITOR = { rolesMap: { editor: ['7002'] }, access: { runsheetCampuses: ['BNE'], runsheetEditCampuses: ['BNE'] } } as any;
 /** A Grow Course Head: an editor, but only of Grow runsheets. */
 const GROW_HEAD = { rolesMap: { growEditor: ['19108'] }, access: { runsheetCampuses: [] } } as any;
 

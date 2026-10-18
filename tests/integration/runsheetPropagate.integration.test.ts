@@ -7,7 +7,7 @@ jest.mock('@/server-actions/internal/rockFetch');
 jest.mock('@/auth0-hooks/server/getRockSession', () => ({
   getRockSession: jest.fn().mockResolvedValue({
     rolesMap: { editor: ['integration-editor'], viewer: ['integration-editor'] },
-    access: { runsheetCampuses: ['ALL'] },
+    access: { runsheetCampuses: ['ALL'], runsheetEditCampuses: ['ALL'] },
   }),
 }));
 jest.mock('@/lib/permissions', () => ({ canUserEditRunsheet: jest.fn().mockReturnValue(true) }));

@@ -56,7 +56,7 @@ const mockMutateAttribute = jest.mocked(mutatePreacherNotesAttribute);
 function session(campus: 'MNL' | 'BNE', editor: boolean) {
   return {
     rolesMap: editor ? { editor: ['7001'], viewer: ['7001'] } : { viewer: ['7001'] },
-    access: { runsheetCampuses: [campus] },
+    access: { runsheetCampuses: [campus], runsheetEditCampuses: editor ? [campus] : [] },
   } as any;
 }
 
@@ -132,6 +132,57 @@ describe('runsheet-notes route handlers access and validation', () => {
 
       expect(response.status).toBe(403);
       expect(mockGetAttributeValue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cross-campus denial is indistinguishable from a missing runsheet', () => {
+    const validPath = 'PreacherNotes/MNL/42/deadbeef/notes.pdf';
+
+    function uploadRequest() {
+      const formData = new FormData();
+      formData.append('file', createPdfFile('notes.pdf'));
+      return new Request('http://localhost:8000/api/runsheet-notes/upload?channelId=42', {
+        method: 'POST',
+        body: formData,
+      });
+    }
+
+    const routes: Array<[string, () => Promise<Response>]> = [
+      ['list', () => getList(new Request('http://localhost:8000/api/runsheet-notes?channelId=42'))],
+      ['upload', () => postUpload(uploadRequest())],
+      [
+        'file',
+        () => getFile(new Request(`http://localhost:8000/api/runsheet-notes/file?channelId=42&path=${encodeURIComponent(validPath)}`)),
+      ],
+    ];
+
+    async function snapshot(response: Response) {
+      return { status: response.status, body: await response.text() };
+    }
+
+    it.each(routes)('%s route answers a BNE editor on an MNL runsheet exactly like a missing id', async (_label, call) => {
+      mockGetRockSession.mockResolvedValue(session('BNE', true));
+      const crossCampus = await snapshot(await call());
+
+      mockRockGet.mockRejectedValue(new Error('Rock API error: 404 '));
+      const missing = await snapshot(await call());
+
+      expect(crossCampus).toEqual(missing);
+      expect(crossCampus.body).not.toMatch(/MNL|BNE|campus|August/i);
+      expectNoRockStorageOrAttributeCalls();
+    });
+
+    it.each(routes)('%s route keeps the campus denial for a caller who can view but not edit', async (_label, call) => {
+      mockGetRockSession.mockResolvedValue({
+        rolesMap: { editor: ['7001'], viewer: ['7001'] },
+        access: { runsheetCampuses: ['MNL', 'BNE'], runsheetEditCampuses: ['BNE'] },
+      } as any);
+
+      const response = await call();
+
+      expect(response.status).toBe(403);
+      expect((await response.json()).error).toBe('You are not authorized for this runsheet campus.');
+      expectNoRockStorageOrAttributeCalls();
     });
   });
 

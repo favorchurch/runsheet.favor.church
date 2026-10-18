@@ -39,7 +39,7 @@ describe('canViewRunsheetChannel', () => {
 
 describe('canEditRunsheetChannel', () => {
   it('keeps campus editing for existing editors', () => {
-    const s = { rolesMap: { editor: ['1'] }, access: { runsheetCampuses: ['MNL'] } };
+    const s = { rolesMap: { editor: ['1'] }, access: { runsheetCampuses: ['MNL'], runsheetEditCampuses: ['MNL'] } };
     expect(canEditRunsheetChannel(s, SUNDAY, grow)).toBe(true);
   });
 
@@ -100,9 +100,12 @@ describe('separate edit and view campuses', () => {
     expect(canEditRunsheetTitle(mixed, BNE_SUNDAY)).toBe(false);
   });
 
-  it('falls back to runsheetCampuses for sessions cached before the split', () => {
+  it('fails closed for sessions without runsheetEditCampuses instead of editing the view campuses', () => {
     const legacy = { rolesMap: { editor: ['900'] }, access: { runsheetCampuses: ['MNL'] } };
-    expect(canEditRunsheetChannel(legacy, SUNDAY, grow)).toBe(true);
+    expect(canEditRunsheetChannel(legacy, SUNDAY, grow)).toBe(false);
+    expect(canEditRunsheetChannel({ rolesMap: { editor: ['900'] } }, SUNDAY, grow)).toBe(false);
+    // Viewing is unaffected.
+    expect(canViewRunsheetChannel(legacy, SUNDAY, grow)).toBe(true);
   });
 
   it('lets a Grow-only editor edit Grow-looking titles only', () => {

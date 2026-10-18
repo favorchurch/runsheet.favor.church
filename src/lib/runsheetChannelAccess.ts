@@ -51,7 +51,9 @@ export function canEditRunsheetChannel(
   channelName: string,
   growSchedules: GrowSchedule[],
 ): boolean {
-  if (has(session, 'editor') && canAccessRunsheetChannel(runsheetEditCampuses(session), channelName)) {
+  // The server gate fails closed: unlike the client hint below, a session
+  // without `runsheetEditCampuses` never edits its view campuses.
+  if (has(session, 'editor') && canAccessRunsheetChannel(session?.access?.runsheetEditCampuses, channelName)) {
     return true;
   }
   return has(session, GROW_EDITOR_ROLE) && matchGrowRunsheet(channelName, growSchedules) !== null;

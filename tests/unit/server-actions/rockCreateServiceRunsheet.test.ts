@@ -41,7 +41,7 @@ describe('rockCreateServiceRunsheet template population', () => {
     jest.clearAllMocks();
     jest.mocked(getRockSession).mockResolvedValue({
       rolesMap: { editor: ['editor-1'] },
-      access: { runsheetCampuses: ['MNL'] },
+      access: { runsheetCampuses: ['MNL'], runsheetEditCampuses: ['MNL'] },
     } as any);
     jest.mocked(rockPost).mockResolvedValue(200);
   });
@@ -96,7 +96,7 @@ describe('rockCreateServiceRunsheet skipIfExists option', () => {
     jest.clearAllMocks();
     jest.mocked(getRockSession).mockResolvedValue({
       rolesMap: { editor: ['editor-1'] },
-      access: { runsheetCampuses: ['MNL'] },
+      access: { runsheetCampuses: ['MNL'], runsheetEditCampuses: ['MNL'] },
     } as any);
     mockPost.mockResolvedValue(200);
     mockEnsure.mockResolvedValue({ success: true, id: 7 });
@@ -160,7 +160,7 @@ describe('rockCreateServiceRunsheet skipIfExists option', () => {
   it('rejects an unauthorized title before any Rock call, even with skipIfExists', async () => {
     jest.mocked(getRockSession).mockResolvedValue({
       rolesMap: { editor: ['editor-1'] },
-      access: { runsheetCampuses: ['BNE'] },
+      access: { runsheetCampuses: ['BNE'], runsheetEditCampuses: ['BNE'] },
     } as any);
 
     const res = await rockCreateServiceRunsheet(TITLE, 13, undefined, { skipIfExists: true });

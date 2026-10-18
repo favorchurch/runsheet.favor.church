@@ -32,7 +32,7 @@ const mockRockDelete = jest.mocked(rockDelete);
 function session(campus: 'MNL' | 'BNE', editor: boolean) {
   return {
     rolesMap: editor ? { editor: ['7001'], viewer: ['7001'] } : { viewer: ['7001'] },
-    access: { runsheetCampuses: [campus] },
+    access: { runsheetCampuses: [campus], runsheetEditCampuses: editor ? [campus] : [] },
   } as any;
 }
 
@@ -134,16 +134,24 @@ describe('server-action access enforcement', () => {
     expectNoRockWrites();
   });
 
-  it.each([
-    ['viewer', session('MNL', false), { Name: 'MNL Service // August 16, 2026 // 10AM', ContentChannelTypeId: 13 }],
-    ['cross-campus editor', session('MNL', true), { Name: 'BNE Service // August 16, 2026 // 10AM', ContentChannelTypeId: 13 }],
-  ])('delete rejects a %s before any Rock write', async (_label, principal, channel) => {
-    mockGetRockSession.mockResolvedValue(principal);
-    mockRockGet.mockResolvedValue(channel);
+  it('delete rejects a viewer before any Rock write', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', false));
+    mockRockGet.mockResolvedValue({ Name: 'MNL Service // August 16, 2026 // 10AM', ContentChannelTypeId: 13 });
 
     const result = await rockDeleteServiceRunsheet(42);
 
     expect(result.success).toBe(false);
+    expectNoRockWrites();
+  });
+
+  it('delete of a cross-campus runsheet returns the missing-id shape and deletes nothing', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+    mockRockGet.mockResolvedValue({ Name: 'BNE Service // August 16, 2026 // 10AM', ContentChannelTypeId: 13 });
+
+    const result = await rockDeleteServiceRunsheet(42);
+
+    expect(result).toEqual({ success: true });
+    expect(mockRockGet).toHaveBeenCalledTimes(1);
     expectNoRockWrites();
   });
 
@@ -167,7 +175,7 @@ describe('server-action access enforcement', () => {
     expectNoRockWrites();
   });
 
-  it('rejects delete for a same-campus non-runsheet channel type', async () => {
+  it('treats delete of a same-campus non-runsheet channel type as a missing id', async () => {
     mockGetRockSession.mockResolvedValue(session('MNL', true));
     mockRockGet.mockImplementation(async (url) =>
       url.startsWith('/ContentChannels/')
@@ -177,7 +185,8 @@ describe('server-action access enforcement', () => {
 
     const result = await rockDeleteServiceRunsheet(42);
 
-    expect(result.success).toBe(false);
+    expect(result).toEqual({ success: true });
+    expect(mockRockGet).toHaveBeenCalledTimes(1);
     expectNoRockWrites();
   });
 
@@ -317,8 +326,53 @@ describe('server-action access enforcement', () => {
 
     const result = await rockGetRunsheetDetails(42);
 
-    expect(result).toEqual({ success: false, error: 'You do not have access to this runsheet.' });
+    expect(result).toEqual({ success: false, error: 'Runsheet not found.' });
     expect(mockRockGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers a missing runsheet id (Rock 404) exactly like a cross-campus one', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', false));
+    mockRockGet.mockRejectedValue(new Error('Rock API error: 404 '));
+
+    const result = await rockGetRunsheetDetails(42);
+
+    expect(result).toEqual({ success: false, error: 'Runsheet not found.' });
+  });
+
+  it('still reports a non-404 Rock failure on the channel read as a generic error', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', false));
+    mockRockGet.mockRejectedValue(new Error('Rock API error: 500 boom'));
+
+    const result = await rockGetRunsheetDetails(42);
+
+    expect(result).toEqual({ success: false, error: 'Failed to fetch runsheet details' });
+  });
+
+  it('gives a cross-campus editor on save the same denial as a missing id', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+    mockRockGet.mockResolvedValue({ Name: 'BNE Service // August 16, 2026 // 10AM', ContentChannelTypeId: 13 });
+    const crossCampus = await rockBulkSaveRunsheetItems(42, [], []);
+
+    mockRockGet.mockRejectedValue(new Error('Rock API error: 404 '));
+    const missing = await rockBulkSaveRunsheetItems(42, [], []);
+
+    expect(crossCampus).toEqual(missing);
+    expect(crossCampus.error).toMatch(/no longer exists/);
+    expect(crossCampus.error).not.toMatch(/BNE|campus/i);
+    expectNoRockWrites();
+  });
+
+  it('keeps the campus denial on save for a caller who views but cannot edit the campus', async () => {
+    mockGetRockSession.mockResolvedValue({
+      rolesMap: { editor: ['7001'], viewer: ['7001'] },
+      access: { runsheetCampuses: ['MNL', 'BNE'], runsheetEditCampuses: ['MNL'] },
+    } as any);
+    mockRockGet.mockResolvedValue({ Name: 'BNE Service // August 16, 2026 // 10AM', ContentChannelTypeId: 13 });
+
+    const result = await rockBulkSaveRunsheetItems(42, [], []);
+
+    expect(result).toEqual({ success: false, error: 'You are not authorized for this runsheet campus.' });
+    expectNoRockWrites();
   });
 
   it('does not treat a same-campus non-runsheet channel as a runsheet detail', async () => {
@@ -440,9 +494,11 @@ describe('server-action access enforcement', () => {
         rolesMap: { growEditor: ['19108'] },
         access: { runsheetCampuses: [] },
       } as any);
+      // A Sunday runsheet is outside a Grow-only editor's view, so it reads as missing.
       const res = await rockDeleteServiceRunsheet(903);
-      expect(res.success).toBe(false);
+      expect(res).toEqual({ success: true });
       expectNoRockWrites();
+      expect(mockRockGet).not.toHaveBeenCalledWith('/ContentChannelItems', expect.anything(), true);
     });
   });
 

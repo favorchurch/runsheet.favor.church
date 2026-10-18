@@ -7,11 +7,21 @@ import { isPersonColumn, HIDDEN_ATTRIBUTE_KEYS } from '@/constants/runsheetColum
 import { hasGrowRole } from '@/lib/permissions';
 import { canViewRunsheetChannel } from '@/lib/runsheetChannelAccess';
 import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
-import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
+import { assertRunsheetViewAccess, isRockNotFound } from '@/server-actions/runsheetAuthorization';
 
 /** Rock's `ContentChannelItem` entity type, used to find item attributes. */
 const CONTENT_CHANNEL_ITEM_ENTITY_TYPE_ID = 208;
 const RUNSHEET_CONTENT_CHANNEL_TYPE_ID = 13;
+/**
+ * One denial for a missing id, a non-runsheet channel and a channel outside
+ * the caller's view scope, so a probe cannot tell them apart.
+ */
+const NOT_FOUND = 'Runsheet not found.';
+
+function notFound(channelId: number, reason: string) {
+  console.warn('[runsheet-access] details denied as not found', { channelId, reason });
+  return { success: false, error: NOT_FOUND };
+}
 
 /** Resolved person names, memoised per server instance. */
 const personNameCache = new Map<string, string>();
@@ -167,7 +177,10 @@ export async function rockGetRunsheetDetails(channelId: number) {
       return { success: false, error: access.error };
     }
 
-    const channel = (await rockGet(`/ContentChannels/${channelId}`)) as {
+    const channel = (await rockGet(`/ContentChannels/${channelId}`).catch((error: unknown) => {
+      if (isRockNotFound(error)) return null;
+      throw error;
+    })) as {
       Id: number;
       Name: string;
       Description?: string;
@@ -176,19 +189,14 @@ export async function rockGetRunsheetDetails(channelId: number) {
       ContentChannelTypeId: number;
     } | null;
 
-    if (!channel) {
-      return { success: false, error: 'Runsheet not found.' };
-    }
-
-    if (channel.ContentChannelTypeId !== RUNSHEET_CONTENT_CHANNEL_TYPE_ID) {
-      return { success: false, error: 'Runsheet not found.' };
-    }
+    if (!channel) return notFound(channelId, 'missing');
+    if (channel.ContentChannelTypeId !== RUNSHEET_CONTENT_CHANNEL_TYPE_ID) return notFound(channelId, 'not-runsheet');
 
     // Defense in depth: the channel list already scopes by campus, but this
     // blocks a direct/shared link to a channel outside the user's campus too.
     const growSchedules = hasGrowRole(session) ? await fetchGrowSchedules() : [];
     if (!canViewRunsheetChannel(session, channel.Name, growSchedules)) {
-      return { success: false, error: 'You do not have access to this runsheet.' };
+      return notFound(channelId, 'outside-view-scope');
     }
 
     let columnMetadata: RunsheetColumnMetadata | undefined = undefined;
