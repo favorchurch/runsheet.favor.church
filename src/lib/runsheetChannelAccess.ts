@@ -17,8 +17,10 @@ const has = (s: ChannelAccessSession, role: string) => Boolean(s?.rolesMap?.[rol
 
 /**
  * Campuses the session may edit. View-only campuses (Events Team members,
- * Deaf Ministry heads, Department Admins) never widen this. Sessions cached
- * before the split carry only `runsheetCampuses`.
+ * Deaf Ministry heads, Department Admins) never widen this. Client hint only:
+ * sessions cached before the split carry only `runsheetCampuses`, so the UI may
+ * offer edits that the server gate (`canEditRunsheetChannel`, no fallback)
+ * refuses until the user signs in again.
  */
 export function runsheetEditCampuses(session: ChannelAccessSession): string[] {
   return session?.access?.runsheetEditCampuses ?? session?.access?.runsheetCampuses ?? [];
