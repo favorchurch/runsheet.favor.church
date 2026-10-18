@@ -404,6 +404,7 @@ describe('rockGetScheduleOptions - campus scope', () => {
     303: '🇦🇺 Brisbane',
     304: '🇰🇷 Seoul',
     417: 'Crowne',
+    590: 'MNL | ALL EVENTS',
     700: 'Special Services',
   };
   const SCHEDULES = [
@@ -535,7 +536,6 @@ describe('rockGetScheduleOptions - campus scope', () => {
       rolesMap: { editor: ['true'], growEditor: ['19108'] },
       access: { runsheetCampuses: ['BNE'], runsheetEditCampuses: ['BNE'] },
     } as any);
-    CATEGORY_NAMES[590] = 'MNL | ALL EVENTS';
 
     await rockGetScheduleOptions(590, '2026-10-04');
 
@@ -547,7 +547,6 @@ describe('rockGetScheduleOptions - campus scope', () => {
       rolesMap: { editor: ['true'], growEditor: ['19108'] },
       access: { runsheetCampuses: ['MNL'], runsheetEditCampuses: ['MNL'] },
     } as any);
-    CATEGORY_NAMES[590] = 'MNL | ALL EVENTS';
 
     const res = await rockGetScheduleOptions(590, '2026-10-04');
 
@@ -559,7 +558,6 @@ describe('rockGetScheduleOptions - campus scope', () => {
       rolesMap: { editor: ['true'], growEditor: ['19108'] },
       access: { runsheetCampuses: ['ALL'], runsheetEditCampuses: ['ALL'] },
     } as any);
-    CATEGORY_NAMES[590] = 'MNL | ALL EVENTS';
 
     const res = await rockGetScheduleOptions(590, '2026-10-04');
 
@@ -584,6 +582,32 @@ describe('rockGetScheduleOptions - campus scope', () => {
 
     expect(await rockGetScheduleOptions(700, '2026-10-04')).toEqual({ success: true, schedules: [] });
     expect(scheduleQueries).toEqual([]);
+  });
+
+  it.each([
+    ['a BNE viewer', { viewer: ['true'] }, ['BNE']],
+    ['a SEL viewer', { viewer: ['true'] }, ['SEL']],
+    ['a rostered volunteer', { rosteredViewer: ['MNL:2026-10-04:10:00:00'] }, []],
+    ['a Grow viewer', { growViewer: ['477:2026-10-06'] }, []],
+  ])('gives %s no Grow schedules for the Grow category', async (_label, rolesMap, campuses) => {
+    mockGetRockSession.mockResolvedValue({
+      rolesMap,
+      access: { runsheetCampuses: campuses, runsheetEditCampuses: [] },
+    } as any);
+
+    expect(await rockGetScheduleOptions(590, '2026-10-04')).toEqual({ success: true, schedules: [] });
+    expect(scheduleQueries).toEqual([]);
+  });
+
+  it('keeps the Grow list for an MNL viewer, as before', async () => {
+    mockGetRockSession.mockResolvedValue({
+      rolesMap: { viewer: ['true'] },
+      access: { runsheetCampuses: ['MNL'], runsheetEditCampuses: [] },
+    } as any);
+
+    await rockGetScheduleOptions(590, '2026-10-04');
+
+    expect(scheduleQueries).toEqual(['CategoryId eq 483 and IsActive eq true']);
   });
 
   it('fails closed on the top-level trees for a user holding all three campuses but not Global', async () => {

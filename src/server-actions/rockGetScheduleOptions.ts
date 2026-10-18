@@ -118,9 +118,11 @@ export async function rockGetScheduleOptions(
     // date from `nextDate`. Full editors with Manila see the whole MNL | ALL
     // EVENTS list, Grow Courses included; a Grow editor whose campuses leave
     // Manila out still gets the Grow list, not another campus's events.
-    const growWithoutManila =
-      Boolean(session?.rolesMap?.[GROW_EDITOR_ROLE]?.length) && !isGlobal && !scopeCampuses.includes('MNL');
-    if (categoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID && (!hasFullEditorRole(session) || growWithoutManila)) {
+    const isGrowEditor = Boolean(session?.rolesMap?.[GROW_EDITOR_ROLE]?.length);
+    const seesManila = isGlobal || scopeCampuses.includes('MNL');
+    if (categoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID && (!hasFullEditorRole(session) || (isGrowEditor && !seesManila))) {
+      // Grow schedules are Manila's: anyone else needs the Grow editor role.
+      if (!isGrowEditor && !seesManila) return { success: true, schedules: [] };
       const today = manilaToday();
       const schedules: ScheduleOption[] = [];
       for (const s of await fetchGrowSchedules()) {
