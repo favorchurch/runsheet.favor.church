@@ -300,17 +300,17 @@ describe('RunsheetLandingView', () => {
       expect(screen.queryByRole('group', { name: 'Campus' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'MNL' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'All' })).not.toBeInTheDocument();
-      expect(cardIds().sort()).toEqual([101, 102, 103]);
+      expect(cardIds()).toEqual([101]);
     });
 
-    it('keeps cross-campus rostered runsheets listed for a one-campus user, with no campus filter', () => {
-      // A stored Global-era choice must not filter a one-campus user's list.
-      window.localStorage.setItem('runsheet_pref_campus', 'MNL');
+    it('filters cross-campus rostered runsheets even if supplied to a one-campus client', () => {
+      // A stored Global-era choice must not unlock a different campus.
+      window.localStorage.setItem('runsheet_pref_campus', 'BNE');
       renderLandingView({ runsheetCampuses: ['MNL'] });
 
       expect(screen.queryByRole('group', { name: 'Campus' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'BNE' })).not.toBeInTheDocument();
-      expect(cardIds().sort()).toEqual([101, 102, 103]);
+      expect(cardIds()).toEqual([101]);
     });
 
     it('shows a no-campus-access state to a user with no campuses and nothing rostered', () => {
