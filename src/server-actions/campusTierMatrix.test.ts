@@ -307,3 +307,43 @@ describe('Global view-only staff', () => {
     expectNoRockWrites();
   });
 });
+
+describe('strict campus isolation for cross-campus rosters (#100 Decision A)', () => {
+  const rostered = (campusId: number | null) => ({
+    contact: { campusId },
+    rolesMap: {
+      rosteredViewer: [
+        'MNL:2099-08-16:10:00:00',
+        'BNE:2099-08-16:10:00:00',
+      ],
+    },
+    access: { runsheetCampuses: [], runsheetEditCampuses: [], campusIds: campusId ? [campusId] : [] },
+  });
+
+  it('does not reveal another campus by detail, batch, or export, even when rostered there', async () => {
+    mockGetRockSession.mockResolvedValue(rostered(1) as any);
+    routeRock('BNE');
+    const detail = await rockGetRunsheetDetails(CHANNEL_ID);
+    const [batch] = await rockGetRunsheetDetailsBatch([CHANNEL_ID]);
+    const exported = await exportStatus();
+
+    expect(detail).toEqual({ success: false, error: 'Runsheet not found.' });
+    expect(batch).toEqual(detail);
+    expect(exported.status).toBe(404);
+    expectNoRockWrites();
+  });
+
+  it('preserves that same volunteer\'s in-campus rostered runsheet', async () => {
+    mockGetRockSession.mockResolvedValue(rostered(1) as any);
+    routeRock('MNL');
+    expect((await rockGetRunsheetDetails(CHANNEL_ID)).success).toBe(true);
+    expect((await exportStatus()).status).toBe(200);
+  });
+
+  it('fails closed for an unresolved primary Rock campus, even with matching roster keys', async () => {
+    mockGetRockSession.mockResolvedValue(rostered(null) as any);
+    routeRock('MNL');
+    expect(await rockGetRunsheetDetails(CHANNEL_ID)).toEqual({ success: false, error: 'Runsheet not found.' });
+    expect((await exportStatus()).status).toBe(404);
+  });
+});
