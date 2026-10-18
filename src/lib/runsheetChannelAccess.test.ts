@@ -20,13 +20,13 @@ describe('canViewRunsheetChannel', () => {
   });
 
   it('lets a Grow editor view every Grow runsheet but nothing else', () => {
-    const s = { rolesMap: { growEditor: ['19108'] }, access: { runsheetCampuses: [] } };
+    const s = { rolesMap: { growEditor: ['19108'] }, contact: { campusId: 1 }, access: { runsheetCampuses: [] } };
     expect(canViewRunsheetChannel(s, GROW_TITLE, grow)).toBe(true);
     expect(canViewRunsheetChannel(s, SUNDAY, grow)).toBe(false);
   });
 
   it('lets a rostered viewer see only their occurrence', () => {
-    const s = { rolesMap: { growViewer: ['477:2026-09-29'] }, access: { runsheetCampuses: [] } };
+    const s = { rolesMap: { growViewer: ['477:2026-09-29'] }, contact: { campusId: 1 }, access: { runsheetCampuses: [] } };
     expect(canViewRunsheetChannel(s, GROW_TITLE, grow)).toBe(true);
     expect(canViewRunsheetChannel(s, OTHER_GROW, grow)).toBe(false);
     expect(canViewRunsheetChannel(s, SUNDAY, grow)).toBe(false);
@@ -44,7 +44,7 @@ describe('canEditRunsheetChannel', () => {
   });
 
   it('adds Grow editing on top of other access', () => {
-    const s = { rolesMap: { viewer: ['1'], growEditor: ['19108'] }, access: { runsheetCampuses: ['MNL'] } };
+    const s = { rolesMap: { viewer: ['1'], growEditor: ['19108'] }, contact: { campusId: 1 }, access: { runsheetCampuses: ['MNL'] } };
     expect(canEditRunsheetChannel(s, GROW_TITLE, grow)).toBe(true);
     expect(canEditRunsheetChannel(s, SUNDAY, grow)).toBe(false);
   });
@@ -56,7 +56,7 @@ describe('canEditRunsheetChannel', () => {
 });
 
 describe('rostered-only view', () => {
-  const rostered = { rolesMap: { rosteredViewer: ['MNL:2026-09-27:15:00:00'] }, access: { runsheetCampuses: [] } };
+  const rostered = { rolesMap: { rosteredViewer: ['MNL:2026-09-27:15:00:00'] }, contact: { campusId: 1 }, access: { runsheetCampuses: [] } };
 
   it('shows the exact rostered campus, date and time', () => {
     expect(canViewRunsheetChannel(rostered, SUNDAY, grow)).toBe(true);
@@ -130,7 +130,64 @@ describe('runsheetChannelAccess with sparse sessions', () => {
   });
 
   it('fails closed on a Grow-looking title that matches no known schedule', () => {
-    const s = { rolesMap: { rosteredViewer: ['MNL:2026-09-27:15:00:00'] }, access: { runsheetCampuses: [] } };
+    const s = { rolesMap: { rosteredViewer: ['MNL:2026-09-27:15:00:00'] }, contact: { campusId: 1 }, access: { runsheetCampuses: [] } };
     expect(canViewRunsheetChannel(s, 'MNL Grow Unknown // September 27, 2026 // 3PM', grow)).toBe(false);
+  });
+});
+
+
+describe('strict campus identity boundary (#100, decision A)', () => {
+  const bne = 'BNE Chapel // September 27, 2026 // 3PM';
+  const mnlRosterKey = 'MNL:2026-09-27:15:00:00';
+  const bneRosterKey = 'BNE:2026-09-27:15:00:00';
+
+  it('preserves own-campus rostered view but rejects an explicit cross-campus roster', () => {
+    const s = {
+      contact: { campusId: 1 },
+      rolesMap: { rosteredViewer: [mnlRosterKey, bneRosterKey] },
+      access: { runsheetCampuses: [] },
+    };
+    expect(canViewRunsheetChannel(s, SUNDAY, grow)).toBe(true);
+    expect(canViewRunsheetChannel(s, bne, grow)).toBe(false);
+  });
+
+  it('denies cross-campus Grow and regular editor permissions when home is different', () => {
+    const s = {
+      contact: { campusId: 2 },
+      rolesMap: { growEditor: ['19108'], editor: ['7001'], viewer: ['7001'] },
+      access: { runsheetCampuses: ['MNL', 'BNE'], runsheetEditCampuses: ['MNL', 'BNE'] },
+    };
+    expect(canViewRunsheetChannel(s, GROW_TITLE, grow)).toBe(false);
+    expect(canEditRunsheetChannel(s, GROW_TITLE, grow)).toBe(false);
+    expect(canViewRunsheetChannel(s, SUNDAY, grow)).toBe(false);
+    expect(canEditRunsheetChannel(s, SUNDAY, grow)).toBe(false);
+    expect(canViewRunsheetChannel(s, bne, grow)).toBe(true);
+    expect(canEditRunsheetChannel(s, bne, grow)).toBe(true);
+  });
+
+  it('lets only an explicit Global view tier cross campuses, while preserving edit scope', () => {
+    const s = {
+      contact: { campusId: 1 },
+      rolesMap: { editor: ['7001'], viewer: ['7001'] },
+      access: { runsheetCampuses: ['ALL'], runsheetEditCampuses: ['MNL'] },
+    };
+    expect(canViewRunsheetChannel(s, bne, grow)).toBe(true);
+    expect(canEditRunsheetChannel(s, bne, grow)).toBe(false);
+    expect(canEditRunsheetChannel(s, SUNDAY, grow)).toBe(true);
+  });
+
+  it('fails closed for unknown, absent, or conflicting campus identity', () => {
+    const keys = { rosteredViewer: [mnlRosterKey, bneRosterKey] };
+    expect(canViewRunsheetChannel({ rolesMap: keys }, SUNDAY, grow)).toBe(false);
+    expect(canViewRunsheetChannel({ rolesMap: keys, contact: { campusId: null }, access: { runsheetCampuses: ['MNL'] } }, SUNDAY, grow)).toBe(false);
+    expect(canViewRunsheetChannel({ rolesMap: keys, access: { campusIds: [1, 2], runsheetCampuses: [] } }, SUNDAY, grow)).toBe(false);
+    expect(canViewRunsheetChannel({ rolesMap: keys, access: { campusIds: [2], runsheetCampuses: [] } }, SUNDAY, grow)).toBe(false);
+    expect(canViewRunsheetChannel({ rolesMap: keys, access: { campusIds: [1], runsheetCampuses: [] } }, SUNDAY, grow)).toBe(true);
+  });
+
+  it('does not fall back to view campuses for an old editor session', () => {
+    const s = { rolesMap: { editor: ['1'] }, contact: { campusId: 1 }, access: { runsheetCampuses: ['MNL'] } };
+    expect(runsheetEditCampuses(s)).toEqual([]);
+    expect(canEditRunsheetTitle(s, SUNDAY)).toBe(false);
   });
 });
