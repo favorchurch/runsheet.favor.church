@@ -7,10 +7,13 @@ jest.mock('@/server-actions/internal/rockFetch');
 jest.mock('@/auth0-hooks/server/getRockSession', () => ({
   getRockSession: jest.fn().mockResolvedValue({
     rolesMap: { editor: ['integration-editor'], viewer: ['integration-editor'] },
-    access: { runsheetCampuses: ['ALL'] },
+    access: { runsheetCampuses: ['ALL'], runsheetEditCampuses: ['ALL'] },
   }),
 }));
-jest.mock('@/lib/permissions', () => ({ canUserEditRunsheet: jest.fn().mockReturnValue(true) }));
+jest.mock('@/lib/permissions', () => ({
+  canUserEditRunsheet: jest.fn().mockReturnValue(true),
+  hasGrowRole: jest.fn().mockReturnValue(false),
+}));
 
 function targetRow(id: number, title: string): RunsheetItemRow {
   return { id, title, order: 1, duration: 5, attributeValues: { NOTES: 'old' } };
