@@ -63,3 +63,23 @@ export function canAccessRunsheetChannel(runsheetCampuses: string[] | undefined,
   const campus = extractRunsheetCampus(channelName);
   return campus !== null && scope.includes(campus);
 }
+
+/** The concrete campus codes in a scope, without the `ALL` marker. */
+export function scopeCampusCodes(runsheetCampuses: string[] | undefined): RunsheetCampusCode[] {
+  return RUNSHEET_CAMPUS_CODES.filter((code) => (runsheetCampuses || []).includes(code));
+}
+
+/**
+ * True when a scope may see a Rock category by name (e.g. `MNL | Sunday
+ * Service`). A campus-marked category needs every campus it names in scope;
+ * an unmarked one is shown to anyone holding at least one campus, because
+ * the schedules behind it are resolved to the caller's own campus.
+ */
+export function canSeeRunsheetCategory(runsheetCampuses: string[] | undefined, categoryName: string): boolean {
+  const scope = runsheetCampuses || [];
+  if (scope.includes(ALL_CAMPUSES)) return true;
+
+  const marked = extractRunsheetCampuses(categoryName);
+  if (marked.length === 0) return scopeCampusCodes(scope).length > 0;
+  return marked.every((campus) => scope.includes(campus));
+}

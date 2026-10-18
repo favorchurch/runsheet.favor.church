@@ -3,11 +3,21 @@
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
-import { extractRunsheetCampus } from '@/lib/runsheetCampus';
+import {
+  ALL_CAMPUSES,
+  extractRunsheetCampus,
+  scopeCampusCodes,
+  type RunsheetCampusCode,
+} from '@/lib/runsheetCampus';
 import { GROW_CONTENT_CHANNEL_CATEGORY_ID } from '@/lib/growRunsheets';
-import { hasFullEditorRole } from '@/lib/permissions';
+import { GROW_EDITOR_ROLE, hasFullEditorRole } from '@/lib/permissions';
+import { runsheetEditCampuses } from '@/lib/runsheetChannelAccess';
 import { expandIcalOccurrences } from '@/lib/scheduleOccurrences';
 import {
+  CAMPUS_EVENT_SCHEDULE_ROOT_IDS,
+  CAMPUS_KIDS_SCHEDULE_ROOT_IDS,
+  CAMPUS_SUNDAY_SCHEDULE_ROOT_IDS,
+  CAMPUS_YOUTH_SCHEDULE_ROOT_IDS,
   descendantCategoryIds,
   isKidsCategoryName,
   KIDS_SERVICES_CATEGORY_ID,
@@ -53,6 +63,35 @@ function occursOn(
   return named >= 0 ? named === day : day === 0;
 }
 
+/** Each campus's folder in every schedule tree (302 Manila Sunday, 306 Brisbane events, ...). */
+const CAMPUS_BY_SCHEDULE_ROOT = new Map<number, RunsheetCampusCode>(
+  [
+    CAMPUS_SUNDAY_SCHEDULE_ROOT_IDS,
+    CAMPUS_EVENT_SCHEDULE_ROOT_IDS,
+    CAMPUS_YOUTH_SCHEDULE_ROOT_IDS,
+    CAMPUS_KIDS_SCHEDULE_ROOT_IDS,
+  ].flatMap((roots) =>
+    Object.entries(roots).map(([campus, id]) => [id, campus as RunsheetCampusCode] as const),
+  ),
+);
+
+/**
+ * The campus whose folder holds this schedule category, or null for a
+ * top-level tree (50, 171, ...) or a category Rock did not return.
+ */
+function scheduleCategoryCampus(
+  categoryId: number,
+  parentById: Map<number, number | null>,
+): RunsheetCampusCode | null {
+  const seen = new Set<number>();
+  for (let id: number | null | undefined = categoryId; id != null && !seen.has(id); id = parentById.get(id)) {
+    const campus = CAMPUS_BY_SCHEDULE_ROOT.get(id);
+    if (campus) return campus;
+    seen.add(id);
+  }
+  return null;
+}
+
 function manilaToday(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
 }
@@ -70,11 +109,20 @@ export async function rockGetScheduleOptions(
     const access = assertRunsheetViewAccess(session);
     if (!access.allowed) return { success: false, schedules: [], error: access.error };
 
+    const scope = session?.access?.runsheetCampuses || [];
+    const isGlobal = scope.includes(ALL_CAMPUSES);
+    const scopeCampuses = scopeCampusCodes(scope);
+
     // A Grow-only editor (Grow Course Head) creates Grow runsheets only, one
     // per Grow Courses topic occurrence; the form autofills the topic's next
-    // date from `nextDate`. Full editors see the whole MNL | ALL EVENTS list,
-    // Grow Courses included.
-    if (categoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID && !hasFullEditorRole(session)) {
+    // date from `nextDate`. Full editors with Manila see the whole MNL | ALL
+    // EVENTS list, Grow Courses included; a Grow editor whose campuses leave
+    // Manila out still gets the Grow list, not another campus's events.
+    const isGrowEditor = Boolean(session?.rolesMap?.[GROW_EDITOR_ROLE]?.length);
+    const seesManila = isGlobal || scopeCampuses.includes('MNL');
+    if (categoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID && (!hasFullEditorRole(session) || (isGrowEditor && !seesManila))) {
+      // Grow schedules are Manila's: anyone else needs the Grow editor role.
+      if (!isGrowEditor && !seesManila) return { success: true, schedules: [] };
       const today = manilaToday();
       const schedules: ScheduleOption[] = [];
       for (const s of await fetchGrowSchedules()) {
@@ -105,7 +153,14 @@ export async function rockGetScheduleOptions(
         : Promise.resolve(null),
     ]);
 
-    const campus = contentCategory?.Name ? extractRunsheetCampus(contentCategory.Name.replace(/\|/g, ' ')) : null;
+    // An unmarked category (or none) resolves to the caller's own campus,
+    // the one they view or else the one they edit, rather than to the
+    // all-campus tree. Holding several with no single one fails closed below.
+    const editCampuses = scopeCampusCodes(runsheetEditCampuses(session));
+    const ownCampus = scopeCampuses.length === 1 ? scopeCampuses[0] : editCampuses.length === 1 ? editCampuses[0] : null;
+    const campus =
+      (contentCategory?.Name ? extractRunsheetCampus(contentCategory.Name.replace(/\|/g, ' ')) : null) ??
+      (isGlobal ? null : ownCampus);
     const knownScheduleCategoryIds = new Set((categoryRows || []).map((c) => Number(c.Id)));
     const roots = scheduleRootsForCategory({
       campus,
@@ -113,10 +168,23 @@ export async function rockGetScheduleOptions(
       categoryId,
       knownScheduleCategoryIds,
     });
-    const targetCategoryIds = descendantCategoryIds(
-      (categoryRows || []).map((c) => ({ id: Number(c.Id), parentId: c.ParentCategoryId ?? null })),
-      roots,
-    );
+    const categoryTree = (categoryRows || []).map((c) => ({
+      id: Number(c.Id),
+      parentId: c.ParentCategoryId ?? null,
+    }));
+    const targetCategoryIds = descendantCategoryIds(categoryTree, roots);
+
+    // Campus scope is enforced on exactly the categories queried below: a
+    // non-Global caller gets nothing if any of them is another campus's or
+    // belongs to no campus at all.
+    if (!isGlobal) {
+      const parentById = new Map(categoryTree.map((c) => [c.id, c.parentId]));
+      const outOfScope = targetCategoryIds.some((id) => {
+        const owner = scheduleCategoryCampus(id, parentById);
+        return owner === null || !scopeCampuses.includes(owner);
+      });
+      if (outOfScope) return { success: true, schedules: [] };
+    }
 
     const rawSchedules = (await rockGet('/Schedules', {
       $filter: `IsActive eq true and (${targetCategoryIds.map((id) => `CategoryId eq ${id}`).join(' or ')})`,
@@ -131,11 +199,6 @@ export async function rockGetScheduleOptions(
       EffectiveStartDate?: string;
       EffectiveEndDate?: string;
     }> | null;
-
-    const categoryTree = (categoryRows || []).map((c) => ({
-      id: Number(c.Id),
-      parentId: c.ParentCategoryId ?? null,
-    }));
 
     // 1. Kids schedules belong to Kids categories only, and vice versa.
     const kidsCategoryIds = new Set(descendantCategoryIds(categoryTree, KIDS_SERVICES_CATEGORY_ID));

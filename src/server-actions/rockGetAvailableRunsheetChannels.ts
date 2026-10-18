@@ -2,9 +2,9 @@
 
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
-import { canUserEditRunsheet, hasGrowRole } from '@/lib/permissions';
+import { hasGrowRole } from '@/lib/permissions';
 import { extractRunsheetCampus } from '@/lib/runsheetCampus';
-import { canViewRunsheetChannel } from '@/lib/runsheetChannelAccess';
+import { canEditRunsheetChannel, canViewRunsheetChannel } from '@/lib/runsheetChannelAccess';
 import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 
@@ -67,7 +67,6 @@ export async function rockGetAvailableRunsheetChannels(includeArchived = false):
     if (!access.allowed) {
       return { success: false, channels: [], error: access.error };
     }
-    const canEdit = canUserEditRunsheet(session);
 
     // Fetch Content Channels from Rock RMS for ContentChannelTypeId 13 ("Service Runsheet")
     const channels = (await rockGet(
@@ -80,19 +79,16 @@ export async function rockGetAvailableRunsheetChannels(includeArchived = false):
       }
     )) as Array<{ Id: number; Name: string }> | null;
 
-    let available = channels || [];
-
-    // Editors can bypass past filtering if includeArchived is true.
-    // View-only users (!canEdit) are NEVER allowed to view past/finished runsheets.
-    const allowArchived = canEdit && includeArchived;
-    if (!allowArchived) {
-      available = available.filter((c) => !isChannelPast(c.Name));
-    }
-
     // Campus isolation applies to everyone; Grow roles add Grow Course
-    // channels on top (see lib/runsheetChannelAccess).
+    // channels on top (see lib/runsheetChannelAccess). A past runsheet is
+    // listed only when archived ones were asked for and the caller may edit
+    // that channel; view-only access never reaches finished runsheets.
     const growSchedules = hasGrowRole(session) ? await fetchGrowSchedules() : [];
-    available = available.filter((c) => canViewRunsheetChannel(session, c.Name, growSchedules));
+    let available = (channels || []).filter(
+      (c) =>
+        canViewRunsheetChannel(session, c.Name, growSchedules) &&
+        (!isChannelPast(c.Name) || (includeArchived && canEditRunsheetChannel(session, c.Name, growSchedules))),
+    );
 
     // Master templates are opened via "Edit Master Template", never listed —
     // this also keeps them out of sibling resolution for propagation.
