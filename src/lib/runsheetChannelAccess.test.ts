@@ -109,7 +109,7 @@ describe('separate edit and view campuses', () => {
   });
 
   it('lets a Grow-only editor edit Grow-looking titles only', () => {
-    const s = { rolesMap: { growEditor: ['19108'] }, access: { runsheetCampuses: [] } };
+    const s = { rolesMap: { growEditor: ['19108'] }, contact: { campusId: 1 }, access: { runsheetCampuses: [] } };
     expect(canEditRunsheetTitle(s, GROW_TITLE)).toBe(true);
     expect(canEditRunsheetTitle(s, SUNDAY)).toBe(false);
   });
