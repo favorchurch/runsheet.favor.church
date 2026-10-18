@@ -528,18 +528,17 @@ describe('rockGetScheduleOptions - campus scope', () => {
 
     const res = await rockGetScheduleOptions(700, '2026-10-04');
 
-    expect(res.schedules.map((s) => s.name)).toEqual(['BNE Family Night']);
+    expect(res.schedules).toEqual([]);
   });
 
-  it('gives a BNE editor who is also a Grow editor the Grow list for the Grow category', async () => {
+  it('does not expose Manila Grow schedules to a BNE editor holding a Grow role', async () => {
     mockGetRockSession.mockResolvedValue({
       rolesMap: { editor: ['true'], growEditor: ['19108'] },
       access: { runsheetCampuses: ['BNE'], runsheetEditCampuses: ['BNE'] },
     } as any);
 
-    await rockGetScheduleOptions(590, '2026-10-04');
-
-    expect(scheduleQueries).toEqual(['CategoryId eq 483 and IsActive eq true']);
+    expect(await rockGetScheduleOptions(590, '2026-10-04')).toEqual({ success: true, schedules: [] });
+    expect(scheduleQueries).toEqual([]);
   });
 
   it('keeps an MNL editor who is also a Grow editor on the full Manila events list', async () => {
