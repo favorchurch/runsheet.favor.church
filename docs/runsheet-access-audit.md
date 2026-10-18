@@ -39,6 +39,34 @@ viewer may read the complete authorized-campus runsheet, including person names
 displayed in that runsheet. Viewers cannot edit the runsheet, edit platforms,
 assign people, create, duplicate, delete, or bulk-save runsheet data.
 
+## Campus boundary (#100)
+
+Campus scope is enforced on the server, never from a client-selected campus:
+
+- **Tiers.** A user with `ALL` (the Global tier) sees MNL, BNE and SEL and gets
+  an All/MNL/BNE/SEL switcher on the landing page (default All, remembered per
+  browser). A one-campus user sees only their campus and gets no switcher,
+  even when rostered on another campus. Rostered runsheets stay visible under
+  the existing rostered-viewer rules.
+- **Endpoints.** List, detail (and batch), export, roster assignments,
+  schedule options (including schedule-category ids and an omitted
+  categoryId) and content-category options are all scoped server-side. The
+  Grow schedule branch serves only Grow editors and MNL/`ALL` callers.
+  Archived runsheets list only for campuses the user may edit.
+- **Uniform denial.** A runsheet outside the caller's view scope gets the
+  same response as a missing id (detail, export, edit gate, notes routes), so
+  neither its metadata nor its existence leaks. Cross-campus delete returns
+  the missing-id shape and deletes nothing.
+- **Fail closed.** The server edit gate (`canEditRunsheetChannel`) uses
+  `runsheetEditCampuses` only, with no fallback to view campuses. Users with no
+  campus and nothing rostered see a "No campus access" state. The client edit hint still
+  falls back for stale pre-split sessions; those sessions need to sign in again
+  (follow-up #111).
+- **Tests.** `src/server-actions/campusTierMatrix.test.ts` covers MNL, BNE,
+  SEL, Global-editor and Global view-only users against every gated endpoint.
+
+People search stays unscoped by product decision (#111).
+
 ## Audit implementation
 
 The audit enumerates:
