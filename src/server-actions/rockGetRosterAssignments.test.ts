@@ -2,17 +2,20 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import { clearRosterScheduleMapCache } from '@/server-actions/internal/rockRosterQueries';
+import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
+import { channelRosterKey } from '@/lib/rosterAccess';
 import { rockGetRosterAssignments } from './rockGetRosterAssignments';
 
 jest.mock('@/auth0-hooks/server/getRockSession', () => ({ getRockSession: jest.fn() }));
 jest.mock('@/server-actions/internal/rockFetch', () => ({ rockGet: jest.fn() }));
+jest.mock('@/server-actions/internal/rockGrowSchedules', () => ({ fetchGrowSchedules: jest.fn() }));
 
 const mockSession = jest.mocked(getRockSession);
 const mockRockGet = jest.mocked(rockGet);
 
 const SESSION = {
   rolesMap: { editor: ['7001'] },
-  access: { runsheetCampuses: ['MNL'] },
+  access: { runsheetCampuses: ['MNL'], runsheetEditCampuses: ['MNL'] },
 } as any;
 
 /** Group locations + services, as `/GroupLocations?$expand=Schedules,Location` returns them. */
@@ -200,5 +203,86 @@ describe('rockGetRosterAssignments', () => {
     const res = await rockGetRosterAssignments('MNL Crowne // September 27, 2026 // 3PM');
     expect(res.success).toBe(false);
     expect(mockRockGet).not.toHaveBeenCalled();
+  });
+});
+
+describe('rockGetRosterAssignments campus scoping', () => {
+  const MNL_CHANNEL = 'MNL Crowne // September 27, 2026 // 3PM';
+  const BNE_CHANNEL = 'BNE Service // September 27, 2026 // 10AM';
+  const GROW_CHANNEL = 'MNL Grow - Bible Essentials // September 29, 2026 // 7PM';
+  const DENIED = 'You do not have access to this runsheet.';
+
+  const campusUser = (campus: string) => ({
+    rolesMap: { editor: ['7001'] },
+    access: { runsheetCampuses: [campus], runsheetEditCampuses: [campus] },
+  });
+  const PERSONAS: Record<string, any> = {
+    MNL: campusUser('MNL'),
+    BNE: campusUser('BNE'),
+    SEL: campusUser('SEL'),
+    Global: { rolesMap: { editor: ['7001'] }, access: { runsheetCampuses: ['ALL'], runsheetEditCampuses: ['ALL'] } },
+    'GLB view-only': { rolesMap: { viewer: ['7002'] }, access: { runsheetCampuses: ['ALL'], runsheetEditCampuses: [] } },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    clearRosterScheduleMapCache();
+    mockRockGet.mockResolvedValue([] as any);
+    jest.mocked(fetchGrowSchedules).mockResolvedValue([
+      { id: 477, name: 'MNL Grow - Bible Essentials', iCalendarContent: '' },
+    ]);
+  });
+
+  it.each([
+    ['MNL', true],
+    ['BNE', false],
+    ['SEL', false],
+    ['Global', true],
+    ['GLB view-only', true],
+  ])('%s user reading an MNL roster: allowed=%s', async (persona, allowed) => {
+    mockSession.mockResolvedValue(PERSONAS[persona]);
+
+    const res = await rockGetRosterAssignments(MNL_CHANNEL);
+
+    if (allowed) {
+      expect(res).toMatchObject({ success: true, rockManaged: true });
+      expect(mockRockGet).toHaveBeenCalled();
+    } else {
+      expect(res).toMatchObject({ success: false, linked: false, scheduleId: null, roles: [], error: DENIED });
+      expect(mockRockGet).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each(Object.keys(PERSONAS))('%s user gets no roster data for a BNE runsheet', async (persona) => {
+    mockSession.mockResolvedValue(PERSONAS[persona]);
+
+    const res = await rockGetRosterAssignments(BNE_CHANNEL);
+
+    expect(res).toMatchObject({ rockManaged: false, linked: false, roles: [] });
+    expect(mockRockGet).not.toHaveBeenCalled();
+  });
+
+  it('lets a rostered volunteer read the roster of the service they are rostered on, and no other', async () => {
+    mockSession.mockResolvedValue({
+      rolesMap: { rosteredViewer: [channelRosterKey(MNL_CHANNEL)!] },
+      access: { runsheetCampuses: [], runsheetEditCampuses: [] },
+    } as any);
+
+    expect(await rockGetRosterAssignments(MNL_CHANNEL)).toMatchObject({ success: true });
+    const other = await rockGetRosterAssignments('MNL Crowne // October 4, 2026 // 3PM');
+    expect(other).toMatchObject({ success: false, error: DENIED, roles: [] });
+  });
+
+  it('lets a Grow viewer read only the Grow occurrence they hold', async () => {
+    mockSession.mockResolvedValue({
+      rolesMap: { growViewer: ['477:2026-09-29'] },
+      access: { runsheetCampuses: [], runsheetEditCampuses: [] },
+    } as any);
+
+    expect(await rockGetRosterAssignments(GROW_CHANNEL)).toMatchObject({ success: true });
+    expect(fetchGrowSchedules).toHaveBeenCalled();
+    const otherDate = await rockGetRosterAssignments('MNL Grow - Bible Essentials // October 6, 2026 // 7PM');
+    expect(otherDate).toMatchObject({ success: false, error: DENIED });
+    expect(await rockGetRosterAssignments(MNL_CHANNEL)).toMatchObject({ success: false, error: DENIED });
   });
 });

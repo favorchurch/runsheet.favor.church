@@ -12,6 +12,9 @@ import {
   fetchRosterOccupants,
   fetchRosterScheduleMap,
 } from '@/server-actions/internal/rockRosterQueries';
+import { hasGrowRole } from '@/lib/permissions';
+import { canViewRunsheetChannel } from '@/lib/runsheetChannelAccess';
+import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 
 export interface RosterRoleAssignment {
@@ -59,6 +62,13 @@ export async function rockGetRosterAssignments(
   }
 
   try {
+    // The same per-channel rule as the runsheet list and detail actions, so a
+    // roster is never read for a runsheet the caller could not open.
+    const growSchedules = hasGrowRole(session) ? await fetchGrowSchedules() : [];
+    if (!canViewRunsheetChannel(session, channelName, growSchedules)) {
+      return { ...UNLINKED, success: false, error: 'You do not have access to this runsheet.' };
+    }
+
     const { services, scheduleIdsByLocation } = await fetchRosterScheduleMap();
 
     const occurrence = matchRockSchedule(channelName, services);

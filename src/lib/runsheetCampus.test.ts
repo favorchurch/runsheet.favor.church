@@ -1,5 +1,12 @@
 import { describe, expect, it } from '@jest/globals';
-import { ALL_CAMPUSES, canAccessRunsheetChannel, extractRunsheetCampus, extractRunsheetCampuses } from './runsheetCampus';
+import {
+  ALL_CAMPUSES,
+  canAccessRunsheetChannel,
+  canSeeRunsheetCategory,
+  extractRunsheetCampus,
+  extractRunsheetCampuses,
+  scopeCampusCodes,
+} from './runsheetCampus';
 
 describe('runsheet campus matching', () => {
   it.each(['COUNSEL', 'SELAH', 'VESSEL', 'SELF'])('does not treat %s as SEL', (title) => {
@@ -39,5 +46,27 @@ describe('runsheet campus edge cases', () => {
     expect(canAccessRunsheetChannel(['MNL'], 'BNE Service // August 16')).toBe(false);
     expect(canAccessRunsheetChannel(undefined, 'MNL Crowne // August 16')).toBe(false);
     expect(canAccessRunsheetChannel(['MNL'], 'MNL Crowne // August 16')).toBe(true);
+  });
+});
+
+describe('canSeeRunsheetCategory', () => {
+  it.each([
+    [['ALL'], 'BNE | Sunday Service', true],
+    [['ALL'], 'Special Services', true],
+    [['MNL'], 'MNL | Sunday Service', true],
+    [['MNL'], 'BNE | Sunday Service', false],
+    [['SEL'], 'Seoul Youth', true],
+    [['BNE'], 'Special Services', true],
+    [['MNL', 'BNE'], 'MNL / BNE Joint Night', true],
+    [['MNL'], 'MNL / BNE Joint Night', false],
+    [[], 'Special Services', false],
+    [[], 'MNL | Sunday Service', false],
+    [undefined, 'Special Services', false],
+  ])('scope %j and category %s: %s', (scope, name, expected) => {
+    expect(canSeeRunsheetCategory(scope as string[] | undefined, name)).toBe(expected);
+  });
+
+  it('reads only real campus codes out of a scope', () => {
+    expect(scopeCampusCodes(['ALL', 'BNE', 'XYZ', 'MNL'])).toEqual(['MNL', 'BNE']);
   });
 });

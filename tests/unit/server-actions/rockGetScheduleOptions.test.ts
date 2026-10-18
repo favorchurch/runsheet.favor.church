@@ -92,8 +92,10 @@ describe('rockGetScheduleOptions - Sunday services schedule resolution', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetRockSession.mockResolvedValue({
+      // Global: these cases cover tree resolution, including the top-level
+      // trees (50, 475) only Global may query.
       rolesMap: { editor: ['true'] },
-      access: { runsheetCampuses: ['MNL', 'BNE', 'SEL'] },
+      access: { runsheetCampuses: ['ALL'], runsheetEditCampuses: ['ALL'] },
     } as any);
   });
 
@@ -253,8 +255,8 @@ describe('rockGetScheduleOptions - Sunday services schedule resolution', () => {
 });
 
 describe('rockGetScheduleOptions - Kids and ALL EVENTS categories', () => {
-  const editor = { rolesMap: { editor: ['true'] }, access: { runsheetCampuses: ['MNL'] } } as any;
-  const growOnly = { rolesMap: { growEditor: ['19108'] }, access: { runsheetCampuses: [] } } as any;
+  const editor = { rolesMap: { editor: ['true'] }, access: { runsheetCampuses: ['MNL'], runsheetEditCampuses: ['MNL'] } } as any;
+  const growOnly = { rolesMap: { growEditor: ['19108'] }, access: { runsheetCampuses: [], runsheetEditCampuses: [] } } as any;
 
   function route(categoryId: number, categoryName: string, schedules: any[]) {
     const filters: string[] = [];
@@ -350,7 +352,7 @@ describe('rockGetScheduleOptions - date filtering reads RDATE lists', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers().setSystemTime(new Date('2026-10-04T10:00:00+08:00'));
-    mockGetRockSession.mockResolvedValue({ rolesMap: { editor: ['true'] }, access: { runsheetCampuses: ['MNL'] } } as any);
+    mockGetRockSession.mockResolvedValue({ rolesMap: { editor: ['true'] }, access: { runsheetCampuses: ['MNL'], runsheetEditCampuses: ['MNL'] } } as any);
     mockRockGet.mockImplementation(async (url: string) => {
       if (url === '/Categories') return SCHEDULE_CATEGORIES as any;
       if (url === '/Categories/590') return { Id: 590, Name: 'MNL | ALL EVENTS' } as any;
@@ -377,5 +379,150 @@ describe('rockGetScheduleOptions - date filtering reads RDATE lists', () => {
     const res = await rockGetScheduleOptions(590, '2026-10-27');
 
     expect(res.schedules.map((s) => s.name)).toEqual(['MNL Tuesday Meeting']);
+  });
+});
+
+describe('rockGetScheduleOptions - campus scope', () => {
+  const campusUser = (...campuses: string[]) => ({
+    rolesMap: { editor: ['true'] },
+    access: { runsheetCampuses: campuses, runsheetEditCampuses: campuses },
+  });
+  const PERSONAS: Record<string, any> = {
+    MNL: campusUser('MNL'),
+    BNE: campusUser('BNE'),
+    SEL: campusUser('SEL'),
+    Global: { rolesMap: { editor: ['true'] }, access: { runsheetCampuses: ['ALL'], runsheetEditCampuses: ['ALL'] } },
+    'GLB view-only': { rolesMap: { viewer: ['true'] }, access: { runsheetCampuses: ['ALL'], runsheetEditCampuses: [] } },
+  };
+
+  const CATEGORY_NAMES: Record<number, string> = {
+    336: 'MNL | Sunday Service',
+    436: 'BNE | Sunday Service',
+    536: 'SEL | Sunday Service',
+    50: 'SUNDAY SERVICES',
+    302: '🇵🇭 Manila',
+    303: '🇦🇺 Brisbane',
+    304: '🇰🇷 Seoul',
+    417: 'Crowne',
+    700: 'Special Services',
+  };
+  const SCHEDULES = [
+    ...SUNDAY_CROWNE_SCHEDULES,
+    { Id: 801, Name: 'BNE 10AM', CategoryId: 303, iCalendarContent: WEEKLY_SUNDAY('100000') },
+    { Id: 802, Name: 'SEL 11AM', CategoryId: 304, iCalendarContent: WEEKLY_SUNDAY('110000') },
+    { Id: 803, Name: 'MNL Family Night', CategoryId: 305, iCalendarContent: WEEKLY_SUNDAY('180000') },
+    { Id: 804, Name: 'BNE Family Night', CategoryId: 306, iCalendarContent: WEEKLY_SUNDAY('180000') },
+  ];
+  const OWN_CATEGORY: Record<string, number> = { MNL: 336, BNE: 436, SEL: 536 };
+  const OWN_SCHEDULES: Record<string, string[]> = {
+    MNL: ['MNL Crowne 9AM', 'MNL Crowne 11:30AM'],
+    BNE: ['BNE 10AM'],
+    SEL: ['SEL 11AM'],
+  };
+
+  let scheduleQueries: string[];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-04T10:00:00+08:00'));
+    scheduleQueries = [];
+    mockRockGet.mockImplementation(async (url: string, params?: any) => {
+      if (url === '/Categories') return SCHEDULE_CATEGORIES as any;
+      const id = Number(url.match(/^\/Categories\/(\d+)$/)?.[1]);
+      if (id) return CATEGORY_NAMES[id] ? ({ Id: id, Name: CATEGORY_NAMES[id] } as any) : null;
+      if (url === '/Schedules') {
+        const filter = String(params?.$filter || '');
+        scheduleQueries.push(filter);
+        return SCHEDULES.filter((s) => new RegExp(`CategoryId eq ${s.CategoryId}\\b`).test(filter)) as any;
+      }
+      return null;
+    });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it.each(['MNL', 'BNE', 'SEL'])('%s user sees their own Sunday schedules', async (campus) => {
+    mockGetRockSession.mockResolvedValue(PERSONAS[campus]);
+
+    const res = await rockGetScheduleOptions(OWN_CATEGORY[campus], '2026-10-04');
+
+    expect(res.success).toBe(true);
+    expect(res.schedules.map((s) => s.name)).toEqual(OWN_SCHEDULES[campus]);
+  });
+
+  it.each([
+    ['MNL', 436],
+    ['MNL', 303],
+    ['BNE', 336],
+    ['BNE', 302],
+    ['BNE', 417],
+    ['SEL', 302],
+    ['SEL', 436],
+  ])('%s user gets nothing for another campus\'s category %i, without querying its schedules', async (campus, categoryId) => {
+    mockGetRockSession.mockResolvedValue(PERSONAS[campus]);
+
+    const res = await rockGetScheduleOptions(categoryId, '2026-10-04');
+
+    expect(res).toEqual({ success: true, schedules: [] });
+    expect(scheduleQueries).toEqual([]);
+  });
+
+  it.each(['Global', 'GLB view-only'])('%s user sees every campus', async (persona) => {
+    mockGetRockSession.mockResolvedValue(PERSONAS[persona]);
+
+    expect((await rockGetScheduleOptions(336, '2026-10-04')).schedules.map((s) => s.name)).toEqual(OWN_SCHEDULES.MNL);
+    expect((await rockGetScheduleOptions(303, '2026-10-04')).schedules.map((s) => s.name)).toEqual(OWN_SCHEDULES.BNE);
+    const all = await rockGetScheduleOptions(50, '2026-10-04');
+    expect(all.schedules.map((s) => s.name)).toEqual(expect.arrayContaining(['MNL Crowne 9AM', 'BNE 10AM', 'SEL 11AM']));
+  });
+
+  it('narrows the top-level Sunday tree (50) to a one-campus user\'s own campus', async () => {
+    mockGetRockSession.mockResolvedValue(PERSONAS.BNE);
+
+    const res = await rockGetScheduleOptions(50, '2026-10-04');
+
+    expect(res.schedules.map((s) => s.name)).toEqual(['BNE 10AM']);
+    expect(scheduleQueries[0]).not.toContain('CategoryId eq 50 ');
+    expect(scheduleQueries[0]).not.toContain('CategoryId eq 302');
+  });
+
+  it('defaults an omitted category to a one-campus user\'s own trees only', async () => {
+    mockGetRockSession.mockResolvedValue(PERSONAS.BNE);
+
+    const res = await rockGetScheduleOptions(undefined, '2026-10-04');
+
+    expect(res.success).toBe(true);
+    expect(scheduleQueries).toHaveLength(1);
+    expect(scheduleQueries[0]).toContain('CategoryId eq 303');
+    expect(scheduleQueries[0]).toContain('CategoryId eq 306');
+    for (const other of [50, 171, 302, 305, 304, 307]) {
+      expect(scheduleQueries[0]).not.toMatch(new RegExp(`CategoryId eq ${other}\\b`));
+    }
+  });
+
+  it('resolves an unmarked category to a one-campus user\'s own campus', async () => {
+    mockGetRockSession.mockResolvedValue(PERSONAS.BNE);
+
+    const res = await rockGetScheduleOptions(700, '2026-10-04');
+
+    expect(res.schedules.map((s) => s.name)).toEqual(['BNE Family Night']);
+  });
+
+  it('fails closed when a multi-campus user picks a category with no resolvable campus', async () => {
+    mockGetRockSession.mockResolvedValue(campusUser('MNL', 'BNE') as any);
+
+    expect(await rockGetScheduleOptions(700, '2026-10-04')).toEqual({ success: true, schedules: [] });
+    expect(await rockGetScheduleOptions(50, '2026-10-04')).toEqual({ success: true, schedules: [] });
+    expect(await rockGetScheduleOptions(undefined, '2026-10-04')).toEqual({ success: true, schedules: [] });
+    expect(scheduleQueries).toEqual([]);
+  });
+
+  it('gives a user with no campus nothing outside the Grow path', async () => {
+    mockGetRockSession.mockResolvedValue({ rolesMap: { viewer: ['true'] }, access: { runsheetCampuses: [], runsheetEditCampuses: [] } } as any);
+
+    expect(await rockGetScheduleOptions(336, '2026-10-04')).toEqual({ success: true, schedules: [] });
+    expect(scheduleQueries).toEqual([]);
   });
 });
