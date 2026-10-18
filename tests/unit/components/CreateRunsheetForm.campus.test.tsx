@@ -59,6 +59,13 @@ describe('filterCategoriesForCampuses', () => {
     expect(ids(filterCategoriesForCampuses(lookalikes, ['SEL']))).toEqual([40, 41]);
   });
 
+  it('rejects categories naming several campuses unless all are authorized', () => {
+    const joint = [{ id: 80, name: 'MNL / BNE Joint Night' }, { id: 81, name: 'Special Services' }];
+    expect(ids(filterCategoriesForCampuses(joint, ['MNL']))).toEqual([81]);
+    expect(ids(filterCategoriesForCampuses(joint, ['ALL']))).toEqual([80, 81]);
+    expect(ids(filterCategoriesForCampuses(joint, undefined))).toEqual([]);
+  });
+
   it('keeps only the Grow category for a Grow-only editor, whatever the campus scope', () => {
     expect(ids(filterCategoriesForCampuses(categories, undefined, true))).toEqual([590]);
     expect(ids(filterCategoriesForCampuses(categories, ['BNE'], true))).toEqual([590]);
@@ -78,6 +85,12 @@ describe('titleCampusError', () => {
   it('fails closed for a missing or empty scope', () => {
     expect(titleCampusError('MNL Crowne // August 9, 2026 // 10AM', undefined)).toMatch(/not authorized/);
     expect(titleCampusError('MNL Crowne // August 9, 2026 // 10AM', [])).toMatch(/not authorized/);
+  });
+
+  it('rejects unknown and ambiguous campus titles before a network write', () => {
+    expect(titleCampusError('Sunday Service // October 4, 2026 // 3PM', ['ALL'])).toMatch(/exactly one campus marker/);
+    expect(titleCampusError('MNL / BNE Joint Night // October 4, 2026 // 3PM', ['MNL'])).toMatch(/exactly one campus marker/);
+    expect(titleCampusError('MNL / BNE Joint Night // October 4, 2026 // 3PM', ['ALL'])).toMatch(/exactly one campus marker/);
   });
 
   it('leaves Grow titles to the server for a Grow-only editor', () => {
