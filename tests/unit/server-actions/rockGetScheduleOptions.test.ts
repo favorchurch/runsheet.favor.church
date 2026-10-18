@@ -256,7 +256,7 @@ describe('rockGetScheduleOptions - Sunday services schedule resolution', () => {
 
 describe('rockGetScheduleOptions - Kids and ALL EVENTS categories', () => {
   const editor = { rolesMap: { editor: ['true'] }, access: { runsheetCampuses: ['MNL'], runsheetEditCampuses: ['MNL'] } } as any;
-  const growOnly = { rolesMap: { growEditor: ['19108'] }, access: { runsheetCampuses: [], runsheetEditCampuses: [] } } as any;
+  const growOnly = { rolesMap: { growEditor: ['19108'] }, contact: { campusId: 1 }, access: { runsheetCampuses: [], runsheetEditCampuses: [] } } as any;
 
   function route(categoryId: number, categoryName: string, schedules: any[]) {
     const filters: string[] = [];
@@ -520,7 +520,7 @@ describe('rockGetScheduleOptions - campus scope', () => {
     expect(scheduleQueries).toEqual([]);
   });
 
-  it('resolves an unmarked category to the one campus a multi-campus viewer edits', async () => {
+  it('fails closed on an unmarked category when no unique non-Global home campus exists', async () => {
     mockGetRockSession.mockResolvedValue({
       rolesMap: { editor: ['true'] },
       access: { runsheetCampuses: ['MNL', 'BNE'], runsheetEditCampuses: ['BNE'] },
