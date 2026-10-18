@@ -554,6 +554,38 @@ describe('rockGetScheduleOptions - campus scope', () => {
     expect(res.schedules.map((s) => s.name)).toEqual(['MNL Family Night']);
   });
 
+  it('keeps a Global editor who is also a Grow editor on the full Manila events list', async () => {
+    mockGetRockSession.mockResolvedValue({
+      rolesMap: { editor: ['true'], growEditor: ['19108'] },
+      access: { runsheetCampuses: ['ALL'], runsheetEditCampuses: ['ALL'] },
+    } as any);
+    CATEGORY_NAMES[590] = 'MNL | ALL EVENTS';
+
+    const res = await rockGetScheduleOptions(590, '2026-10-04');
+
+    expect(res.schedules.map((s) => s.name)).toEqual(['MNL Family Night']);
+    expect(scheduleQueries).not.toContain('CategoryId eq 483 and IsActive eq true');
+  });
+
+  it('prefers the single view campus over a different single edit campus', async () => {
+    mockGetRockSession.mockResolvedValue({
+      rolesMap: { editor: ['true'] },
+      access: { runsheetCampuses: ['MNL'], runsheetEditCampuses: ['BNE'] },
+    } as any);
+
+    expect((await rockGetScheduleOptions(700, '2026-10-04')).schedules.map((s) => s.name)).toEqual(['MNL Family Night']);
+  });
+
+  it('still fails closed when the single edit campus is outside the view campuses', async () => {
+    mockGetRockSession.mockResolvedValue({
+      rolesMap: { editor: ['true'] },
+      access: { runsheetCampuses: ['MNL', 'BNE'], runsheetEditCampuses: ['SEL'] },
+    } as any);
+
+    expect(await rockGetScheduleOptions(700, '2026-10-04')).toEqual({ success: true, schedules: [] });
+    expect(scheduleQueries).toEqual([]);
+  });
+
   it('fails closed on the top-level trees for a user holding all three campuses but not Global', async () => {
     mockGetRockSession.mockResolvedValue(campusUser('MNL', 'BNE', 'SEL') as any);
 
