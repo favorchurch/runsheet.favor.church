@@ -158,16 +158,17 @@ export async function rockGetScheduleOptions(
       categoryId,
       knownScheduleCategoryIds,
     });
-    const targetCategoryIds = descendantCategoryIds(
-      (categoryRows || []).map((c) => ({ id: Number(c.Id), parentId: c.ParentCategoryId ?? null })),
-      roots,
-    );
+    const categoryTree = (categoryRows || []).map((c) => ({
+      id: Number(c.Id),
+      parentId: c.ParentCategoryId ?? null,
+    }));
+    const targetCategoryIds = descendantCategoryIds(categoryTree, roots);
 
     // Campus scope is enforced on exactly the categories queried below: a
     // non-Global caller gets nothing if any of them is another campus's or
     // belongs to no campus at all.
     if (!isGlobal) {
-      const parentById = new Map((categoryRows || []).map((c) => [Number(c.Id), c.ParentCategoryId ?? null]));
+      const parentById = new Map(categoryTree.map((c) => [c.id, c.parentId]));
       const outOfScope = targetCategoryIds.some((id) => {
         const owner = scheduleCategoryCampus(id, parentById);
         return owner === null || !scopeCampuses.includes(owner);
@@ -188,11 +189,6 @@ export async function rockGetScheduleOptions(
       EffectiveStartDate?: string;
       EffectiveEndDate?: string;
     }> | null;
-
-    const categoryTree = (categoryRows || []).map((c) => ({
-      id: Number(c.Id),
-      parentId: c.ParentCategoryId ?? null,
-    }));
 
     // 1. Kids schedules belong to Kids categories only, and vice versa.
     const kidsCategoryIds = new Set(descendantCategoryIds(categoryTree, KIDS_SERVICES_CATEGORY_ID));
