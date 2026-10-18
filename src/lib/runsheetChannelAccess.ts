@@ -56,7 +56,8 @@ export function runsheetViewCampusScope(session: ChannelAccessSession): string[]
 /** Campuses the session may edit. Missing explicit edit scope fails closed. */
 export function runsheetEditCampuses(session: ChannelAccessSession): string[] {
   const edits = session?.access?.runsheetEditCampuses || [];
-  if (edits.includes(ALL_CAMPUSES) && session?.access?.runsheetCampuses?.includes(ALL_CAMPUSES)) return [ALL_CAMPUSES];
+  // Global view alone never grants edits, but may explicitly edit one campus.
+  if (session?.access?.runsheetCampuses?.includes(ALL_CAMPUSES)) return edits;
   const home = runsheetIdentityCampusScope(session);
   return home.length === 1 && edits.includes(home[0]) ? home : [];
 }
