@@ -85,18 +85,9 @@ export function generateRunsheetTitle(
   return `${prefix} // ${formattedDate} // ${slot}`;
 }
 
-import { ALL_CAMPUSES, extractRunsheetCampus, RunsheetCampusCode } from '@/lib/runsheetCampus';
+import { ALL_CAMPUSES, extractRunsheetCampus } from '@/lib/runsheetCampus';
 import { isGrowRunsheetTitle } from '@/lib/runsheetKind';
 import type { RunsheetDetails } from '@/types/Runsheet';
-
-export function extractCategoryCampus(catName: string): RunsheetCampusCode | null {
-  if (!catName) return null;
-  const upper = catName.toUpperCase();
-  if (upper.includes('MNL') || upper.includes('MANILA')) return 'MNL';
-  if (upper.includes('BNE') || upper.includes('BRISBANE')) return 'BNE';
-  if (upper.includes('SEL') || upper.includes('SEOUL')) return 'SEL';
-  return null;
-}
 
 /**
  * Categories this campus scope may create under. Fails closed: only an 'ALL'
@@ -112,7 +103,8 @@ export function filterCategoriesForCampuses<T extends { id: number; name: string
   if (growOnly) return categories.filter((cat) => cat.id === GROW_CONTENT_CHANNEL_CATEGORY_ID);
   if (runsheetCampuses?.includes(ALL_CAMPUSES)) return categories;
   return categories.filter((cat) => {
-    const catCampus = extractCategoryCampus(cat.name);
+    // Word-boundary match, as for titles: `COUNSELING` is not SEL.
+    const catCampus = extractRunsheetCampus(cat.name);
     return catCampus === null || (runsheetCampuses || []).includes(catCampus);
   });
 }

@@ -408,8 +408,8 @@ export function RunsheetLandingView({
           </div>
           <h3 className="text-base font-bold text-slate-900">No campus access</h3>
           <p className="mt-1 text-xs sm:text-sm text-slate-500 max-w-sm">
-            Your account isn&apos;t linked to a campus and you aren&apos;t rostered on any runsheets yet. Ask your
-            campus staff to give you access.
+            Your account isn&apos;t linked to a campus, and no rostered or Grow runsheets are scheduled for you
+            right now. If you expected to see runsheets here, ask your campus staff for access.
           </p>
           {canEdit && onCreateNew && (
             <button

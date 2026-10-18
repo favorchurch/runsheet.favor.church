@@ -54,7 +54,7 @@ function extractChannelDateLabel(name: string): string {
   const parts = name.split('//');
   return parts.length >= 2 ? parts[1].trim() : '';
 }
-import { extractCategoryCampus, filterCategoriesForCampuses, generateRunsheetTitle, titleCampusError } from './CreateRunsheetForm';
+import { filterCategoriesForCampuses, generateRunsheetTitle, titleCampusError } from './CreateRunsheetForm';
 import { CELL_ATTRIBUTE, RichTextCell } from './RichTextCell';
 import { RichTextContent } from './RichTextContent';
 import { RichTextToolbar } from './RichTextToolbar';
@@ -720,7 +720,7 @@ export function RunsheetTableEditor({
 
           const currentCampus = extractRunsheetCampus(channelName);
           const matchedCat = filteredCats.find((c) => {
-            const catCampus = extractCategoryCampus(c.name);
+            const catCampus = extractRunsheetCampus(c.name);
             return catCampus === currentCampus;
           });
 

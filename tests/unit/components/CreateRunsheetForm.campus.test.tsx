@@ -49,6 +49,16 @@ describe('filterCategoriesForCampuses', () => {
     expect(filterCategoriesForCampuses(categories, [])).toEqual([]);
   });
 
+  it('reads category campuses on word boundaries, not substrings', () => {
+    const lookalikes = [
+      { id: 40, name: 'COUNSELING' },
+      { id: 41, name: 'VESSEL EVENTS' },
+      { id: 42, name: 'BNE | YOUTH' },
+    ];
+    expect(ids(filterCategoriesForCampuses(lookalikes, ['MNL']))).toEqual([40, 41]);
+    expect(ids(filterCategoriesForCampuses(lookalikes, ['SEL']))).toEqual([40, 41]);
+  });
+
   it('keeps only the Grow category for a Grow-only editor, whatever the campus scope', () => {
     expect(ids(filterCategoriesForCampuses(categories, undefined, true))).toEqual([590]);
     expect(ids(filterCategoriesForCampuses(categories, ['BNE'], true))).toEqual([590]);
