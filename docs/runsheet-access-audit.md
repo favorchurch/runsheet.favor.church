@@ -22,7 +22,7 @@ read-only audit shipped in `scripts/audit-runsheet-access.ts`. Figures labelled
 | `MNL/BNE/SEL Department Admins` (groups 57919/57920/57921, GroupType 28 "Access" tree) | View only on that campus | `viewer`, own-campus view scope |
 | `GLB Department Admins` (group 103375) | View only on every campus | `viewer`, `runsheetCampuses: ['ALL']` |
 | Any other GroupType 28 group outside the Org Chart campus roots (e.g. Favor Calls Admins) | Nothing | no runsheet role |
-| Other Ministry Team members (GroupType 23) | Only the runsheets they are rostered on | `rosteredViewer` |
+| Other Ministry Team members (GroupType 23) | Only runsheets rostered within their verified home campus | `rosteredViewer` with campus identity boundary |
 | Everyone else, including authenticated users without a Rock membership | Denied on every runsheet server action | empty runsheet roles and campus scope |
 
 Every global group match adds `ALL` scope, including groups 32879, 4, and 5.
@@ -46,9 +46,14 @@ Campus scope is enforced on the server, never from a client-selected campus:
 - **Tiers.** A user with `ALL` (the Global tier) sees MNL, BNE and SEL and gets
   an All/MNL/BNE/SEL switcher on the landing page (default All, remembered per
   browser). A one-campus user sees only their campus and gets no switcher,
-  even when rostered on another campus. Rostered runsheets stay visible under
-  the existing rostered-viewer rules.
-- **Endpoints.** List, detail (and batch), export, roster assignments,
+  even when rostered on another campus. A roster or Grow assignment never
+  overrides the home-campus boundary; own-campus rostered access is preserved.
+  Only the explicit Global `ALL` tier enables cross-campus access. The trusted
+  primary Rock Person campus is authoritative; missing or conflicting identity
+  claims fail closed rather than granting a second campus.
+- **Endpoints.** The shared channel gate checks the trusted home campus **before**
+  campus-wide, Grow or rostered-viewer role checks, on both views and edits.
+  List, detail (and batch), export, roster assignments,
   schedule options (including schedule-category ids and an omitted
   categoryId) and content-category options are all scoped server-side. The
   Grow schedule branch serves only Grow editors and MNL/`ALL` callers.
@@ -57,13 +62,16 @@ Campus scope is enforced on the server, never from a client-selected campus:
   same response as a missing id (detail, export, edit gate, notes routes), so
   neither its metadata nor its existence leaks. Cross-campus delete returns
   the missing-id shape and deletes nothing.
-- **Fail closed.** The server edit gate (`canEditRunsheetChannel`) uses
-  `runsheetEditCampuses` only, with no fallback to view campuses. Users with no
-  campus and nothing rostered see a "No campus access" state. The client edit hint still
-  falls back for stale pre-split sessions; those sessions need to sign in again
-  (follow-up #111).
+- **Fail closed.** Both server and client edit checks require explicit
+  `runsheetEditCampuses`; missing edit claims do not inherit view scope.
+  Unknown or ambiguous campus titles are rejected before creating a runsheet.
+  Without a trusted home campus, non-Global sessions cannot open runsheets.
+  Sessions cached before the view/edit split need to sign in again.
+  Users with no campus and nothing available see a "No campus access" state.
 - **Tests.** `src/server-actions/campusTierMatrix.test.ts` covers MNL, BNE,
   SEL, Global-editor and Global view-only users against every gated endpoint.
+  `src/lib/runsheetChannelAccess.test.ts` additionally covers cross-campus
+  roster/Grow/role bypass attempts, missing identity and the valid Global exception.
 
 People search stays unscoped by product decision (#111).
 
