@@ -10,7 +10,8 @@ import {
   type RunsheetCampusCode,
 } from '@/lib/runsheetCampus';
 import { GROW_CONTENT_CHANNEL_CATEGORY_ID } from '@/lib/growRunsheets';
-import { hasFullEditorRole } from '@/lib/permissions';
+import { GROW_EDITOR_ROLE, hasFullEditorRole } from '@/lib/permissions';
+import { runsheetEditCampuses } from '@/lib/runsheetChannelAccess';
 import { expandIcalOccurrences } from '@/lib/scheduleOccurrences';
 import {
   CAMPUS_EVENT_SCHEDULE_ROOT_IDS,
@@ -108,11 +109,18 @@ export async function rockGetScheduleOptions(
     const access = assertRunsheetViewAccess(session);
     if (!access.allowed) return { success: false, schedules: [], error: access.error };
 
+    const scope = session?.access?.runsheetCampuses || [];
+    const isGlobal = scope.includes(ALL_CAMPUSES);
+    const scopeCampuses = scopeCampusCodes(scope);
+
     // A Grow-only editor (Grow Course Head) creates Grow runsheets only, one
     // per Grow Courses topic occurrence; the form autofills the topic's next
-    // date from `nextDate`. Full editors see the whole MNL | ALL EVENTS list,
-    // Grow Courses included.
-    if (categoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID && !hasFullEditorRole(session)) {
+    // date from `nextDate`. Full editors with Manila see the whole MNL | ALL
+    // EVENTS list, Grow Courses included; a Grow editor whose campuses leave
+    // Manila out still gets the Grow list, not another campus's events.
+    const growWithoutManila =
+      Boolean(session?.rolesMap?.[GROW_EDITOR_ROLE]?.length) && !isGlobal && !scopeCampuses.includes('MNL');
+    if (categoryId === GROW_CONTENT_CHANNEL_CATEGORY_ID && (!hasFullEditorRole(session) || growWithoutManila)) {
       const today = manilaToday();
       const schedules: ScheduleOption[] = [];
       for (const s of await fetchGrowSchedules()) {
@@ -143,14 +151,14 @@ export async function rockGetScheduleOptions(
         : Promise.resolve(null),
     ]);
 
-    const scope = session?.access?.runsheetCampuses || [];
-    const isGlobal = scope.includes(ALL_CAMPUSES);
-    const scopeCampuses = scopeCampusCodes(scope);
-    // An unmarked category (or none) resolves to a one-campus caller's own
-    // campus rather than to the all-campus tree.
+    // An unmarked category (or none) resolves to the caller's own campus,
+    // the one they view or else the one they edit, rather than to the
+    // all-campus tree. Holding several with no single one fails closed below.
+    const editCampuses = scopeCampusCodes(runsheetEditCampuses(session));
+    const ownCampus = scopeCampuses.length === 1 ? scopeCampuses[0] : editCampuses.length === 1 ? editCampuses[0] : null;
     const campus =
       (contentCategory?.Name ? extractRunsheetCampus(contentCategory.Name.replace(/\|/g, ' ')) : null) ??
-      (!isGlobal && scopeCampuses.length === 1 ? scopeCampuses[0] : null);
+      (isGlobal ? null : ownCampus);
     const knownScheduleCategoryIds = new Set((categoryRows || []).map((c) => Number(c.Id)));
     const roots = scheduleRootsForCategory({
       campus,

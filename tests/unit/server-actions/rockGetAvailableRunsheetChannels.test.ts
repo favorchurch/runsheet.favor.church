@@ -74,9 +74,14 @@ describe('rockGetAvailableRunsheetChannels campus scoping', () => {
     expect(await idsFor(PERSONAS[persona], true)).toEqual(expected);
   });
 
-  it.each(Object.keys(PERSONAS))('%s user never gets past runsheets without asking for archived', async (persona) => {
-    const ids = await idsFor(PERSONAS[persona], false);
-    expect(ids.every((id) => id < 20)).toBe(true);
+  it.each([
+    ['MNL', [11]],
+    ['BNE', [12]],
+    ['SEL', [13]],
+    ['Global', [11, 12, 13]],
+    ['GLB view-only', [11, 12, 13]],
+  ])('%s user gets only upcoming runsheets without asking for archived', async (persona, expected) => {
+    expect(await idsFor(PERSONAS[persona], false)).toEqual(expected);
   });
 
   it('keeps past runsheets of a view-only campus out of an editor\'s archive', async () => {

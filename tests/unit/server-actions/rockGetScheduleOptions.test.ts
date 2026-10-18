@@ -484,7 +484,7 @@ describe('rockGetScheduleOptions - campus scope', () => {
     const res = await rockGetScheduleOptions(50, '2026-10-04');
 
     expect(res.schedules.map((s) => s.name)).toEqual(['BNE 10AM']);
-    expect(scheduleQueries[0]).not.toContain('CategoryId eq 50 ');
+    expect(scheduleQueries[0]).not.toMatch(/CategoryId eq 50\b/);
     expect(scheduleQueries[0]).not.toContain('CategoryId eq 302');
   });
 
@@ -514,6 +514,49 @@ describe('rockGetScheduleOptions - campus scope', () => {
     mockGetRockSession.mockResolvedValue(campusUser('MNL', 'BNE') as any);
 
     expect(await rockGetScheduleOptions(700, '2026-10-04')).toEqual({ success: true, schedules: [] });
+    expect(await rockGetScheduleOptions(50, '2026-10-04')).toEqual({ success: true, schedules: [] });
+    expect(await rockGetScheduleOptions(undefined, '2026-10-04')).toEqual({ success: true, schedules: [] });
+    expect(scheduleQueries).toEqual([]);
+  });
+
+  it('resolves an unmarked category to the one campus a multi-campus viewer edits', async () => {
+    mockGetRockSession.mockResolvedValue({
+      rolesMap: { editor: ['true'] },
+      access: { runsheetCampuses: ['MNL', 'BNE'], runsheetEditCampuses: ['BNE'] },
+    } as any);
+
+    const res = await rockGetScheduleOptions(700, '2026-10-04');
+
+    expect(res.schedules.map((s) => s.name)).toEqual(['BNE Family Night']);
+  });
+
+  it('gives a BNE editor who is also a Grow editor the Grow list for the Grow category', async () => {
+    mockGetRockSession.mockResolvedValue({
+      rolesMap: { editor: ['true'], growEditor: ['19108'] },
+      access: { runsheetCampuses: ['BNE'], runsheetEditCampuses: ['BNE'] },
+    } as any);
+    CATEGORY_NAMES[590] = 'MNL | ALL EVENTS';
+
+    await rockGetScheduleOptions(590, '2026-10-04');
+
+    expect(scheduleQueries).toEqual(['CategoryId eq 483 and IsActive eq true']);
+  });
+
+  it('keeps an MNL editor who is also a Grow editor on the full Manila events list', async () => {
+    mockGetRockSession.mockResolvedValue({
+      rolesMap: { editor: ['true'], growEditor: ['19108'] },
+      access: { runsheetCampuses: ['MNL'], runsheetEditCampuses: ['MNL'] },
+    } as any);
+    CATEGORY_NAMES[590] = 'MNL | ALL EVENTS';
+
+    const res = await rockGetScheduleOptions(590, '2026-10-04');
+
+    expect(res.schedules.map((s) => s.name)).toEqual(['MNL Family Night']);
+  });
+
+  it('fails closed on the top-level trees for a user holding all three campuses but not Global', async () => {
+    mockGetRockSession.mockResolvedValue(campusUser('MNL', 'BNE', 'SEL') as any);
+
     expect(await rockGetScheduleOptions(50, '2026-10-04')).toEqual({ success: true, schedules: [] });
     expect(await rockGetScheduleOptions(undefined, '2026-10-04')).toEqual({ success: true, schedules: [] });
     expect(scheduleQueries).toEqual([]);

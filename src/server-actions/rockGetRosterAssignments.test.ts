@@ -253,13 +253,32 @@ describe('rockGetRosterAssignments campus scoping', () => {
     }
   });
 
+  // Pre-existing: Rock rosters only MNL, so a BNE runsheet is answered before
+  // the session is read and never carries roster data for anyone.
   it.each(Object.keys(PERSONAS))('%s user gets no roster data for a BNE runsheet', async (persona) => {
     mockSession.mockResolvedValue(PERSONAS[persona]);
 
     const res = await rockGetRosterAssignments(BNE_CHANNEL);
 
     expect(res).toMatchObject({ rockManaged: false, linked: false, roles: [] });
+    expect(mockSession).not.toHaveBeenCalled();
     expect(mockRockGet).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [['BNE', 'MNL'], true],
+    [['SEL', 'MNL'], true],
+    [['BNE', 'SEL'], false],
+  ])('a viewer of %j reading an MNL roster: allowed=%s', async (campuses, allowed) => {
+    mockSession.mockResolvedValue({
+      rolesMap: { viewer: ['7002'] },
+      access: { runsheetCampuses: campuses, runsheetEditCampuses: [] },
+    } as any);
+
+    const res = await rockGetRosterAssignments(MNL_CHANNEL);
+
+    expect(res.success).toBe(allowed);
+    expect(mockRockGet).toHaveBeenCalledTimes(allowed ? 5 : 0);
   });
 
   it('lets a rostered volunteer read the roster of the service they are rostered on, and no other', async () => {
