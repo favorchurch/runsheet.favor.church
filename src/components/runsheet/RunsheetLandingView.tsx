@@ -251,8 +251,10 @@ export function RunsheetLandingView({
 
   // No campus scope and nothing rostered or Grow-matched to show.
   const hasNoAccess = !isLoading && !loadFailed && channels.length === 0 && !runsheetCampuses?.length;
-  // One-campus users keep cross-campus rostered runsheets; only the switcher filters by campus.
-  const campusFilter = showCampusSwitcher ? selectedCampus : 'ALL';
+  // Only Global users can browse more than their authorized campus.
+  const campusFilter = showCampusSwitcher
+    ? selectedCampus
+    : runsheetCampuses?.length === 1 ? runsheetCampuses[0] : 'ALL';
 
   // Filter channels by search and campus, sorted chronologically with time signatures
   const filteredChannels = useMemo(() => {
