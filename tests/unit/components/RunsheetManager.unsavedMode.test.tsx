@@ -95,7 +95,7 @@ const mockGetRunsheetDetails = jest.mocked(rockGetRunsheetDetails);
 
 const editorUser = {
   rolesMap: { editor: ['editor-1'], viewer: ['editor-1'] },
-  access: { runsheetCampuses: ['MNL'] },
+  access: { runsheetCampuses: ['MNL'], runsheetEditCampuses: ['MNL'] },
 } as any;
 
 const viewerUser = {

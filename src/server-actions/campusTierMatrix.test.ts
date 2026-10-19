@@ -328,7 +328,8 @@ describe('strict campus isolation for cross-campus rosters (#100 Decision A)', (
     const exported = await exportStatus();
 
     expect(detail).toEqual({ success: false, error: 'Runsheet not found.' });
-    expect(batch).toEqual(detail);
+    // The batch row echoes only the caller's own id around the same denial.
+    expect(batch).toEqual({ channelId: CHANNEL_ID, ...detail, data: undefined });
     expect(exported.status).toBe(404);
     expectNoRockWrites();
   });
