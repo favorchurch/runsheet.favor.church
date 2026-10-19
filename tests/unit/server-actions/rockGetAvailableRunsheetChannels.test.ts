@@ -84,18 +84,23 @@ describe('rockGetAvailableRunsheetChannels campus scoping', () => {
     expect(await idsFor(PERSONAS[persona], false)).toEqual(expected);
   });
 
-  it('keeps past runsheets of a view-only campus out of an editor\'s archive', async () => {
-    // Edits MNL, only views BNE: the BNE past runsheet is not theirs to reopen.
-    expect(await idsFor(campusUser(['MNL', 'BNE'], ['MNL']), true)).toEqual([11, 12, 21, 31]);
+  it('keeps a secondary campus role from crossing the home campus (#100 Decision A)', async () => {
+    // Home MNL, also holds a BNE view role: BNE stays hidden, upcoming or past.
+    expect(await idsFor({ ...campusUser(['MNL', 'BNE'], ['MNL']), contact: { campusId: 1 } }, true)).toEqual([11, 21, 31]);
+    // No trusted home campus and conflicting claims fail closed.
+    expect(await idsFor(campusUser(['MNL', 'BNE'], ['MNL']), true)).toEqual([]);
   });
 
   it('lists past Grow runsheets for a Grow editor, but not for a Grow viewer', async () => {
     expect(
-      await idsFor({ rolesMap: { growEditor: ['19108'] }, access: { runsheetCampuses: [], runsheetEditCampuses: [] } }, true),
+      await idsFor(
+        { contact: { campusId: 1 }, rolesMap: { growEditor: ['19108'] }, access: { runsheetCampuses: [], runsheetEditCampuses: [] } },
+        true,
+      ),
     ).toEqual([31]);
     expect(
       await idsFor(
-        { rolesMap: { growViewer: ['477:2020-09-29'] }, access: { runsheetCampuses: [], runsheetEditCampuses: [] } },
+        { contact: { campusId: 1 }, rolesMap: { growViewer: ['477:2020-09-29'] }, access: { runsheetCampuses: [], runsheetEditCampuses: [] } },
         true,
       ),
     ).toEqual([]);

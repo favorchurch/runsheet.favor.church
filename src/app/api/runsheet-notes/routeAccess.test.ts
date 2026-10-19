@@ -173,7 +173,9 @@ describe('runsheet-notes route handlers access and validation', () => {
     });
 
     it.each(routes)('%s route keeps the campus denial for a caller who can view but not edit', async (_label, call) => {
+      // MNL home campus: views the MNL runsheet but edits only BNE.
       mockGetRockSession.mockResolvedValue({
+        contact: { campusId: 1 },
         rolesMap: { editor: ['7001'], viewer: ['7001'] },
         access: { runsheetCampuses: ['MNL', 'BNE'], runsheetEditCampuses: ['BNE'] },
       } as any);
