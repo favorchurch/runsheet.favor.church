@@ -5,7 +5,8 @@ import { rockGet } from '@/server-actions/internal/rockFetch';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
 import { GROW_CONTENT_CHANNEL_CATEGORY_ID } from '@/lib/growRunsheets';
 import { GROW_EDITOR_ROLE } from '@/lib/permissions';
-import { canSeeRunsheetCategory } from '@/lib/runsheetCampus';
+import { ALL_CAMPUSES, canSeeRunsheetCategory } from '@/lib/runsheetCampus';
+import { runsheetIdentityCampusScope, runsheetViewCampusScope } from '@/lib/runsheetChannelAccess';
 
 export interface ContentChannelTypeOption {
   id: number;
@@ -35,11 +36,14 @@ export async function getRockContentChannelOptions() {
     // is listed only for callers holding that campus. Grow editors keep the
     // Grow category whatever their campuses.
     const isGrowEditor = Boolean(session?.rolesMap?.[GROW_EDITOR_ROLE]?.length);
+    const identityCampus = runsheetIdentityCampusScope(session);
+    const viewCampus = runsheetViewCampusScope(session);
+    const canViewGrow = identityCampus.includes('MNL') || identityCampus.includes(ALL_CAMPUSES);
     const filteredCategories = (categories || []).filter((c) => {
       const nameLower = c.Name.toLowerCase().trim();
       if (nameLower === 'external website' || nameLower === 'internal') return false;
-      if (isGrowEditor && c.Id === GROW_CONTENT_CHANNEL_CATEGORY_ID) return true;
-      return canSeeRunsheetCategory(session?.access?.runsheetCampuses, c.Name);
+      if (isGrowEditor && canViewGrow && c.Id === GROW_CONTENT_CHANNEL_CATEGORY_ID) return true;
+      return canSeeRunsheetCategory(viewCampus, c.Name);
     });
 
     return {

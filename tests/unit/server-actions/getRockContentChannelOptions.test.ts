@@ -56,22 +56,22 @@ describe('getRockContentChannelOptions campus scoping', () => {
   });
 
   it('lists a user holding two campuses both campuses\' categories', async () => {
-    expect(await categoryIdsFor(campusUser('MNL', 'BNE'))).toEqual([336, 436, 590, 700]);
+    expect(await categoryIdsFor(campusUser('MNL', 'BNE'))).toEqual([]);
   });
 
   it('gives a Grow-only editor just the Grow content category', async () => {
     expect(
-      await categoryIdsFor({ rolesMap: { growEditor: ['19108'] }, access: { runsheetCampuses: [], runsheetEditCampuses: [] } }),
+      await categoryIdsFor({ rolesMap: { growEditor: ['19108'] }, contact: { campusId: 1 }, access: { runsheetCampuses: [], runsheetEditCampuses: [] } }),
     ).toEqual([590]);
   });
 
-  it('keeps the Grow category for a BNE user who is also a Grow editor', async () => {
+  it('keeps BNE categories but denies the MNL Grow category to a BNE user with a Grow role', async () => {
     expect(
       await categoryIdsFor({
         rolesMap: { editor: ['7001'], growEditor: ['19108'] },
         access: { runsheetCampuses: ['BNE'], runsheetEditCampuses: ['BNE'] },
       }),
-    ).toEqual([436, 590, 700]);
+    ).toEqual([436, 700]);
   });
 
   it('gives a campus-less viewer (rostered or Grow viewer) no categories', async () => {

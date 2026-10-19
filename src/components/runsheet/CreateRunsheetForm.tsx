@@ -85,7 +85,7 @@ export function generateRunsheetTitle(
   return `${prefix} // ${formattedDate} // ${slot}`;
 }
 
-import { ALL_CAMPUSES, extractRunsheetCampus } from '@/lib/runsheetCampus';
+import { ALL_CAMPUSES, extractRunsheetCampuses } from '@/lib/runsheetCampus';
 import { isGrowRunsheetTitle } from '@/lib/runsheetKind';
 import type { RunsheetDetails } from '@/types/Runsheet';
 
@@ -102,10 +102,11 @@ export function filterCategoriesForCampuses<T extends { id: number; name: string
 ): T[] {
   if (growOnly) return categories.filter((cat) => cat.id === GROW_CONTENT_CHANNEL_CATEGORY_ID);
   if (runsheetCampuses?.includes(ALL_CAMPUSES)) return categories;
+  if (!runsheetCampuses?.length) return [];
   return categories.filter((cat) => {
-    // Word-boundary match, as for titles: `COUNSELING` is not SEL.
-    const catCampus = extractRunsheetCampus(cat.name);
-    return catCampus === null || (runsheetCampuses || []).includes(catCampus);
+    // Both marked and unmarked categories match the server's category rules.
+    const campuses = extractRunsheetCampuses(cat.name);
+    return campuses.every((campus) => runsheetCampuses.includes(campus));
   });
 }
 
@@ -118,10 +119,11 @@ export function titleCampusError(
   runsheetCampuses: string[] | undefined,
   growOnly = false,
 ): string | null {
+  const titleCampuses = extractRunsheetCampuses(title);
+  if (titleCampuses.length !== 1) return 'Runsheet titles must contain exactly one campus marker.';
   if (runsheetCampuses?.includes(ALL_CAMPUSES)) return null;
   if (growOnly && isGrowRunsheetTitle(title)) return null;
-  const titleCampus = extractRunsheetCampus(title);
-  if (!titleCampus || runsheetCampuses?.includes(titleCampus)) return null;
+  if (runsheetCampuses?.includes(titleCampuses[0])) return null;
   return runsheetCampuses?.length
     ? `You are only authorized to create runsheets for your assigned campus (${runsheetCampuses.join(', ')}).`
     : 'You are not authorized to create runsheets for any campus.';

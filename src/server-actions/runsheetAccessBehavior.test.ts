@@ -393,7 +393,7 @@ describe('server-action access enforcement', () => {
   it('keeps the campus denial on save for a caller who views but cannot edit the campus', async () => {
     mockGetRockSession.mockResolvedValue({
       rolesMap: { editor: ['7001'], viewer: ['7001'] },
-      access: { runsheetCampuses: ['MNL', 'BNE'], runsheetEditCampuses: ['MNL'] },
+      access: { runsheetCampuses: ['ALL'], runsheetEditCampuses: ['MNL'] },
     } as any);
     mockRockGet.mockResolvedValue({ Name: 'BNE Service // August 16, 2026 // 10AM', ContentChannelTypeId: 13 });
 
@@ -500,6 +500,7 @@ describe('server-action access enforcement', () => {
       routeRockGet();
       mockGetRockSession.mockResolvedValue({
         rolesMap: { growViewer: ['477:2099-12-29'] },
+        contact: { campusId: 1 },
         access: { runsheetCampuses: [] },
       } as any);
       const res = await rockGetAvailableRunsheetChannels();
@@ -510,6 +511,7 @@ describe('server-action access enforcement', () => {
       routeRockGet();
       mockGetRockSession.mockResolvedValue({
         rolesMap: { growEditor: ['19108'] },
+        contact: { campusId: 1 },
         access: { runsheetCampuses: [] },
       } as any);
       const res = await rockGetAvailableRunsheetChannels();
@@ -548,6 +550,7 @@ describe('server-action access enforcement', () => {
 
     const rostered = {
       rolesMap: { rosteredViewer: ['MNL:2099-12-26:15:00:00'] },
+      contact: { campusId: 1 },
       access: { runsheetCampuses: [] },
     } as any;
 

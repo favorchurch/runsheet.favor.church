@@ -266,11 +266,13 @@ describe('rockGetRosterAssignments campus scoping', () => {
   });
 
   it.each([
-    [['BNE', 'MNL'], true],
-    [['SEL', 'MNL'], true],
-    [['BNE', 'SEL'], false],
-  ])('a viewer of %j reading an MNL roster: allowed=%s', async (campuses, allowed) => {
+    [['BNE', 'MNL'], 1, true],
+    [['SEL', 'MNL'], 1, true],
+    [['BNE', 'SEL'], 2, false],
+    [['BNE', 'MNL'], 2, false],
+  ])('a viewer of %j with home campus %s reading MNL roster: allowed=%s', async (campuses, campusId, allowed) => {
     mockSession.mockResolvedValue({
+      contact: { campusId },
       rolesMap: { viewer: ['7002'] },
       access: { runsheetCampuses: campuses, runsheetEditCampuses: [] },
     } as any);
@@ -284,6 +286,7 @@ describe('rockGetRosterAssignments campus scoping', () => {
   it('lets a rostered volunteer read the roster of the service they are rostered on, and no other', async () => {
     mockSession.mockResolvedValue({
       rolesMap: { rosteredViewer: [channelRosterKey(MNL_CHANNEL)!] },
+      contact: { campusId: 1 },
       access: { runsheetCampuses: [], runsheetEditCampuses: [] },
     } as any);
 
@@ -295,6 +298,7 @@ describe('rockGetRosterAssignments campus scoping', () => {
   it('lets a Grow viewer read only the Grow occurrence they hold', async () => {
     mockSession.mockResolvedValue({
       rolesMap: { growViewer: ['477:2026-09-29'] },
+      contact: { campusId: 1 },
       access: { runsheetCampuses: [], runsheetEditCampuses: [] },
     } as any);
 
