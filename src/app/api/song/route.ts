@@ -145,7 +145,7 @@ function renderSongHtml(songItem: any) {
       </div>
     </div>
     <a
-      href="https://rock.favor.church/ContentChannelItem/${songItem.Id}"
+      href="https://rock.favor.church/ContentChannelItem/${escapeHtml(encodeURIComponent(String(songItem.Id)))}"
       target="_blank"
       rel="noopener noreferrer"
       class="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-slate-800 transition-all cursor-pointer"
@@ -193,13 +193,16 @@ function renderSection(title: string, text: string) {
     const linkMatches = Array.from(text.matchAll(/\[(.*?)\]\((.*?)\)/g));
     if (linkMatches.length > 0) {
       const linksHtml = linkMatches
-        .map(
-          (m) =>
-            `<a href="${m[2]}" target="_blank" rel="noopener noreferrer" class="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 text-xs font-bold text-indigo-900 hover:bg-indigo-100 transition-all shadow-2xs">
-              <span class="flex items-center gap-2">📄 ${escapeHtml(m[1])}</span>
+        .map((match) => {
+          const label = escapeHtml(match[1]);
+          const href = safeSongLinkHref(match[2]);
+          if (!href) return `<span class="text-xs font-semibold text-slate-600">${label}</span>`;
+
+          return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 text-xs font-bold text-indigo-900 hover:bg-indigo-100 transition-all shadow-2xs">
+              <span class="flex items-center gap-2">📄 ${label}</span>
               <span class="text-indigo-600 font-semibold">Download ↗</span>
-            </a>`
-        )
+            </a>`;
+        })
         .join('');
 
       return `<div class="rounded-2xl border border-indigo-200 bg-indigo-50/30 p-5 my-6">
@@ -213,9 +216,7 @@ function renderSection(title: string, text: string) {
     }
   }
 
-  const formattedText = escapeHtml(text)
-    .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:text-indigo-900 underline underline-offset-2">$1 ↗</a>')
-    .replace(/\n/g, '<br>');
+  const formattedText = renderInlineSongLinks(text).replace(/\n/g, '<br>');
 
   const cardStyle = isChorus
     ? 'bg-indigo-50/80 border-l-4 border-indigo-600 rounded-r-2xl p-5 my-6 shadow-2xs'
@@ -233,6 +234,32 @@ function renderSection(title: string, text: string) {
       ${formattedText}
     </div>
   </div>`;
+}
+
+/** Stored Markdown is untrusted: validate the protocol before HTML encoding. */
+function safeSongLinkHref(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    return escapeHtml(url.href);
+  } catch {
+    return null;
+  }
+}
+
+function renderInlineSongLinks(text: string): string {
+  let html = '';
+  let offset = 0;
+  for (const match of text.matchAll(/\[(.*?)\]\((.*?)\)/g)) {
+    html += escapeHtml(text.slice(offset, match.index));
+    const label = escapeHtml(match[1]);
+    const href = safeSongLinkHref(match[2]);
+    html += href
+      ? `<a href="${href}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:text-indigo-900 underline underline-offset-2">${label} ↗</a>`
+      : label;
+    offset = match.index + match[0].length;
+  }
+  return html + escapeHtml(text.slice(offset));
 }
 
 function renderNotFoundHtml(searched: string) {
