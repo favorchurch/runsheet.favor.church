@@ -1,6 +1,12 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 const { entries } = require('lodash');
 
+const PDF_EXPORT_TRACE_INCLUDES = [
+  './public/fonts/**/*',
+  './node_modules/.pnpm/pdfkit@*/node_modules/pdfkit/js/standard-fonts/**/*',
+  './node_modules/.pnpm/pdfkit@*/node_modules/pdfkit/js/data/**/*',
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   env: {
@@ -11,8 +17,10 @@ const nextConfig = {
   },
   reactStrictMode: false,
   outputFileTracingIncludes: {
-    '/api/runsheet-export/**/*': ['./public/fonts/**/*'],
-    '/api/runsheet-export': ['./public/fonts/**/*'],
+    // pdfkit loads its built-in fonts via a dynamic `require('#standard-fonts/…')` that
+    // file tracing cannot follow, so without these the Vercel function throws MODULE_NOT_FOUND.
+    '/api/runsheet-export/**/*': PDF_EXPORT_TRACE_INCLUDES,
+    '/api/runsheet-export': PDF_EXPORT_TRACE_INCLUDES,
   },
   experimental: {
     optimizePackageImports: [
