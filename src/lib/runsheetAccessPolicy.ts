@@ -15,6 +15,12 @@ export const EVENTS_TEAM_NAME_PATTERN = /events team$/i;
 /** GroupType 23 roles that may edit their Events Team's campus runsheets (20 = Overall Head, 55 = Unit Head). */
 export const EVENTS_TEAM_EDITOR_ROLE_IDS = [20, 55] as const;
 
+/** Worship Teams; their Unit Heads may edit the team's campus runsheets. */
+export const WORSHIP_TEAM_NAME_PATTERN = /worship team$/i;
+
+/** GroupType 23 roles that may edit their Worship Team's campus runsheets (55 = Unit Head). */
+export const WORSHIP_TEAM_EDITOR_ROLE_IDS = [55] as const;
+
 /** Deaf Ministry teams; their Overall Heads and Unit Heads get a campus-wide view (never edit). */
 export const DEAF_MINISTRY_NAME_PATTERN = /deaf ministry$/i;
 
@@ -125,6 +131,10 @@ export function resolveRunsheetAccessPolicy(
     const isOrgUnit = (CAMPUS_EDIT_GROUP_TYPE_IDS as readonly number[]).includes(membership.groupTypeId);
     const groupName = group?.name?.trim() || '';
     const isEventsTeam = isMinistryMember && EVENTS_TEAM_NAME_PATTERN.test(groupName);
+    const isWorshipUnitHead =
+      isMinistryMember &&
+      WORSHIP_TEAM_NAME_PATTERN.test(groupName) &&
+      (WORSHIP_TEAM_EDITOR_ROLE_IDS as readonly number[]).includes(roleId);
     // Matched by group id alone: Rock can keep a stale GroupTypeId on the
     // membership row (e.g. 1 instead of 28 for MNL Department Admins).
     const departmentAdminScope = DEPARTMENT_ADMIN_VIEW_GROUPS[membership.groupId];
@@ -147,14 +157,17 @@ export function resolveRunsheetAccessPolicy(
     } else if (isMinistryMember) {
       // Ministry Teams no longer get blanket access: Events Teams keep a
       // campus-wide view (Overall/Unit Heads edit it), and Deaf Ministry
-      // Overall/Unit Heads get a campus-wide view. Everyone else sees the
-      // runsheets they are rostered on (see lib/rosterAccess).
+      // Overall/Unit Heads get a campus-wide view, and Worship Team Unit Heads
+      // edit their campus. Everyone else sees the runsheets they are rostered
+      // on (see lib/rosterAccess).
       const isDeafMinistryViewer =
         DEAF_MINISTRY_NAME_PATTERN.test(groupName) &&
         (DEAF_MINISTRY_VIEWER_ROLE_IDS as readonly number[]).includes(roleId);
-      if (isEventsTeam || isDeafMinistryViewer) {
+      if (isEventsTeam || isDeafMinistryViewer || isWorshipUnitHead) {
         campus = resolveCampusFromAncestry(membership.groupId, membership.groupTypeId, groups, campusRoots);
-        canEdit = isEventsTeam && (EVENTS_TEAM_EDITOR_ROLE_IDS as readonly number[]).includes(roleId);
+        canEdit =
+          isWorshipUnitHead ||
+          (isEventsTeam && (EVENTS_TEAM_EDITOR_ROLE_IDS as readonly number[]).includes(roleId));
       }
     }
 

@@ -58,12 +58,41 @@ describe('runsheet access policy', () => {
     expect(result.runsheetCampuses).toEqual([campus]);
   });
 
-  it.each([20, 55])('does not let role %i of a non-Events Ministry Team edit', (groupRoleId) => {
+  it.each([20, 55])('does not let role %i of a non-Events, non-Worship Ministry Team edit', (groupRoleId) => {
+    const result = resolveRunsheetAccessPolicy(
+      [{ groupId: 19108, groupTypeId: 23, groupRoleId }],
+      new Map([[19108, { groupId: 19108, groupTypeId: 23, name: 'MNL Grow Team', parentGroupId: 57 }]]),
+      new Map([[57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' }]]),
+      new Set([20, 55]),
+    );
+
+    expect(result).toMatchObject({ editorGroupIds: [], viewerGroupIds: [], runsheetCampuses: [] });
+  });
+
+  it.each([
+    ['MNL', 19110, 'MNL Worship Team', 57],
+    ['BNE', 19121, 'BNE Worship Team', 59],
+    ['SEL', 19131, 'SEL Worship Team', 58],
+  ])('lets a %s Worship Team Unit Head (role 55) edit its own campus', (campus, groupId, name, rootId) => {
+    const result = resolveRunsheetAccessPolicy(
+      [{ groupId, groupTypeId: 23, groupRoleId: 55 }],
+      new Map([[groupId, { groupId, groupTypeId: 23, name, parentGroupId: rootId }]]),
+      new Map([[rootId, { groupId: rootId, groupTypeId: 23, parentGroupId: null, campus: campus as 'MNL' | 'BNE' | 'SEL' }]]),
+      new Set([20, 55]),
+    );
+
+    expect(result.editorGroupIds).toEqual([String(groupId)]);
+    expect(result.viewerGroupIds).toEqual([String(groupId)]);
+    expect(result.runsheetCampuses).toEqual([campus]);
+    expect(result.runsheetEditCampuses).toEqual([campus]);
+  });
+
+  it.each([19, 20, 69, 75])('gives Worship Team role %i no blanket access', (groupRoleId) => {
     const result = resolveRunsheetAccessPolicy(
       [{ groupId: 19110, groupTypeId: 23, groupRoleId }],
       new Map([[19110, { groupId: 19110, groupTypeId: 23, name: 'MNL Worship Team', parentGroupId: 57 }]]),
       new Map([[57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' }]]),
-      new Set([20, 55]),
+      new Set([20, 55, 69, 75]),
     );
 
     expect(result).toMatchObject({ editorGroupIds: [], viewerGroupIds: [], runsheetCampuses: [] });
@@ -341,6 +370,17 @@ describe('runsheet access policy', () => {
         expect(result.runsheetEditCampuses).toEqual([]);
         expect(result.editorGroupIds).toEqual([]);
       }
+    });
+
+    it('requires "Worship Team" to end the name', () => {
+      const result = resolveFor('MNL Worship Team Interns', 55);
+      expect(result.viewerGroupIds).toEqual([]);
+      expect(result.runsheetCampuses).toEqual([]);
+    });
+
+    it('recognises a Worship Team name with surrounding whitespace or other casing', () => {
+      expect(resolveFor('  MNL Worship Team  ', 55).runsheetEditCampuses).toEqual(['MNL']);
+      expect(resolveFor('mnl WORSHIP TEAM', 55).runsheetEditCampuses).toEqual(['MNL']);
     });
 
     it('gives other Deaf Ministry roles, and names not ending in "Deaf Ministry", nothing', () => {
