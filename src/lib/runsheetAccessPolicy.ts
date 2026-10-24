@@ -9,7 +9,7 @@ export const CAMPUS_EDIT_GROUP_TYPE_IDS = [28] as const;
 /** Rock group types that grant campus-scoped runsheet view access. */
 export const CAMPUS_VIEW_GROUP_TYPE_IDS = [23] as const;
 
-/** Group names ending this way are Events Teams; they get a campus-wide view. */
+/** Group names ending this way are Events Teams; their Overall/Unit Heads may edit. */
 export const EVENTS_TEAM_NAME_PATTERN = /events team$/i;
 
 /** GroupType 23 roles that may edit their Events Team's campus runsheets (20 = Overall Head, 55 = Unit Head). */
@@ -20,12 +20,6 @@ export const WORSHIP_TEAM_NAME_PATTERN = /worship team$/i;
 
 /** GroupType 23 roles that may edit their Worship Team's campus runsheets (55 = Unit Head). */
 export const WORSHIP_TEAM_EDITOR_ROLE_IDS = [55] as const;
-
-/** Deaf Ministry teams; their Overall Heads and Unit Heads get a campus-wide view (never edit). */
-export const DEAF_MINISTRY_NAME_PATTERN = /deaf ministry$/i;
-
-/** GroupType 23 roles that may view their Deaf Ministry's campus runsheets (20 = Overall Head, 55 = Unit Head). */
-export const DEAF_MINISTRY_VIEWER_ROLE_IDS = [20, 55] as const;
 
 /**
  * Department Admins live in Rock's "Access" tree (GroupType 28), outside the
@@ -155,20 +149,15 @@ export function resolveRunsheetAccessPolicy(
       campus = resolveCampusFromAncestry(membership.groupId, membership.groupTypeId, groups, campusRoots);
       canEdit = true;
     } else if (isMinistryMember) {
-      // Ministry Teams no longer get blanket access: Events Teams keep a
-      // campus-wide view (Overall/Unit Heads edit it), and Deaf Ministry
-      // Overall/Unit Heads get a campus-wide view, and Worship Team Unit Heads
-      // edit their campus. Everyone else sees the runsheets they are rostered
-      // on (see lib/rosterAccess).
-      const isDeafMinistryViewer =
-        DEAF_MINISTRY_NAME_PATTERN.test(groupName) &&
-        (DEAF_MINISTRY_VIEWER_ROLE_IDS as readonly number[]).includes(roleId);
-      if (isEventsTeam || isDeafMinistryViewer || isWorshipUnitHead) {
-        campus = resolveCampusFromAncestry(membership.groupId, membership.groupTypeId, groups, campusRoots);
-        canEdit =
-          isWorshipUnitHead ||
-          (isEventsTeam && (EVENTS_TEAM_EDITOR_ROLE_IDS as readonly number[]).includes(roleId));
-      }
+      // Every Ministry Team member gets a campus-wide view of their team's
+      // campus (resolved from the team's ancestry, so a future campus only
+      // needs its root registered). Edit stays limited to Events Team
+      // Overall/Unit Heads and Worship Team Unit Heads. The home-campus
+      // boundary in lib/runsheetChannelAccess still applies on top.
+      campus = resolveCampusFromAncestry(membership.groupId, membership.groupTypeId, groups, campusRoots);
+      canEdit =
+        isWorshipUnitHead ||
+        (isEventsTeam && (EVENTS_TEAM_EDITOR_ROLE_IDS as readonly number[]).includes(roleId));
     }
 
     if (!campus) continue;
