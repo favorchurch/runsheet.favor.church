@@ -66,7 +66,12 @@ describe('runsheet access policy', () => {
       new Set([20, 55]),
     );
 
-    expect(result).toMatchObject({ editorGroupIds: [], viewerGroupIds: [], runsheetCampuses: [] });
+    expect(result).toMatchObject({
+      editorGroupIds: [],
+      viewerGroupIds: ['19108'],
+      runsheetCampuses: ['MNL'],
+      runsheetEditCampuses: [],
+    });
   });
 
   it.each([
@@ -87,7 +92,7 @@ describe('runsheet access policy', () => {
     expect(result.runsheetEditCampuses).toEqual([campus]);
   });
 
-  it.each([19, 20, 69, 75])('gives Worship Team role %i no blanket access', (groupRoleId) => {
+  it.each([19, 20, 69, 75])('keeps Worship Team role %i view-only', (groupRoleId) => {
     const result = resolveRunsheetAccessPolicy(
       [{ groupId: 19110, groupTypeId: 23, groupRoleId }],
       new Map([[19110, { groupId: 19110, groupTypeId: 23, name: 'MNL Worship Team', parentGroupId: 57 }]]),
@@ -95,31 +100,80 @@ describe('runsheet access policy', () => {
       new Set([20, 55, 69, 75]),
     );
 
+    expect(result).toMatchObject({
+      editorGroupIds: [],
+      viewerGroupIds: ['19110'],
+      runsheetCampuses: ['MNL'],
+      runsheetEditCampuses: [],
+    });
+  });
+
+  it.each([
+    ['MNL', 57, 'MNL Deaf Ministry', 20],
+    ['MNL', 57, 'MNL Hospitality Team', 19],
+    ['BNE', 59, 'BNE Production Team', 69],
+    ['SEL', 58, 'SEL Kids Team', 75],
+    ['SEL', 58, 'SEL Ushering Team', 19],
+  ] as [RunsheetCampusCode, number, string, number][])(
+    'gives a %s Ministry Team member of "%s" (role %i) a view-only campus scope',
+    (campus, rootId, name, groupRoleId) => {
+      const result = resolveRunsheetAccessPolicy(
+        [{ groupId: 19116, groupTypeId: 23, groupRoleId }],
+        new Map([[19116, { groupId: 19116, groupTypeId: 23, name, parentGroupId: rootId }]]),
+        new Map([[rootId, { groupId: rootId, groupTypeId: 23, parentGroupId: null, campus }]]),
+        new Set([20, 55, 69, 75]),
+      );
+
+      expect(result.editorGroupIds).toEqual([]);
+      expect(result.viewerGroupIds).toEqual(['19116']);
+      expect(result.runsheetCampuses).toEqual([campus]);
+      expect(result.runsheetEditCampuses).toEqual([]);
+  
+    },
+  );
+
+  it('resolves a nested Ministry Team to its campus through the team ancestry', () => {
+    const result = resolveRunsheetAccessPolicy(
+      [{ groupId: 19120, groupTypeId: 23, groupRoleId: 19 }],
+      new Map([
+        [19120, { groupId: 19120, groupTypeId: 23, name: 'BNE Greeters', parentGroupId: 19119 }],
+        [19119, { groupId: 19119, groupTypeId: 23, name: 'BNE Hospitality Team', parentGroupId: 59 }],
+      ]),
+      new Map([[59, { groupId: 59, groupTypeId: 23, parentGroupId: null, campus: 'BNE' }]]),
+    );
+
+    expect(result.runsheetCampuses).toEqual(['BNE']);
+  });
+
+  it('gives a Ministry Team outside every campus root nothing', () => {
+    const result = resolveRunsheetAccessPolicy(
+      [{ groupId: 19121, groupTypeId: 23, groupRoleId: 19 }],
+      new Map([[19121, { groupId: 19121, groupTypeId: 23, name: 'Stray Team', parentGroupId: 9999 }]]),
+      new Map([[57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' }]]),
+    );
+
     expect(result).toMatchObject({ editorGroupIds: [], viewerGroupIds: [], runsheetCampuses: [] });
   });
 
-  it.each([20, 55])('gives a Deaf Ministry head (role %i) a view-only Manila scope', (groupRoleId) => {
+  it('keeps a member of Ministry Teams on two campuses scoped to both campuses for view only', () => {
     const result = resolveRunsheetAccessPolicy(
-      [{ groupId: 19116, groupTypeId: 23, groupRoleId }],
-      new Map([[19116, { groupId: 19116, groupTypeId: 23, name: 'MNL Deaf Ministry', parentGroupId: 57 }]]),
-      new Map([[57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' }]]),
-      new Set([20, 55]),
+      [
+        { groupId: 19122, groupTypeId: 23, groupRoleId: 19 },
+        { groupId: 19123, groupTypeId: 23, groupRoleId: 19 },
+      ],
+      new Map([
+        [19122, { groupId: 19122, groupTypeId: 23, name: 'MNL Hospitality Team', parentGroupId: 57 }],
+        [19123, { groupId: 19123, groupTypeId: 23, name: 'BNE Hospitality Team', parentGroupId: 59 }],
+      ]),
+      new Map([
+        [57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' }],
+        [59, { groupId: 59, groupTypeId: 23, parentGroupId: null, campus: 'BNE' }],
+      ]),
     );
 
-    expect(result.editorGroupIds).toEqual([]);
-    expect(result.viewerGroupIds).toEqual(['19116']);
-    expect(result.runsheetCampuses).toEqual(['MNL']);
-  });
-
-  it.each([19, 69, 75])('gives other Deaf Ministry roles (role %i) no blanket access', (groupRoleId) => {
-    const result = resolveRunsheetAccessPolicy(
-      [{ groupId: 19116, groupTypeId: 23, groupRoleId }],
-      new Map([[19116, { groupId: 19116, groupTypeId: 23, name: 'MNL Deaf Ministry', parentGroupId: 57 }]]),
-      new Map([[57, { groupId: 57, groupTypeId: 23, parentGroupId: null, campus: 'MNL' }]]),
-      new Set([69]),
-    );
-
-    expect(result).toMatchObject({ editorGroupIds: [], viewerGroupIds: [], runsheetCampuses: [] });
+    // The channel gate narrows this to the person's home campus.
+    expect(result.runsheetCampuses).toEqual(['MNL', 'BNE']);
+    expect(result.runsheetEditCampuses).toEqual([]);
   });
 
   it.each([
@@ -208,7 +262,7 @@ describe('runsheet access policy', () => {
     expect(result.runsheetCampuses).toEqual(['MNL']);
   });
 
-  it('gives a non-Events Ministry Team leader no blanket access', () => {
+  it('keeps a non-Events Ministry Team leader view-only', () => {
     const result = resolveRunsheetAccessPolicy(
       [{ groupId: 19110, groupTypeId: 23, groupRoleId: 69 }],
       new Map([[19110, { groupId: 19110, groupTypeId: 23, name: 'MNL Worship Team', parentGroupId: 57 }]]),
@@ -217,11 +271,12 @@ describe('runsheet access policy', () => {
     );
 
     expect(result.editorGroupIds).toEqual([]);
-    expect(result.viewerGroupIds).toEqual([]);
-    expect(result.runsheetCampuses).toEqual([]);
+    expect(result.viewerGroupIds).toEqual(['19110']);
+    expect(result.runsheetCampuses).toEqual(['MNL']);
+    expect(result.runsheetEditCampuses).toEqual([]);
   });
 
-  it('gives the Grow Team no blanket Sunday access', () => {
+  it('gives the Grow Team a view-only campus scope like any Ministry Team', () => {
     const result = resolveRunsheetAccessPolicy(
       [{ groupId: 19108, groupTypeId: 23, groupRoleId: 20 }],
       new Map([[19108, { groupId: 19108, groupTypeId: 23, name: 'MNL Grow Team', parentGroupId: 57 }]]),
@@ -229,7 +284,12 @@ describe('runsheet access policy', () => {
       new Set([20]),
     );
 
-    expect(result).toMatchObject({ editorGroupIds: [], viewerGroupIds: [], runsheetCampuses: [] });
+    expect(result).toMatchObject({
+      editorGroupIds: [],
+      viewerGroupIds: ['19108'],
+      runsheetCampuses: ['MNL'],
+      runsheetEditCampuses: [],
+    });
   });
 
   it('grants an unlisted GroupType 1 group by its Web Developer name', () => {
@@ -252,9 +312,10 @@ describe('runsheet access policy', () => {
       new Set([69]),
     );
 
+    // Only the campus view a plain Ministry Team gets; no global or edit grant.
     expect(result.editorGroupIds).toEqual([]);
-    expect(result.viewerGroupIds).toEqual([]);
-    expect(result.runsheetCampuses).toEqual([]);
+    expect(result.viewerGroupIds).toEqual(['9001']);
+    expect(result.runsheetCampuses).toEqual(['MNL']);
   });
 
   it('uses the supplied campus-root map when resolving a campus', () => {
@@ -357,35 +418,23 @@ describe('runsheet access policy', () => {
       expect(resolveFor('mnl EVENTS TEAM', 20).runsheetEditCampuses).toEqual(['MNL']);
     });
 
-    it('requires "Events Team" to end the name', () => {
+    it('requires "Events Team" to end the name before granting edit', () => {
       const result = resolveFor('MNL Events Team Volunteers', 55);
-      expect(result.viewerGroupIds).toEqual([]);
-      expect(result.runsheetCampuses).toEqual([]);
+      expect(result.runsheetCampuses).toEqual(['MNL']);
+      expect(result.runsheetEditCampuses).toEqual([]);
+      expect(result.editorGroupIds).toEqual([]);
     });
 
-    it('gives Deaf Ministry Overall and Unit Heads a view-only campus scope', () => {
-      for (const role of [20, 55]) {
-        const result = resolveFor('MNL Deaf Ministry', role);
-        expect(result.runsheetCampuses).toEqual(['MNL']);
-        expect(result.runsheetEditCampuses).toEqual([]);
-        expect(result.editorGroupIds).toEqual([]);
-      }
-    });
-
-    it('requires "Worship Team" to end the name', () => {
+    it('requires "Worship Team" to end the name before granting edit', () => {
       const result = resolveFor('MNL Worship Team Interns', 55);
-      expect(result.viewerGroupIds).toEqual([]);
-      expect(result.runsheetCampuses).toEqual([]);
+      expect(result.runsheetCampuses).toEqual(['MNL']);
+      expect(result.runsheetEditCampuses).toEqual([]);
+      expect(result.editorGroupIds).toEqual([]);
     });
 
     it('recognises a Worship Team name with surrounding whitespace or other casing', () => {
       expect(resolveFor('  MNL Worship Team  ', 55).runsheetEditCampuses).toEqual(['MNL']);
       expect(resolveFor('mnl WORSHIP TEAM', 55).runsheetEditCampuses).toEqual(['MNL']);
-    });
-
-    it('gives other Deaf Ministry roles, and names not ending in "Deaf Ministry", nothing', () => {
-      expect(resolveFor('MNL Deaf Ministry', 19).runsheetCampuses).toEqual([]);
-      expect(resolveFor('MNL Deaf Ministry Interpreters', 55).runsheetCampuses).toEqual([]);
     });
   });
 
