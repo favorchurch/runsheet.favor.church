@@ -12,7 +12,15 @@ export async function GET(request: Request) {
   const idParam = searchParams.get('id') || '';
 
   try {
-    const session = await getRockSession();
+    let session;
+    try {
+      session = await getRockSession();
+    } catch (err) {
+      if (err instanceof Error && err.message === 'FORBIDDEN') {
+        return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+      }
+      throw err;
+    }
     const access = assertRunsheetViewAccess(session);
     if (!access.allowed) {
       return NextResponse.json({ error: access.error }, { status: 403 });

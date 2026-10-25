@@ -26,6 +26,26 @@ describe('song route access and id handling', () => {
     mockRockGet.mockResolvedValue([]);
   });
 
+  it('returns 401 without touching Rock when there is no session', async () => {
+    mockGetRockSession.mockRejectedValue(new Error('FORBIDDEN'));
+
+    const response = await GET(new Request('https://runsheet.test/api/song?id=42'));
+
+    expect(response.status).toBe(401);
+    expect(mockRockGet).not.toHaveBeenCalled();
+  });
+
+  it('keeps 500 when session resolution fails for a reason other than a missing session', async () => {
+    mockGetRockSession.mockRejectedValue(new Error('Rock unavailable'));
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await GET(new Request('https://runsheet.test/api/song?id=42'));
+
+    expect(response.status).toBe(500);
+    expect(mockRockGet).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
   it('rejects a non-positive or non-integer id before touching Rock', async () => {
     const response = await GET(new Request('https://runsheet.test/api/song?id=0'));
 
