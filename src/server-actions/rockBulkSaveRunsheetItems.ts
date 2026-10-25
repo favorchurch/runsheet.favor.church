@@ -235,8 +235,20 @@ export async function rockBulkSaveRunsheetItems(
       await Promise.all(deletePromises);
     }
 
-    // 2. Use the channel & attribute metadata resolved above
-    const allAttributeColumns = (columns?.length ? columns : channel.columns).filter(
+    // 2. Use the channel & attribute metadata resolved above.
+    // Client-supplied columns are restricted to the channel's attributes to prevent
+    // forged or foreign AttributeIds from being written.
+    const channelAttributeById = new Map(channel.columns.map((col) => [col.id, col]));
+    const effectiveColumns = columns?.length
+      ? columns
+          .map((col) => {
+            const channelCol = channelAttributeById.get(col.id);
+            return channelCol ? { ...col, key: channelCol.key } : null;
+          })
+          .filter((col): col is DynamicAttributeColumn => col !== null)
+      : channel.columns;
+
+    const allAttributeColumns = effectiveColumns.filter(
       (col) => col.id && col.key !== 'DURATION' && col.key !== 'SONGITEMID',
     );
 

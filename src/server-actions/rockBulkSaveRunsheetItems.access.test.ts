@@ -58,6 +58,7 @@ function channelReads(
   channelName: string,
   items: Array<{ Id: number }> = [{ Id: 7 }],
   foreignItems: Array<{ Id: number }> = [],
+  attributes: Array<{ Id: number; Key: string; Name: string; FieldTypeId: number }> = [],
 ) {
   return async (url: string, params?: any) => {
     if (url.startsWith('/ContentChannels/')) {
@@ -67,6 +68,9 @@ function channelReads(
       const filter = String(params?.$filter || '');
       if (filter.startsWith('ContentChannelId eq')) return items;
       return [...items, ...foreignItems].filter((item) => new RegExp(`\\bId eq ${item.Id}\\b`).test(filter));
+    }
+    if (url === '/Attributes') {
+      return attributes;
     }
     return [];
   };
@@ -240,5 +244,66 @@ describe('rockBulkSaveRunsheetItems access ordering', () => {
       '/ContentChannels/42',
       expect.objectContaining({ ChannelUrl: expect.anything() }),
     );
+  });
+
+  it('drops forged or foreign attribute columns and only writes legitimate channel attributes', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+    const channelAttributes = [
+      { Id: 501, Key: 'LEAD', Name: 'Worship Leader', FieldTypeId: 1 },
+      { Id: 502, Key: 'NOTES', Name: 'Notes', FieldTypeId: 1 },
+    ];
+    mockRockGet.mockImplementation(
+      channelReads('MNL Service // August 16, 2026 // 10AM', [{ Id: 7 }], [], channelAttributes),
+    );
+
+    const clientColumns = [
+      { id: 1, key: 'FORGED', name: 'Forged Attribute' },
+      { id: 999, key: 'FOREIGN', name: 'Foreign Attribute' },
+      { id: 501, key: 'LEAD_CLIENT_ALIAS', name: 'Worship Leader' },
+    ];
+
+    const itemToSave = {
+      id: 7,
+      title: 'Existing segment',
+      order: 1,
+      duration: 1,
+      attributeValues: {
+        LEAD: 'Pastor John',
+        LEAD_CLIENT_ALIAS: 'Forged Value',
+        FORGED: 'Malicious Value',
+        FOREIGN: 'Foreign Value',
+      },
+    };
+
+    const result = await rockBulkSaveRunsheetItems(
+      42,
+      [itemToSave],
+      [],
+      clientColumns,
+    );
+
+    expect(result.success).toBe(true);
+
+    // Verify AttributeValues writes
+    const attributeValuePosts = mockRockPost.mock.calls.filter(([url]) => url === '/AttributeValues');
+    const attributeValuePatches = mockRockPatch.mock.calls.filter(([url]) => url.startsWith('/AttributeValues'));
+
+    // Assert no write targeted forged AttributeId 1 or foreign AttributeId 999
+    const allAttributeValueWrites = [
+      ...attributeValuePosts.map(([, payload]) => payload),
+      ...attributeValuePatches.map(([, payload]) => payload),
+    ];
+
+    for (const write of allAttributeValueWrites) {
+      expect(write.AttributeId).not.toBe(1);
+      expect(write.AttributeId).not.toBe(999);
+    }
+
+    // Verify that legitimate column (AttributeId 501) was written using the server key 'LEAD'
+    expect(mockRockPost).toHaveBeenCalledWith('/AttributeValues', {
+      AttributeId: 501,
+      EntityId: 7,
+      Value: 'Pastor John',
+    });
   });
 });
