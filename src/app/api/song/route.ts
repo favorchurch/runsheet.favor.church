@@ -15,8 +15,11 @@ export async function GET(request: Request) {
     let session;
     try {
       session = await getRockSession();
-    } catch {
-      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+    } catch (err) {
+      if (err instanceof Error && err.message === 'FORBIDDEN') {
+        return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+      }
+      throw err;
     }
     const access = assertRunsheetViewAccess(session);
     if (!access.allowed) {
