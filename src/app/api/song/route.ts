@@ -185,6 +185,52 @@ function renderSongHtml(songItem: any) {
 </html>`;
 }
 
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&#(\d+);/g, (_, dec) => {
+      const code = parseInt(dec, 10);
+      return Number.isSafeInteger(code) ? String.fromCharCode(code) : _;
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+      const code = parseInt(hex, 16);
+      return Number.isSafeInteger(code) ? String.fromCharCode(code) : _;
+    })
+    .replace(/&quot;/gi, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&');
+}
+
+export function sanitizeUrl(rawUrl: string): string | null {
+  if (!rawUrl) return null;
+
+  // Trim and repeatedly decode entities in case of chained encoding
+  let decoded = rawUrl.trim();
+  for (let i = 0; i < 3; i++) {
+    const next = decodeHtmlEntities(decoded).trim();
+    if (next === decoded) break;
+    decoded = next;
+  }
+
+  // If there are unencoded quotes, angle brackets, or whitespace/control characters, reject or strip
+  // URLs containing quotes or control chars are invalid/dangerous in href
+  if (/[\s"'<>\u0000-\u001F\u007F-\u009F]/.test(decoded)) {
+    return null;
+  }
+
+  // Allow only http:, https: or site-relative path starting with / (but not protocol-relative //)
+  if (/^https?:\/\//i.test(decoded)) {
+    return decoded;
+  }
+  if (decoded.startsWith('/') && !decoded.startsWith('//') && !decoded.startsWith('/\\')) {
+    return decoded;
+  }
+
+  return null;
+}
+
 function renderSection(title: string, text: string) {
   const isChorus = title.toLowerCase().includes('chorus');
   const isSheetMusic = title.toLowerCase().includes('sheet music');
@@ -193,13 +239,20 @@ function renderSection(title: string, text: string) {
     const linkMatches = Array.from(text.matchAll(/\[(.*?)\]\((.*?)\)/g));
     if (linkMatches.length > 0) {
       const linksHtml = linkMatches
-        .map(
-          (m) =>
-            `<a href="${m[2]}" target="_blank" rel="noopener noreferrer" class="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 text-xs font-bold text-indigo-900 hover:bg-indigo-100 transition-all shadow-2xs">
-              <span class="flex items-center gap-2">📄 ${escapeHtml(m[1])}</span>
+        .map((m) => {
+          const label = m[1];
+          const rawHref = m[2];
+          const safeHref = sanitizeUrl(rawHref);
+          if (safeHref) {
+            return `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer" class="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 text-xs font-bold text-indigo-900 hover:bg-indigo-100 transition-all shadow-2xs">
+              <span class="flex items-center gap-2">📄 ${escapeHtml(label)}</span>
               <span class="text-indigo-600 font-semibold">Download ↗</span>
-            </a>`
-        )
+            </a>`;
+          }
+          return `<div class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-xs font-semibold text-slate-700 shadow-2xs">
+            <span class="flex items-center gap-2">📄 ${escapeHtml(label)}</span>
+          </div>`;
+        })
         .join('');
 
       return `<div class="rounded-2xl border border-indigo-200 bg-indigo-50/30 p-5 my-6">
@@ -213,9 +266,24 @@ function renderSection(title: string, text: string) {
     }
   }
 
-  const formattedText = escapeHtml(text)
-    .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:text-indigo-900 underline underline-offset-2">$1 ↗</a>')
-    .replace(/\n/g, '<br>');
+  // Parse markdown links before escaping everything else or handle inline
+  // Note: we can replace markdown links with placeholders or replace dynamically
+  const formattedText = text
+    .replace(/\[(.*?)\]\((.*?)\)/g, (_, label, href) => {
+      const safeHref = sanitizeUrl(href);
+      if (safeHref) {
+        return `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:text-indigo-900 underline underline-offset-2">${escapeHtml(label)} ↗</a>`;
+      }
+      return escapeHtml(label);
+    })
+    .split(/(<a\b[^>]*>.*?<\/a>)/g)
+    .map((part) => {
+      if (part.startsWith('<a')) {
+        return part;
+      }
+      return escapeHtml(part).replace(/\n/g, '<br>');
+    })
+    .join('');
 
   const cardStyle = isChorus
     ? 'bg-indigo-50/80 border-l-4 border-indigo-600 rounded-r-2xl p-5 my-6 shadow-2xs'

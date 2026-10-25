@@ -51,4 +51,59 @@ describe('song route access and id handling', () => {
     expect(response.status).toBe(403);
     expect(mockRockGet).not.toHaveBeenCalled();
   });
+
+  it('sanitizes hrefs in normal sections and sheet music sections, disallowing javascript/data and unescaped quotes', async () => {
+    mockRockGet.mockResolvedValue([
+      {
+        Id: 42,
+        Title: 'Test Song',
+        Content: [
+          '**Artist:** Test Artist',
+          '---',
+          '## Verse 1',
+          'Normal link: [safe](https://example.com/safe)',
+          'Relative link: [sheet](/chords/song.pdf)',
+          'Bad js: [x](javascript:alert(1))',
+          'Bad js mixed: [x](JaVaScRiPt:alert(1))',
+          'Bad data: [x](data:text/html,<script>alert(1)</script>)',
+          'Bad quote: [x](https://a" onmouseover="alert(1))',
+          '',
+          '## Sheet Music',
+          '[safe sheet](https://example.com/music.pdf)',
+          '[sheet relative](/music/relative.pdf)',
+          '[bad sheet js](javascript:alert(1))',
+          '[bad sheet js mixed](JaVaScRiPt:alert(1))',
+          '[bad sheet data](data:text/html,<script>alert(1)</script>)',
+          '[bad sheet quote](https://a" onmouseover="alert(1))',
+        ].join('\n'),
+      },
+    ]);
+
+    const response = await GET(new Request('https://runsheet.test/api/song?id=42'));
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    // Verify safe links render as anchors
+    expect(html).toContain('href="https://example.com/safe"');
+    expect(html).toContain('href="/chords/song.pdf"');
+    expect(html).toContain('href="https://example.com/music.pdf"');
+    expect(html).toContain('href="/music/relative.pdf"');
+
+    // Verify malicious/unsafe links do not render as href
+    expect(html).not.toContain('href="javascript');
+    expect(html).not.toContain('href="JaVaScRiPt');
+    expect(html).not.toContain('href="data:');
+    expect(html).not.toContain('javascript:alert(1)');
+    expect(html).not.toContain('JaVaScRiPt:alert(1)');
+    expect(html).not.toContain('data:text/html');
+
+    // Verify attribute injection is blocked and properly escaped
+    expect(html).not.toContain('onmouseover=');
+    expect(html).not.toContain('" onmouseover=');
+
+    // Plain text labels still render
+    expect(html).toContain('safe');
+    expect(html).toContain('sheet');
+    expect(html).toContain('bad sheet js');
+  });
 });
