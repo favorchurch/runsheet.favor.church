@@ -239,7 +239,7 @@ export async function rockBulkSaveRunsheetItems(
     // Client-supplied columns are restricted to the channel's attributes to prevent
     // forged or foreign AttributeIds from being written.
     const channelAttributeById = new Map(channel.columns.map((col) => [col.id, col]));
-    const effectiveColumns = columns?.length
+    const effectiveColumns = columns !== undefined
       ? columns
           .map((col) => {
             const channelCol = channelAttributeById.get(col.id);

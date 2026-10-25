@@ -306,4 +306,26 @@ describe('rockBulkSaveRunsheetItems access ordering', () => {
       Value: 'Pastor John',
     });
   });
+
+  it('writes no attribute values when columns is an explicit empty array', async () => {
+    mockGetRockSession.mockResolvedValue(session('MNL', true));
+    mockRockGet.mockImplementation(
+      channelReads('MNL Service // August 16, 2026 // 10AM', [{ Id: 7 }], [], [
+        { Id: 501, Key: 'LEAD', Name: 'Worship Leader', FieldTypeId: 1 },
+      ]),
+    );
+
+    const result = await rockBulkSaveRunsheetItems(
+      42,
+      [{ id: 7, title: 'Existing segment', order: 1, duration: 1, attributeValues: { LEAD: 'Pastor John' } }],
+      [],
+      [],
+    );
+
+    expect(result.success).toBe(true);
+    const attributeValueWrites = [...mockRockPost.mock.calls, ...mockRockPatch.mock.calls].filter(
+      ([url, payload]) => url.startsWith('/AttributeValues') && payload?.AttributeId === 501,
+    );
+    expect(attributeValueWrites).toHaveLength(0);
+  });
 });
