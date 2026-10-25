@@ -266,24 +266,33 @@ function renderSection(title: string, text: string) {
     }
   }
 
-  // Parse markdown links before escaping everything else or handle inline
-  // Note: we can replace markdown links with placeholders or replace dynamically
-  const formattedText = text
-    .replace(/\[(.*?)\]\((.*?)\)/g, (_, label, href) => {
-      const safeHref = sanitizeUrl(href);
-      if (safeHref) {
-        return `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:text-indigo-900 underline underline-offset-2">${escapeHtml(label)} ↗</a>`;
-      }
-      return escapeHtml(label);
-    })
-    .split(/(<a\b[^>]*>.*?<\/a>)/g)
-    .map((part) => {
-      if (part.startsWith('<a')) {
-        return part;
-      }
-      return escapeHtml(part).replace(/\n/g, '<br>');
-    })
-    .join('');
+  // Tokenize raw markdown links, escape surrounding non-link text, and append escaped/sanitized links
+  let formattedText = '';
+  let lastIndex = 0;
+  const linkRegex = /\[(.*?)\]\((.*?)\)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = linkRegex.exec(text)) !== null) {
+    // Escape plain text preceding the link
+    const textBefore = text.slice(lastIndex, match.index);
+    formattedText += escapeHtml(textBefore).replace(/\n/g, '<br>');
+
+    const label = match[1];
+    const rawHref = match[2];
+    const safeHref = sanitizeUrl(rawHref);
+
+    if (safeHref) {
+      formattedText += `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:text-indigo-900 underline underline-offset-2">${escapeHtml(label)} ↗</a>`;
+    } else {
+      formattedText += escapeHtml(label);
+    }
+
+    lastIndex = linkRegex.lastIndex;
+  }
+
+  // Escape trailing text
+  const remainingText = text.slice(lastIndex);
+  formattedText += escapeHtml(remainingText).replace(/\n/g, '<br>');
 
   const cardStyle = isChorus
     ? 'bg-indigo-50/80 border-l-4 border-indigo-600 rounded-r-2xl p-5 my-6 shadow-2xs'

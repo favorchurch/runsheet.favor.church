@@ -106,4 +106,41 @@ describe('song route access and id handling', () => {
     expect(html).toContain('sheet');
     expect(html).toContain('bad sheet js');
   });
+
+  it('escapes literal HTML tags such as <a> and <img> in normal sections without executing them', async () => {
+    mockRockGet.mockResolvedValue([
+      {
+        Id: 43,
+        Title: 'HTML Injection Test Song',
+        Content: [
+          '**Artist:** Safe Artist',
+          '---',
+          '## Verse 1',
+          'Literal anchor: <a href="javascript:alert(1)">x</a>',
+          'Literal event: <a onmouseover="alert(1)">x</a>',
+          'Literal img: <img src=x onerror=alert(1)>',
+          'Mixed markdown and html: [link](https://example.com/ok) with <script>alert(2)</script>',
+        ].join('\n'),
+      },
+    ]);
+
+    const response = await GET(new Request('https://runsheet.test/api/song?id=43'));
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    // Verify literal raw HTML tags were escaped
+    expect(html).toContain('&lt;a href=&quot;javascript:alert(1)&quot;&gt;x&lt;/a&gt;');
+    expect(html).toContain('&lt;a onmouseover=&quot;alert(1)&quot;&gt;x&lt;/a&gt;');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).toContain('&lt;script&gt;alert(2)&lt;/script&gt;');
+
+    // Verify no unescaped dangerous tags or attributes were rendered
+    expect(html).not.toMatch(/<a\s+href="javascript:/);
+    expect(html).not.toMatch(/<a\s+onmouseover=/);
+    expect(html).not.toMatch(/<img\s+src=/);
+    expect(html).not.toMatch(/<script>/);
+
+    // Verify the valid markdown link is still rendered as an anchor
+    expect(html).toContain('<a href="https://example.com/ok"');
+  });
 });
