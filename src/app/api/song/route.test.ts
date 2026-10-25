@@ -26,6 +26,15 @@ describe('song route access and id handling', () => {
     mockRockGet.mockResolvedValue([]);
   });
 
+  it('returns 401 without touching Rock when there is no session', async () => {
+    mockGetRockSession.mockRejectedValue(new Error('FORBIDDEN'));
+
+    const response = await GET(new Request('https://runsheet.test/api/song?id=42'));
+
+    expect(response.status).toBe(401);
+    expect(mockRockGet).not.toHaveBeenCalled();
+  });
+
   it('rejects a non-positive or non-integer id before touching Rock', async () => {
     const response = await GET(new Request('https://runsheet.test/api/song?id=0'));
 
