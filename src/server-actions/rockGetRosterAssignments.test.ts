@@ -55,8 +55,8 @@ describe('rockGetRosterAssignments', () => {
       .mockResolvedValueOnce([{ Id: 900, GroupId: 19100, LocationId: 475 }] as any) // occurrences
       .mockResolvedValueOnce([
         // RSVP 1 = Yes (confirmed), 3 = Unknown (pending), 0 = No (declined).
-        { Id: 1, OccurrenceId: 900, RSVP: 1, PersonAliasId: 5010 },
-        { Id: 2, OccurrenceId: 900, RSVP: 0, PersonAliasId: 5020 },
+        { Id: 1, OccurrenceId: 900, RSVP: 1, PersonAliasId: 5010, RequestedToAttend: true },
+        { Id: 2, OccurrenceId: 900, RSVP: 0, PersonAliasId: 5020, RequestedToAttend: true },
       ] as any) // attendances
       .mockResolvedValueOnce([{ Id: 5010, PersonId: 10 }] as any) // person aliases
       .mockResolvedValueOnce([{ Id: 10, NickName: 'Juan', LastName: 'Dela Cruz' }] as any); // people
@@ -80,10 +80,10 @@ describe('rockGetRosterAssignments', () => {
       .mockResolvedValueOnce([] as any)
       .mockResolvedValueOnce([{ Id: 900, GroupId: 19100, LocationId: 475 }] as any)
       .mockResolvedValueOnce([
-        { Id: 1, OccurrenceId: 900, RSVP: 1, PersonAliasId: 5010 }, // Yes
-        { Id: 2, OccurrenceId: 900, RSVP: 3, PersonAliasId: 5020 }, // Unknown / pending
-        { Id: 3, OccurrenceId: 900, RSVP: 2, PersonAliasId: 5030 }, // Maybe
-        { Id: 4, OccurrenceId: 900, RSVP: 0, PersonAliasId: 5040 }, // No / declined
+        { Id: 1, OccurrenceId: 900, RSVP: 1, PersonAliasId: 5010, RequestedToAttend: true }, // Yes
+        { Id: 2, OccurrenceId: 900, RSVP: 3, PersonAliasId: 5020, RequestedToAttend: true }, // Unknown / pending
+        { Id: 3, OccurrenceId: 900, RSVP: 2, PersonAliasId: 5030, RequestedToAttend: true }, // Maybe
+        { Id: 4, OccurrenceId: 900, RSVP: 0, PersonAliasId: 5040, RequestedToAttend: true }, // No / declined
       ] as any)
       .mockResolvedValueOnce([
         { Id: 5010, PersonId: 10 },

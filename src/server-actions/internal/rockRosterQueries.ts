@@ -78,6 +78,10 @@ export interface RosterOccupantWithGroup extends RosterOccupant {
  *  - `Attendance` has **no** `PersonAlias` navigation property, so
  *    `$expand=PersonAlias/Person` 400s. Names are resolved in two further hops:
  *    `PersonAliasId` → `/PersonAlias` → `PersonId` → `/People`.
+ *  - Rock's `/Attendances/ScheduledPersonRemove` leaves a `RequestedToAttend=false`,
+ *    `RSVP=3` row rather than deleting it. Kept in memory only when
+ *    `RequestedToAttend === true` and RSVP is not declined (0), matching the
+ *    file's existing OData-limit approach.
  */
 export async function fetchRosterOccupants(params: {
   scheduleId: number;
@@ -108,11 +112,15 @@ export async function fetchRosterOccupants(params: {
     '/Attendances',
     [...slotByOccurrenceId.keys()],
     (batch) => orFilter('OccurrenceId', batch),
-    'Id,OccurrenceId,RSVP,PersonAliasId',
+    'Id,OccurrenceId,RSVP,PersonAliasId,RequestedToAttend',
   );
 
   const rostered = attendances.filter(
-    (a) => isRosteredRsvp(a.RSVP) && a.PersonAliasId && slotByOccurrenceId.has(a.OccurrenceId),
+    (a) =>
+      a.RequestedToAttend === true &&
+      isRosteredRsvp(a.RSVP) &&
+      a.PersonAliasId &&
+      slotByOccurrenceId.has(a.OccurrenceId),
   );
   if (rostered.length === 0) return [];
 

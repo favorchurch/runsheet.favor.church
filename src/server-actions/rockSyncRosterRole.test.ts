@@ -140,8 +140,8 @@ describe('rockSyncRosterRole', () => {
       // read-back: both now in the role, sharing the one slot
       .mockResolvedValueOnce([{ Id: 100, GroupId: 19100, LocationId: 475 }] as any)
       .mockResolvedValueOnce([
-        { Id: 61, OccurrenceId: 100, RSVP: 1, PersonAliasId: 5010 },
-        { Id: 62, OccurrenceId: 100, RSVP: 1, PersonAliasId: 5020 },
+        { Id: 61, OccurrenceId: 100, RSVP: 1, PersonAliasId: 5010, RequestedToAttend: true },
+        { Id: 62, OccurrenceId: 100, RSVP: 1, PersonAliasId: 5020, RequestedToAttend: true },
       ] as any)
       .mockResolvedValueOnce([
         { Id: 5010, PersonId: 10 },
@@ -219,14 +219,14 @@ describe('rockSyncRosterRole', () => {
       // --- current occupants, via fetchRosterOccupants ---
       .mockResolvedValueOnce([{ Id: 100, GroupId: 19100, LocationId: 475 }] as any) // occurrences
       // RSVP 1 = Yes (confirmed). personId 10 currently holds the role.
-      .mockResolvedValueOnce([{ Id: 55, OccurrenceId: 100, RSVP: 1, PersonAliasId: 5010 }] as any)
+      .mockResolvedValueOnce([{ Id: 55, OccurrenceId: 100, RSVP: 1, PersonAliasId: 5010, RequestedToAttend: true }] as any)
       .mockResolvedValueOnce([{ Id: 5010, PersonId: 10 }] as any)
       .mockResolvedValueOnce([{ Id: 10, NickName: 'Old', LastName: 'Person' }] as any)
       // --- occurrenceIdByLocation, for the add ---
       .mockResolvedValueOnce([{ Id: 100, LocationId: 475 }] as any)
       // --- read-back after the write: personId 20 now holds it ---
       .mockResolvedValueOnce([{ Id: 100, GroupId: 19100, LocationId: 475 }] as any)
-      .mockResolvedValueOnce([{ Id: 56, OccurrenceId: 100, RSVP: 1, PersonAliasId: 5020 }] as any)
+      .mockResolvedValueOnce([{ Id: 56, OccurrenceId: 100, RSVP: 1, PersonAliasId: 5020, RequestedToAttend: true }] as any)
       .mockResolvedValueOnce([{ Id: 5020, PersonId: 20 }] as any)
       .mockResolvedValueOnce([{ Id: 20, NickName: 'New', LastName: 'Volunteer' }] as any);
 
@@ -245,5 +245,52 @@ describe('rockSyncRosterRole', () => {
       personId: 20,
       attendanceOccurrenceId: 100,
     });
+  });
+
+  it('omits a removed person whose read-back row lingers with RequestedToAttend=false', async () => {
+    // Rock's ScheduledPersonRemove leaves the row behind (RSVP=3, RequestedToAttend=false).
+    jest.mocked(rockGet)
+      .mockResolvedValueOnce([
+        { GroupId: 19100, LocationId: 475, Schedules: [{ Id: 565, Name: 'MNL Crowne 3PM' }] },
+      ] as any) // 19100
+      .mockResolvedValueOnce([] as any) // 19109
+      .mockResolvedValueOnce([] as any) // 19095
+      .mockResolvedValueOnce([] as any) // 19096
+      .mockResolvedValueOnce([] as any) // 19144
+      // current occupants: personId 10 holds the role
+      .mockResolvedValueOnce([{ Id: 100, GroupId: 19100, LocationId: 475 }] as any)
+      .mockResolvedValueOnce([
+        { Id: 55, OccurrenceId: 100, RSVP: 1, PersonAliasId: 5010, RequestedToAttend: true },
+      ] as any)
+      .mockResolvedValueOnce([{ Id: 5010, PersonId: 10 }] as any)
+      .mockResolvedValueOnce([{ Id: 10, NickName: 'Old', LastName: 'Person' }] as any)
+      // occurrenceIdByLocation
+      .mockResolvedValueOnce([{ Id: 100, LocationId: 475 }] as any)
+      // read-back: the removed row is still returned, now unrequested
+      .mockResolvedValueOnce([{ Id: 100, GroupId: 19100, LocationId: 475 }] as any)
+      .mockResolvedValueOnce([
+        {
+          Id: 55,
+          OccurrenceId: 100,
+          RSVP: 3,
+          RequestedToAttend: false,
+          ScheduledToAttend: false,
+          PersonAliasId: 5010,
+        },
+      ] as any)
+      .mockResolvedValueOnce([{ Id: 5010, PersonId: 10 }] as any)
+      .mockResolvedValueOnce([{ Id: 10, NickName: 'Old', LastName: 'Person' }] as any);
+
+    mockRockPut.mockResolvedValue({} as any);
+
+    const res = await rockSyncRosterRole({
+      channelName: FUTURE,
+      roleTitle: 'Roster: Service Director',
+      personIds: [],
+    });
+
+    expect(res.success).toBe(true);
+    expect(mockRockPut).toHaveBeenCalledWith('/Attendances/ScheduledPersonRemove', { attendanceId: 55 });
+    expect(res.people).toEqual([]);
   });
 });
