@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import {
   clearRosterScheduleMapCache,
+  fetchRosterOccupants,
   fetchRosterScheduleMap,
 } from '@/server-actions/internal/rockRosterQueries';
 
@@ -61,5 +62,61 @@ describe('fetchRosterScheduleMap', () => {
     await fetchRosterScheduleMap();
 
     expect(mockRockGet.mock.calls.length).toBe(10);
+  });
+});
+
+describe('fetchRosterOccupants', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('excludes unscheduled attendance rows and keeps requested attendances', async () => {
+    mockRockGet
+      .mockResolvedValueOnce([{ Id: 900, GroupId: 19100, LocationId: 475 }] as any) // /AttendanceOccurrences
+      .mockResolvedValueOnce([
+        {
+          Id: 1,
+          OccurrenceId: 900,
+          RSVP: 3,
+          RequestedToAttend: true,
+          PersonAliasId: 5010,
+        },
+        {
+          Id: 2,
+          OccurrenceId: 900,
+          RSVP: 3,
+          RequestedToAttend: false,
+          ScheduledToAttend: false,
+          PersonAliasId: 5020,
+        },
+      ] as any) // /Attendances
+      .mockResolvedValueOnce([
+        { Id: 5010, PersonId: 10 },
+        { Id: 5020, PersonId: 20 },
+      ] as any) // /PersonAlias
+      .mockResolvedValueOnce([
+        { Id: 10, NickName: 'Scheduled', LastName: 'Volunteer' },
+        { Id: 20, NickName: 'Unscheduled', LastName: 'Volunteer' },
+      ] as any); // /People
+
+    const occupants = await fetchRosterOccupants({
+      scheduleId: 565,
+      isoDate: '2026-09-27',
+      locationIds: [475],
+    });
+
+    expect(occupants).toEqual([
+      {
+        attendanceId: 1,
+        personId: 10,
+        name: 'Scheduled Volunteer',
+        locationId: 475,
+        groupId: 19100,
+      },
+    ]);
+
+    const attendanceCall = mockRockGet.mock.calls.find(([path]) => path === '/Attendances');
+    expect(attendanceCall).toBeDefined();
+    expect((attendanceCall?.[1] as any).$select).toContain('RequestedToAttend');
   });
 });
