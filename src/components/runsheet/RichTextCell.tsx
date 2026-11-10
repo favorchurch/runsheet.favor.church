@@ -50,7 +50,8 @@ interface RichTextCellProps {
  * WYSIWYG editor for a single runsheet cell.
  *
  * Mounted only for the cell currently being edited. Keyboard handling:
- * Enter (including Shift/Cmd/Ctrl+Enter) inserts a hard break newline.
+ * Enter (including Shift/Cmd/Ctrl+Enter) inserts a hard break newline, except
+ * a plain Enter inside a list, which continues the list.
  * Escape closes/commits the cell. Pointer clicks outside close/commit.
  */
 export function RichTextCell({ value, onChange, onCommit, onEditorChange }: RichTextCellProps) {
@@ -92,6 +93,14 @@ export function RichTextCell({ value, onChange, onCommit, onEditorChange }: Rich
         }
 
         if (event.key === 'Enter') {
+          const plainEnter = !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;
+          // Inside a bullet/numbered list, plain Enter must reach Tiptap's list
+          // keymap so it starts the next item (and exits the list on an empty
+          // one). Forcing a hard break here is what stopped lists continuing.
+          if (plainEnter && editorRef.current?.isActive('listItem')) {
+            return false;
+          }
+
           event.preventDefault();
           editorRef.current?.chain().focus().setHardBreak().run();
           return true;
