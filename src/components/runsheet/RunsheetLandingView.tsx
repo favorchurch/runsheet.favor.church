@@ -60,6 +60,8 @@ export interface RunsheetLandingViewProps {
   runsheetCampuses?: string[];
   /** Home campus derived from signed-in user identity (e.g. contact.campusId or access.campusIds). */
   homeCampus?: RunsheetCampusCode | null;
+  /** Stable signed-in identity used to isolate session-only campus preferences. */
+  preferenceOwner?: string | null;
 }
 
 function getCampusBadgeStyle(campus: string | null) {
@@ -211,17 +213,16 @@ export function RunsheetLandingView({
   accessScope = 'anonymous',
   runsheetCampuses,
   homeCampus = null,
+  preferenceOwner = null,
 }: RunsheetLandingViewProps) {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const showCampusSwitcher = hasAllCampusAccess(runsheetCampuses);
   const [selectedCampus, setSelectedCampus] = useState<CampusSwitcherValue>(homeCampus ?? ALL_CAMPUSES);
   useEffect(() => {
-    const sessionPick = getCampusSwitcherPreference();
-    if (sessionPick) {
-      setSelectedCampus(sessionPick);
-    }
-  }, []);
+    // Reset to this user's home campus if the tab previously belonged to someone else.
+    setSelectedCampus(getCampusSwitcherPreference(preferenceOwner) ?? homeCampus ?? ALL_CAMPUSES);
+  }, [preferenceOwner, homeCampus]);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const [selectedKind, setSelectedKind] = useState<RunsheetKindPreference>('all');
   useEffect(() => setSelectedKind(getRunsheetKindPreference()), []);
@@ -374,7 +375,7 @@ export function RunsheetLandingView({
             value={selectedCampus}
             onChange={(campus) => {
               setSelectedCampus(campus);
-              setCampusSwitcherPreference(campus);
+              setCampusSwitcherPreference(campus, preferenceOwner);
             }}
           />
         )}
