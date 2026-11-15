@@ -13,7 +13,10 @@ import {
 } from '@/components/runsheet/CampusSwitcher';
 
 describe('CampusSwitcher', () => {
-  beforeEach(() => window.localStorage.clear());
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
   afterEach(() => jest.restoreAllMocks());
 
   it('renders All, MNL, BNE, SEL and reports the clicked campus', () => {
@@ -29,26 +32,32 @@ describe('CampusSwitcher', () => {
     expect(onChange).toHaveBeenCalledWith('ALL');
   });
 
-  it('defaults the preference to All and round-trips a stored campus', () => {
-    expect(getCampusSwitcherPreference()).toBe('ALL');
+  it('defaults the preference to null and round-trips a stored campus in sessionStorage', () => {
+    expect(getCampusSwitcherPreference()).toBeNull();
     setCampusSwitcherPreference('SEL');
-    expect(window.localStorage.getItem(STORAGE_KEY_CAMPUS_SWITCHER)).toBe('SEL');
+    expect(window.sessionStorage.getItem(STORAGE_KEY_CAMPUS_SWITCHER)).toBe('SEL');
     expect(getCampusSwitcherPreference()).toBe('SEL');
   });
 
-  it('ignores an unknown stored value', () => {
-    window.localStorage.setItem(STORAGE_KEY_CAMPUS_SWITCHER, 'LAX');
-    expect(getCampusSwitcherPreference()).toBe('ALL');
+  it('clears legacy localStorage and ignores its value', () => {
+    window.localStorage.setItem(STORAGE_KEY_CAMPUS_SWITCHER, 'MNL');
+    expect(getCampusSwitcherPreference()).toBeNull();
+    expect(window.localStorage.getItem(STORAGE_KEY_CAMPUS_SWITCHER)).toBeNull();
   });
 
-  it('falls back to All and swallows errors when storage is blocked', () => {
+  it('ignores an unknown stored value', () => {
+    window.sessionStorage.setItem(STORAGE_KEY_CAMPUS_SWITCHER, 'LAX');
+    expect(getCampusSwitcherPreference()).toBeNull();
+  });
+
+  it('falls back to null and swallows errors when storage is blocked', () => {
     jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('SecurityError');
     });
     jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('SecurityError');
     });
-    expect(getCampusSwitcherPreference()).toBe('ALL');
+    expect(getCampusSwitcherPreference()).toBeNull();
     expect(() => setCampusSwitcherPreference('BNE')).not.toThrow();
   });
 

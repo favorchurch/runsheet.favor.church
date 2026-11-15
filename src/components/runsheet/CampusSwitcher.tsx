@@ -9,21 +9,35 @@ export const CAMPUS_SWITCHER_OPTIONS: CampusSwitcherValue[] = [ALL_CAMPUSES, ...
 
 export const STORAGE_KEY_CAMPUS_SWITCHER = 'runsheet_pref_campus';
 
-/** The last campus picked in this browser; 'ALL' when unset, invalid, or storage is blocked. */
-export function getCampusSwitcherPreference(): CampusSwitcherValue {
-  if (typeof window === 'undefined') return ALL_CAMPUSES;
+function clearLegacyLocalStorage(): void {
+  if (typeof window === 'undefined') return;
   try {
-    const stored = window.localStorage?.getItem(STORAGE_KEY_CAMPUS_SWITCHER);
-    return CAMPUS_SWITCHER_OPTIONS.find((option) => option === stored) ?? ALL_CAMPUSES;
+    window.localStorage?.removeItem(STORAGE_KEY_CAMPUS_SWITCHER);
   } catch {
-    return ALL_CAMPUSES;
+    // Gracefully ignore storage exceptions
+  }
+}
+
+/**
+ * The deliberate campus picked in this session; null when unset, invalid, or storage is blocked.
+ * Legacy localStorage preference is cleared and never read for selection.
+ */
+export function getCampusSwitcherPreference(): CampusSwitcherValue | null {
+  if (typeof window === 'undefined') return null;
+  clearLegacyLocalStorage();
+  try {
+    const stored = window.sessionStorage?.getItem(STORAGE_KEY_CAMPUS_SWITCHER);
+    return CAMPUS_SWITCHER_OPTIONS.find((option) => option === stored) ?? null;
+  } catch {
+    return null;
   }
 }
 
 export function setCampusSwitcherPreference(value: CampusSwitcherValue): void {
   if (typeof window === 'undefined') return;
+  clearLegacyLocalStorage();
   try {
-    window.localStorage?.setItem(STORAGE_KEY_CAMPUS_SWITCHER, value);
+    window.sessionStorage?.setItem(STORAGE_KEY_CAMPUS_SWITCHER, value);
   } catch {
     // Gracefully ignore storage exceptions (e.g. private browsing, quota)
   }

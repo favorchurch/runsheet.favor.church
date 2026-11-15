@@ -14,7 +14,7 @@ import {
 } from 'react-icons/hi2';
 import type { RunsheetChannelOption } from '@/server-actions/rockGetAvailableRunsheetChannels';
 import type { RunsheetDetails } from '@/types/Runsheet';
-import { extractRunsheetCampus } from '@/lib/runsheetCampus';
+import { ALL_CAMPUSES, extractRunsheetCampus, type RunsheetCampusCode } from '@/lib/runsheetCampus';
 import {
   extractChannelTime,
   formatChannelDateDisplay,
@@ -33,7 +33,6 @@ import {
   type RunsheetKindPreference,
 } from '@/lib/userPreferences';
 
-import type { RunsheetCampusCode } from '@/lib/runsheetCampus';
 import {
   CampusSwitcher,
   getCampusSwitcherPreference,
@@ -59,6 +58,8 @@ export interface RunsheetLandingViewProps {
   accessScope?: string;
   /** `access.runsheetCampuses`: the campus switcher shows only when it includes 'ALL'. */
   runsheetCampuses?: string[];
+  /** Home campus derived from signed-in user identity (e.g. contact.campusId or access.campusIds). */
+  homeCampus?: RunsheetCampusCode | null;
 }
 
 function getCampusBadgeStyle(campus: string | null) {
@@ -209,12 +210,16 @@ export function RunsheetLandingView({
   onPrefetchChannel,
   accessScope = 'anonymous',
   runsheetCampuses,
+  homeCampus = null,
 }: RunsheetLandingViewProps) {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const showCampusSwitcher = hasAllCampusAccess(runsheetCampuses);
-  const [selectedCampus, setSelectedCampus] = useState<CampusSwitcherValue>('ALL');
-  useEffect(() => setSelectedCampus(getCampusSwitcherPreference()), []);
+  const [selectedCampus, setSelectedCampus] = useState<CampusSwitcherValue>(() => {
+    const sessionPick = getCampusSwitcherPreference();
+    if (sessionPick) return sessionPick;
+    return homeCampus ?? ALL_CAMPUSES;
+  });
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const [selectedKind, setSelectedKind] = useState<RunsheetKindPreference>('all');
   useEffect(() => setSelectedKind(getRunsheetKindPreference()), []);
@@ -226,10 +231,27 @@ export function RunsheetLandingView({
 
   const effectiveKind = selectedKind !== 'all' && !distinctKinds.includes(selectedKind) ? 'all' : selectedKind;
 
-  // Preload top 5 active runsheets on mount in the background
+  // No campus scope and nothing rostered or Grow-matched to show.
+  const hasNoAccess = !isLoading && !loadFailed && channels.length === 0 && !runsheetCampuses?.length;
+  // Only Global users can browse more than their authorized campus.
+  const campusFilter = showCampusSwitcher
+    ? selectedCampus
+    : runsheetCampuses?.length === 1 ? runsheetCampuses[0] : 'ALL';
+
+  // Preload top 5 active runsheets under the effective campus/kind filter
   useEffect(() => {
-    if (channels && channels.length > 0) {
-      const sortedChannels = sortRunsheetChannels(channels);
+    const matchingChannels = channels.filter((c) => {
+      if (campusFilter !== 'ALL' && extractRunsheetCampus(c.name) !== campusFilter) {
+        return false;
+      }
+      if (effectiveKind !== 'all' && getRunsheetKind(c.name) !== effectiveKind) {
+        return false;
+      }
+      return true;
+    });
+
+    if (matchingChannels.length > 0) {
+      const sortedChannels = sortRunsheetChannels(matchingChannels);
       const topChannels = sortedChannels.slice(0, 5);
       topChannels.forEach((ch) => {
         if (onPrefetchChannel) {
@@ -239,7 +261,7 @@ export function RunsheetLandingView({
         }
       });
     }
-  }, [channels, accessScope, queryClient, onPrefetchChannel]);
+  }, [channels, campusFilter, effectiveKind, accessScope, queryClient, onPrefetchChannel]);
 
   const handlePrefetch = (channelId: number) => {
     if (onPrefetchChannel) {
@@ -248,13 +270,6 @@ export function RunsheetLandingView({
       prefetchRunsheetDetails(queryClient, channelId, accessScope);
     }
   };
-
-  // No campus scope and nothing rostered or Grow-matched to show.
-  const hasNoAccess = !isLoading && !loadFailed && channels.length === 0 && !runsheetCampuses?.length;
-  // Only Global users can browse more than their authorized campus.
-  const campusFilter = showCampusSwitcher
-    ? selectedCampus
-    : runsheetCampuses?.length === 1 ? runsheetCampuses[0] : 'ALL';
 
   // Filter channels by search and campus, sorted chronologically with time signatures
   const filteredChannels = useMemo(() => {

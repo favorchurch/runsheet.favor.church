@@ -4,6 +4,7 @@ import {
   canEditRunsheetTitle,
   canViewRunsheetChannel,
   runsheetEditCampuses,
+  runsheetHomeCampus,
 } from './runsheetChannelAccess';
 import type { GrowSchedule } from './growRunsheets';
 
@@ -189,5 +190,49 @@ describe('strict campus identity boundary (#100, decision A)', () => {
     const s = { rolesMap: { editor: ['1'] }, contact: { campusId: 1 }, access: { runsheetCampuses: ['MNL'] } };
     expect(runsheetEditCampuses(s)).toEqual([]);
     expect(canEditRunsheetTitle(s, SUNDAY)).toBe(false);
+  });
+});
+
+describe('runsheetHomeCampus', () => {
+  it('maps primary contact.campusId to trusted rock campus codes', () => {
+    expect(runsheetHomeCampus({ contact: { campusId: 1 } })).toBe('MNL');
+    expect(runsheetHomeCampus({ contact: { campusId: 2 } })).toBe('BNE');
+    expect(runsheetHomeCampus({ contact: { campusId: 3 } })).toBe('SEL');
+  });
+
+  it('fails closed on explicit null or unknown contact.campusId', () => {
+    expect(runsheetHomeCampus({ contact: { campusId: null } })).toBeNull();
+    expect(runsheetHomeCampus({ contact: { campusId: 99 } })).toBeNull();
+  });
+
+  it('resolves single campusIds when contact.campusId is undefined', () => {
+    expect(runsheetHomeCampus({ access: { campusIds: [1] } })).toBe('MNL');
+    expect(runsheetHomeCampus({ access: { campusIds: [2] } })).toBe('BNE');
+    expect(runsheetHomeCampus({ access: { campusIds: [3] } })).toBe('SEL');
+    expect(runsheetHomeCampus({ access: { campusIds: [1, 1] } })).toBe('MNL');
+  });
+
+  it('fails closed on ambiguous or unknown campusIds', () => {
+    expect(runsheetHomeCampus({ access: { campusIds: [1, 2] } })).toBeNull();
+    expect(runsheetHomeCampus({ access: { campusIds: [99] } })).toBeNull();
+    expect(runsheetHomeCampus({ access: { campusIds: [1, 99] } })).toBeNull();
+    expect(runsheetHomeCampus({ access: { campusIds: [] } })).toBeNull();
+  });
+
+  it('returns null for missing, empty, or unassociated sessions', () => {
+    expect(runsheetHomeCampus(null)).toBeNull();
+    expect(runsheetHomeCampus(undefined)).toBeNull();
+    expect(runsheetHomeCampus({})).toBeNull();
+  });
+
+  it('never reads runsheetCampuses to grant or infer a home campus', () => {
+    expect(runsheetHomeCampus({ access: { runsheetCampuses: ['MNL'] } })).toBeNull();
+    expect(runsheetHomeCampus({ access: { runsheetCampuses: ['ALL'] } })).toBeNull();
+    expect(
+      runsheetHomeCampus({
+        contact: { campusId: 1 },
+        access: { runsheetCampuses: ['BNE', 'ALL'] },
+      }),
+    ).toBe('MNL');
   });
 });
