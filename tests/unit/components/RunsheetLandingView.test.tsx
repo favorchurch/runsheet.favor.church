@@ -47,6 +47,7 @@ function renderLandingView(props: Partial<React.ComponentProps<typeof RunsheetLa
     onCreateNew: jest.fn(),
     onPrefetchChannel: jest.fn(),
     accessScope: 'test-scope',
+    preferenceOwner: 'auth0|test-user',
     runsheetCampuses: ['ALL'],
   };
 
@@ -287,6 +288,7 @@ describe('RunsheetLandingView', () => {
 
       try {
         window.sessionStorage.setItem('runsheet_pref_campus', 'SEL');
+        window.sessionStorage.setItem('runsheet_pref_campus_owner', 'auth0|test-user');
         renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
 
         expect(within(switcher()).getByRole('button', { name: 'SEL' })).toHaveAttribute('aria-pressed', 'true');
@@ -329,19 +331,20 @@ describe('RunsheetLandingView', () => {
       rerender(
         <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
           <RunsheetLandingView
-            channels={[...sampleChannels]}
+            channels={[...sampleChannels, { id: 104, name: 'SEL Service // August 23, 2026 // 11AM', time: '11AM' }]}
             isLoading={false}
             canEdit={true}
             showArchived={false}
             onSelectChannel={jest.fn()}
             runsheetCampuses={['ALL'].slice()}
             homeCampus="MNL"
+            preferenceOwner="auth0|test-user"
           />
         </QueryClientProvider>,
       );
 
       expect(within(switcher()).getByRole('button', { name: 'SEL' })).toHaveAttribute('aria-pressed', 'true');
-      expect(cardIds()).toEqual([103]);
+      expect(cardIds().sort((a, b) => a - b)).toEqual([103, 104]);
     });
 
     it('fresh-session: pick BNE, clear sessionStorage, unmount/remount, expects home campus pressed', () => {
@@ -357,6 +360,19 @@ describe('RunsheetLandingView', () => {
       expect(within(switcher()).getByRole('button', { name: 'MNL' })).toHaveAttribute('aria-pressed', 'true');
       expect(within(switcher()).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
       expect(cardIds()).toEqual([101]);
+    });
+
+    it('resets to the new identity home campus when another user signs in in the same tab', () => {
+      const first = renderLandingView({ homeCampus: 'MNL', preferenceOwner: 'auth0|person-a' });
+      fireEvent.click(within(switcher()).getByRole('button', { name: 'BNE' }));
+      expect(window.sessionStorage.getItem('runsheet_pref_campus')).toBe('BNE');
+      first.unmount();
+
+      renderLandingView({ homeCampus: 'SEL', preferenceOwner: 'auth0|person-b' });
+      expect(within(switcher()).getByRole('button', { name: 'SEL' })).toHaveAttribute('aria-pressed', 'true');
+      expect(within(switcher()).getByRole('button', { name: 'BNE' })).toHaveAttribute('aria-pressed', 'false');
+      expect(cardIds()).toEqual([103]);
+      expect(window.sessionStorage.getItem('runsheet_pref_campus')).toBeNull();
     });
 
     it('clears legacy localStorage and never reads it for selection', () => {
