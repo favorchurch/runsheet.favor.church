@@ -215,17 +215,13 @@ export function RunsheetLandingView({
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const showCampusSwitcher = hasAllCampusAccess(runsheetCampuses);
-  // Initial selected campus: deliberate session pick takes precedence, falling back to
-  // the signed-in user's home campus, then ALL_CAMPUSES.
-  // Note: On SSR, sessionStorage is unavailable so initial render uses homeCampus ?? ALL_CAMPUSES.
-  // On client hydration, if a deliberate sessionStorage pick exists, it is read immediately on first render.
-  // Per design/acceptance criteria, this potential SSR/client mismatch is intentional to avoid an effect-based
-  // flash of unselected/default content.
-  const [selectedCampus, setSelectedCampus] = useState<CampusSwitcherValue>(() => {
+  const [selectedCampus, setSelectedCampus] = useState<CampusSwitcherValue>(homeCampus ?? ALL_CAMPUSES);
+  useEffect(() => {
     const sessionPick = getCampusSwitcherPreference();
-    if (sessionPick) return sessionPick;
-    return homeCampus ?? ALL_CAMPUSES;
-  });
+    if (sessionPick) {
+      setSelectedCampus(sessionPick);
+    }
+  }, []);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const [selectedKind, setSelectedKind] = useState<RunsheetKindPreference>('all');
   useEffect(() => setSelectedKind(getRunsheetKindPreference()), []);

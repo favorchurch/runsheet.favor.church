@@ -6,6 +6,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { RunsheetLandingView } from '@/components/runsheet/RunsheetLandingView';
+import * as CampusSwitcherModule from '@/components/runsheet/CampusSwitcher';
 import { prefetchRunsheetDetails } from '@/components/runsheet/runsheetQueries';
 
 jest.mock('@auth0/nextjs-auth0', () => ({ getSession: jest.fn().mockResolvedValue(null) }));
@@ -256,12 +257,15 @@ describe('RunsheetLandingView', () => {
       expect(cardIds().sort()).toEqual([101, 102, 103]);
     });
 
-    it('defaults a Global user initial selectedCampus to their home campus on first render', () => {
-      renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
-
-      expect(within(switcher()).getByRole('button', { name: 'MNL' })).toHaveAttribute('aria-pressed', 'true');
+    it.each([
+      ['MNL', 101],
+      ['BNE', 102],
+      ['SEL', 103],
+    ] as const)('defaults Global user to homeCampus %s: asserts %s is pressed and only its runsheets list', (campus, expectedChannelId) => {
+      renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: campus });
+      expect(within(switcher()).getByRole('button', { name: campus })).toHaveAttribute('aria-pressed', 'true');
       expect(within(switcher()).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
-      expect(cardIds()).toEqual([101]);
+      expect(cardIds()).toEqual([expectedChannelId]);
     });
 
     it('prefetches only channels under the effective home campus filter on mount', () => {
@@ -271,6 +275,31 @@ describe('RunsheetLandingView', () => {
       expect(onPrefetchMock).toHaveBeenCalledWith(101);
       expect(onPrefetchMock).not.toHaveBeenCalledWith(102);
       expect(onPrefetchMock).not.toHaveBeenCalledWith(103);
+    });
+
+    it('asserts the session pick is selected after mount and that a home-campus Global user never renders All pressed', () => {
+      const renderedCampusValues: string[] = [];
+      const originalCampusSwitcher = CampusSwitcherModule.CampusSwitcher;
+      const campusSwitcherSpy = jest.spyOn(CampusSwitcherModule, 'CampusSwitcher').mockImplementation((props) => {
+        renderedCampusValues.push(props.value);
+        return originalCampusSwitcher(props);
+      });
+
+      try {
+        window.sessionStorage.setItem('runsheet_pref_campus', 'SEL');
+        renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
+
+        expect(within(switcher()).getByRole('button', { name: 'SEL' })).toHaveAttribute('aria-pressed', 'true');
+        expect(within(switcher()).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
+        expect(cardIds()).toEqual([103]);
+
+        // Hydration safety: initial render used homeCampus 'MNL', never reading sessionStorage during useState init
+        expect(renderedCampusValues[0]).toBe('MNL');
+        // 'All' was never rendered pressed
+        expect(renderedCampusValues).not.toContain('ALL');
+      } finally {
+        campusSwitcherSpy.mockRestore();
+      }
     });
 
     it('remembers the last campus choice in this session via sessionStorage', async () => {
@@ -286,17 +315,15 @@ describe('RunsheetLandingView', () => {
       expect(cardIds()).toEqual([102]);
     });
 
-    it('prefers a valid session pick over home campus', () => {
-      window.sessionStorage.setItem('runsheet_pref_campus', 'SEL');
-      renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
-
-      expect(within(switcher()).getByRole('button', { name: 'SEL' })).toHaveAttribute('aria-pressed', 'true');
-      expect(cardIds()).toEqual([103]);
-    });
-
-    it('does not reset a deliberate pick when channels or runsheetCampuses props change', () => {
+    it('pick-persistence: asserts home campus pressed before the click, then rerenders with a new runsheetCampuses array and new channels and asserts the pick is kept', () => {
       const { rerender } = renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
+      // Assert home campus pressed before click
+      expect(within(switcher()).getByRole('button', { name: 'MNL' })).toHaveAttribute('aria-pressed', 'true');
+      expect(within(switcher()).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
+      expect(cardIds()).toEqual([101]);
+
       fireEvent.click(within(switcher()).getByRole('button', { name: 'SEL' }));
+      expect(within(switcher()).getByRole('button', { name: 'SEL' })).toHaveAttribute('aria-pressed', 'true');
       expect(cardIds()).toEqual([103]);
 
       rerender(
@@ -307,7 +334,7 @@ describe('RunsheetLandingView', () => {
             canEdit={true}
             showArchived={false}
             onSelectChannel={jest.fn()}
-            runsheetCampuses={['ALL']}
+            runsheetCampuses={['ALL'].slice()}
             homeCampus="MNL"
           />
         </QueryClientProvider>,
@@ -315,6 +342,21 @@ describe('RunsheetLandingView', () => {
 
       expect(within(switcher()).getByRole('button', { name: 'SEL' })).toHaveAttribute('aria-pressed', 'true');
       expect(cardIds()).toEqual([103]);
+    });
+
+    it('fresh-session: pick BNE, clear sessionStorage, unmount/remount, expects home campus pressed', () => {
+      const first = renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
+      fireEvent.click(within(switcher()).getByRole('button', { name: 'BNE' }));
+      expect(within(switcher()).getByRole('button', { name: 'BNE' })).toHaveAttribute('aria-pressed', 'true');
+      expect(cardIds()).toEqual([102]);
+
+      window.sessionStorage.clear();
+      first.unmount();
+
+      renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
+      expect(within(switcher()).getByRole('button', { name: 'MNL' })).toHaveAttribute('aria-pressed', 'true');
+      expect(within(switcher()).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
+      expect(cardIds()).toEqual([101]);
     });
 
     it('clears legacy localStorage and never reads it for selection', () => {
