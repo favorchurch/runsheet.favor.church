@@ -8,22 +8,47 @@ export type CampusSwitcherValue = typeof ALL_CAMPUSES | RunsheetCampusCode;
 export const CAMPUS_SWITCHER_OPTIONS: CampusSwitcherValue[] = [ALL_CAMPUSES, ...RUNSHEET_CAMPUS_CODES];
 
 export const STORAGE_KEY_CAMPUS_SWITCHER = 'runsheet_pref_campus';
+export const STORAGE_KEY_CAMPUS_SWITCHER_OWNER = 'runsheet_pref_campus_owner';
 
-/** The last campus picked in this browser; 'ALL' when unset, invalid, or storage is blocked. */
-export function getCampusSwitcherPreference(): CampusSwitcherValue {
-  if (typeof window === 'undefined') return ALL_CAMPUSES;
+function clearLegacyLocalStorage(): void {
+  if (typeof window === 'undefined') return;
   try {
-    const stored = window.localStorage?.getItem(STORAGE_KEY_CAMPUS_SWITCHER);
-    return CAMPUS_SWITCHER_OPTIONS.find((option) => option === stored) ?? ALL_CAMPUSES;
+    window.localStorage?.removeItem(STORAGE_KEY_CAMPUS_SWITCHER);
   } catch {
-    return ALL_CAMPUSES;
+    // Gracefully ignore storage exceptions
   }
 }
 
-export function setCampusSwitcherPreference(value: CampusSwitcherValue): void {
-  if (typeof window === 'undefined') return;
+/**
+ * A deliberate campus choice belongs to the signed-in identity, not the browser tab.
+ * Clear preferences on account changes and do not reuse the old unscoped session key.
+ */
+export function getCampusSwitcherPreference(ownerKey?: string | null): CampusSwitcherValue | null {
+  if (typeof window === 'undefined') return null;
+  clearLegacyLocalStorage();
   try {
-    window.localStorage?.setItem(STORAGE_KEY_CAMPUS_SWITCHER, value);
+    const storage = window.sessionStorage;
+    if (!ownerKey || storage?.getItem(STORAGE_KEY_CAMPUS_SWITCHER_OWNER) !== ownerKey) {
+      storage?.removeItem(STORAGE_KEY_CAMPUS_SWITCHER);
+      storage?.removeItem(STORAGE_KEY_CAMPUS_SWITCHER_OWNER);
+      return null;
+    }
+    const stored = storage?.getItem(STORAGE_KEY_CAMPUS_SWITCHER);
+    return CAMPUS_SWITCHER_OPTIONS.find((option) => option === stored) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function setCampusSwitcherPreference(value: CampusSwitcherValue, ownerKey?: string | null): void {
+  if (typeof window === 'undefined' || !ownerKey) return;
+  clearLegacyLocalStorage();
+  try {
+    const storage = window.sessionStorage;
+    // Invalidating the owner first prevents a partial write from crossing accounts.
+    storage?.removeItem(STORAGE_KEY_CAMPUS_SWITCHER_OWNER);
+    storage?.setItem(STORAGE_KEY_CAMPUS_SWITCHER, value);
+    storage?.setItem(STORAGE_KEY_CAMPUS_SWITCHER_OWNER, ownerKey);
   } catch {
     // Gracefully ignore storage exceptions (e.g. private browsing, quota)
   }

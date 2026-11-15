@@ -9,7 +9,7 @@ import { HiArrowsRightLeft } from 'react-icons/hi2';
 import toast from 'react-hot-toast';
 import { ALL_CAMPUSES, RUNSHEET_CAMPUS_CODES, type RunsheetCampusCode } from '@/lib/runsheetCampus';
 import { canUserEditRunsheet, hasFullEditorRole } from '@/lib/permissions';
-import { canEditRunsheetTitle, runsheetEditCampuses } from '@/lib/runsheetChannelAccess';
+import { canEditRunsheetTitle, runsheetEditCampuses, runsheetHomeCampus } from '@/lib/runsheetChannelAccess';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
 import { extractChannelTime, sortRunsheetChannels } from '@/lib/runsheetDate';
 import { isGrowRunsheetTitle } from '@/lib/runsheetKind';
@@ -136,7 +136,7 @@ export function RunsheetManager({
       setShowCreateForm(false);
       updateUrl('/');
     }
-  }, [showCreateForm, canEdit]);
+  }, [showCreateForm, canEdit, updateUrl]);
 
   /*
    * A server action that never settles leaves React Query fetching forever, and
@@ -492,6 +492,8 @@ export function RunsheetManager({
           templateCampuses={templateCampuses}
           accessScope={accessScope}
           runsheetCampuses={user?.access?.runsheetCampuses ?? []}
+          homeCampus={runsheetHomeCampus(user)}
+          preferenceOwner={user?.sub ?? (user?.contact?.id != null ? `rock:${user.contact.id}` : null)}
         />
       ) : (
         <>

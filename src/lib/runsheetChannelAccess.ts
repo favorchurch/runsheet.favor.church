@@ -2,7 +2,7 @@
  * Per-channel runsheet access: blanket campus rules first, then Grow Course rules, then rostered-only matching (lib/rosterAccess).
  */
 import type { AuthRolesMap } from '@/types/AuthUser';
-import { ALL_CAMPUSES, canAccessRunsheetChannel, scopeCampusCodes } from './runsheetCampus';
+import { ALL_CAMPUSES, canAccessRunsheetChannel, scopeCampusCodes, type RunsheetCampusCode } from './runsheetCampus';
 import { growOccurrenceKey, matchGrowRunsheet, type GrowSchedule } from './growRunsheets';
 import { GROW_EDITOR_ROLE, GROW_VIEWER_ROLE, ROSTERED_VIEWER_ROLE } from './permissions';
 import { ROCK_CAMPUS_CODES, channelRosterKey } from './rosterAccess';
@@ -17,6 +17,28 @@ export type ChannelAccessSession = {
 const has = (s: ChannelAccessSession, role: string) => Boolean(s?.rolesMap?.[role]?.length);
 
 /**
+ * Resolve the user's home campus from trusted Rock identity claims:
+ * primary contact.campusId first, then a single campusIds entry.
+ * Unknown, ambiguous (multiple distinct campusIds), or absent claims yield null.
+ * Never reads runsheetCampuses to grant or infer a home campus.
+ */
+export function runsheetHomeCampus(session: ChannelAccessSession): RunsheetCampusCode | null {
+  const primaryCampus = session?.contact?.campusId;
+  if (primaryCampus !== undefined) {
+    if (primaryCampus === null) return null;
+    return ROCK_CAMPUS_CODES[primaryCampus] ?? null;
+  }
+
+  const campusIds = session?.access?.campusIds;
+  if (campusIds?.length) {
+    const codes = [...new Set(campusIds.map((id) => ROCK_CAMPUS_CODES[id]))];
+    return codes.length === 1 && codes[0] ? codes[0] : null;
+  }
+
+  return null;
+}
+
+/**
  * Resolve the *identity* campus separately from granted roles. A cross-campus
  * roster or Ministry Team membership must not expand this boundary. The primary
  * Rock person's campus wins; an unknown primary campus fails closed. The
@@ -26,16 +48,9 @@ const has = (s: ChannelAccessSession, role: string) => Boolean(s?.rolesMap?.[rol
 export function runsheetIdentityCampusScope(session: ChannelAccessSession): string[] {
   if (session?.access?.runsheetCampuses?.includes(ALL_CAMPUSES)) return [ALL_CAMPUSES];
 
-  const primaryCampus = session?.contact?.campusId;
-  if (primaryCampus !== undefined) {
-    const code = primaryCampus === null ? undefined : ROCK_CAMPUS_CODES[primaryCampus];
-    return code ? [code] : [];
-  }
-
-  const campusIds = session?.access?.campusIds;
-  if (campusIds?.length) {
-    const codes = [...new Set(campusIds.map((id) => ROCK_CAMPUS_CODES[id]))];
-    return codes.length === 1 && codes[0] ? [codes[0]] : [];
+  if (session?.contact?.campusId !== undefined || session?.access?.campusIds?.length) {
+    const home = runsheetHomeCampus(session);
+    return home ? [home] : [];
   }
 
   const scoped = scopeCampusCodes(session?.access?.runsheetCampuses);

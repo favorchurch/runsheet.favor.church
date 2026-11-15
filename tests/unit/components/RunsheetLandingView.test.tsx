@@ -6,6 +6,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { RunsheetLandingView } from '@/components/runsheet/RunsheetLandingView';
+import * as CampusSwitcherModule from '@/components/runsheet/CampusSwitcher';
 import { prefetchRunsheetDetails } from '@/components/runsheet/runsheetQueries';
 
 jest.mock('@auth0/nextjs-auth0', () => ({ getSession: jest.fn().mockResolvedValue(null) }));
@@ -46,6 +47,7 @@ function renderLandingView(props: Partial<React.ComponentProps<typeof RunsheetLa
     onCreateNew: jest.fn(),
     onPrefetchChannel: jest.fn(),
     accessScope: 'test-scope',
+    preferenceOwner: 'auth0|test-user',
     runsheetCampuses: ['ALL'],
   };
 
@@ -65,6 +67,7 @@ describe('RunsheetLandingView', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     window.localStorage.clear();
+    window.sessionStorage.clear();
   });
 
   it('renders landing hero, cards, and campus badges', () => {
@@ -246,7 +249,7 @@ describe('RunsheetLandingView', () => {
       screen.getAllByRole('button', { name: /select runsheet/i }).map((c) => Number(c.getAttribute('data-channel-id')));
     const switcher = () => screen.getByRole('group', { name: 'Campus' });
 
-    it('shows a Global user the All/MNL/BNE/SEL switcher, defaulting to All', () => {
+    it('shows a Global user the All/MNL/BNE/SEL switcher, defaulting to All when home campus is absent', () => {
       renderLandingView({ runsheetCampuses: ['ALL'] });
 
       const buttons = within(switcher()).getAllByRole('button');
@@ -255,18 +258,130 @@ describe('RunsheetLandingView', () => {
       expect(cardIds().sort()).toEqual([101, 102, 103]);
     });
 
-    it('remembers the last campus choice in this browser', async () => {
-      const first = renderLandingView({ runsheetCampuses: ['ALL'] });
+    it.each([
+      ['MNL', 101],
+      ['BNE', 102],
+      ['SEL', 103],
+    ] as const)('defaults Global user to homeCampus %s: asserts %s is pressed and only its runsheets list', (campus, expectedChannelId) => {
+      renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: campus });
+      expect(within(switcher()).getByRole('button', { name: campus })).toHaveAttribute('aria-pressed', 'true');
+      expect(within(switcher()).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
+      expect(cardIds()).toEqual([expectedChannelId]);
+    });
+
+    it('prefetches only channels under the effective home campus filter on mount', () => {
+      const onPrefetchMock = jest.fn();
+      renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL', onPrefetchChannel: onPrefetchMock });
+
+      expect(onPrefetchMock).toHaveBeenCalledWith(101);
+      expect(onPrefetchMock).not.toHaveBeenCalledWith(102);
+      expect(onPrefetchMock).not.toHaveBeenCalledWith(103);
+    });
+
+    it('asserts the session pick is selected after mount and that a home-campus Global user never renders All pressed', () => {
+      const renderedCampusValues: string[] = [];
+      const originalCampusSwitcher = CampusSwitcherModule.CampusSwitcher;
+      const campusSwitcherSpy = jest.spyOn(CampusSwitcherModule, 'CampusSwitcher').mockImplementation((props) => {
+        renderedCampusValues.push(props.value);
+        return originalCampusSwitcher(props);
+      });
+
+      try {
+        window.sessionStorage.setItem('runsheet_pref_campus', 'SEL');
+        window.sessionStorage.setItem('runsheet_pref_campus_owner', 'auth0|test-user');
+        renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
+
+        expect(within(switcher()).getByRole('button', { name: 'SEL' })).toHaveAttribute('aria-pressed', 'true');
+        expect(within(switcher()).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
+        expect(cardIds()).toEqual([103]);
+
+        // Hydration safety: initial render used homeCampus 'MNL', never reading sessionStorage during useState init
+        expect(renderedCampusValues[0]).toBe('MNL');
+        // 'All' was never rendered pressed
+        expect(renderedCampusValues).not.toContain('ALL');
+      } finally {
+        campusSwitcherSpy.mockRestore();
+      }
+    });
+
+    it('remembers the last campus choice in this session via sessionStorage', async () => {
+      const first = renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
       fireEvent.click(within(switcher()).getByRole('button', { name: 'BNE' }));
       expect(cardIds()).toEqual([102]);
-      expect(window.localStorage.getItem('runsheet_pref_campus')).toBe('BNE');
+      expect(window.sessionStorage.getItem('runsheet_pref_campus')).toBe('BNE');
+      expect(window.localStorage.getItem('runsheet_pref_campus')).toBeNull();
       first.unmount();
 
-      renderLandingView({ runsheetCampuses: ['ALL'] });
-      await waitFor(() =>
-        expect(within(switcher()).getByRole('button', { name: 'BNE' })).toHaveAttribute('aria-pressed', 'true'),
-      );
+      renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
+      expect(within(switcher()).getByRole('button', { name: 'BNE' })).toHaveAttribute('aria-pressed', 'true');
       expect(cardIds()).toEqual([102]);
+    });
+
+    it('pick-persistence: asserts home campus pressed before the click, then rerenders with a new runsheetCampuses array and new channels and asserts the pick is kept', () => {
+      const { rerender } = renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
+      // Assert home campus pressed before click
+      expect(within(switcher()).getByRole('button', { name: 'MNL' })).toHaveAttribute('aria-pressed', 'true');
+      expect(within(switcher()).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
+      expect(cardIds()).toEqual([101]);
+
+      fireEvent.click(within(switcher()).getByRole('button', { name: 'SEL' }));
+      expect(within(switcher()).getByRole('button', { name: 'SEL' })).toHaveAttribute('aria-pressed', 'true');
+      expect(cardIds()).toEqual([103]);
+
+      rerender(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <RunsheetLandingView
+            channels={[...sampleChannels, { id: 104, name: 'SEL Service // August 23, 2026 // 11AM', time: '11AM' }]}
+            isLoading={false}
+            canEdit={true}
+            showArchived={false}
+            onSelectChannel={jest.fn()}
+            runsheetCampuses={['ALL'].slice()}
+            homeCampus="MNL"
+            preferenceOwner="auth0|test-user"
+          />
+        </QueryClientProvider>,
+      );
+
+      expect(within(switcher()).getByRole('button', { name: 'SEL' })).toHaveAttribute('aria-pressed', 'true');
+      expect(cardIds().sort((a, b) => a - b)).toEqual([103, 104]);
+    });
+
+    it('fresh-session: pick BNE, clear sessionStorage, unmount/remount, expects home campus pressed', () => {
+      const first = renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
+      fireEvent.click(within(switcher()).getByRole('button', { name: 'BNE' }));
+      expect(within(switcher()).getByRole('button', { name: 'BNE' })).toHaveAttribute('aria-pressed', 'true');
+      expect(cardIds()).toEqual([102]);
+
+      window.sessionStorage.clear();
+      first.unmount();
+
+      renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
+      expect(within(switcher()).getByRole('button', { name: 'MNL' })).toHaveAttribute('aria-pressed', 'true');
+      expect(within(switcher()).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
+      expect(cardIds()).toEqual([101]);
+    });
+
+    it('resets to the new identity home campus when another user signs in in the same tab', () => {
+      const first = renderLandingView({ homeCampus: 'MNL', preferenceOwner: 'auth0|person-a' });
+      fireEvent.click(within(switcher()).getByRole('button', { name: 'BNE' }));
+      expect(window.sessionStorage.getItem('runsheet_pref_campus')).toBe('BNE');
+      first.unmount();
+
+      renderLandingView({ homeCampus: 'SEL', preferenceOwner: 'auth0|person-b' });
+      expect(within(switcher()).getByRole('button', { name: 'SEL' })).toHaveAttribute('aria-pressed', 'true');
+      expect(within(switcher()).getByRole('button', { name: 'BNE' })).toHaveAttribute('aria-pressed', 'false');
+      expect(cardIds()).toEqual([103]);
+      expect(window.sessionStorage.getItem('runsheet_pref_campus')).toBeNull();
+    });
+
+    it('clears legacy localStorage and never reads it for selection', () => {
+      window.localStorage.setItem('runsheet_pref_campus', 'BNE');
+      renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
+
+      expect(within(switcher()).getByRole('button', { name: 'MNL' })).toHaveAttribute('aria-pressed', 'true');
+      expect(cardIds()).toEqual([101]);
+      expect(window.localStorage.getItem('runsheet_pref_campus')).toBeNull();
     });
 
     it('still works when browser storage is blocked', () => {
@@ -277,8 +392,8 @@ describe('RunsheetLandingView', () => {
         throw new Error('SecurityError');
       });
       try {
-        renderLandingView({ runsheetCampuses: ['ALL'] });
-        expect(within(switcher()).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+        renderLandingView({ runsheetCampuses: ['ALL'], homeCampus: 'MNL' });
+        expect(within(switcher()).getByRole('button', { name: 'MNL' })).toHaveAttribute('aria-pressed', 'true');
         fireEvent.click(within(switcher()).getByRole('button', { name: 'SEL' }));
         expect(cardIds()).toEqual([103]);
       } finally {
@@ -288,14 +403,14 @@ describe('RunsheetLandingView', () => {
     });
 
     it('names the campus when the switcher filters every runsheet out', () => {
-      renderLandingView({ runsheetCampuses: ['ALL'], channels: [sampleChannels[0]] });
-      fireEvent.click(within(switcher()).getByRole('button', { name: 'SEL' }));
+      renderLandingView({ runsheetCampuses: ['ALL'], channels: [sampleChannels[0]], homeCampus: 'SEL' });
       expect(screen.getByText(/no active runsheets scheduled for SEL/i)).toBeInTheDocument();
     });
 
     it('hides the switcher and campus pills from a one-campus user', () => {
+      window.sessionStorage.setItem('runsheet_pref_campus', 'BNE');
       window.localStorage.setItem('runsheet_pref_campus', 'BNE');
-      renderLandingView({ runsheetCampuses: ['MNL'] });
+      renderLandingView({ runsheetCampuses: ['MNL'], homeCampus: 'BNE' });
 
       expect(screen.queryByRole('group', { name: 'Campus' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'MNL' })).not.toBeInTheDocument();
@@ -305,8 +420,9 @@ describe('RunsheetLandingView', () => {
 
     it('filters cross-campus rostered runsheets even if supplied to a one-campus client', () => {
       // A stored Global-era choice must not unlock a different campus.
+      window.sessionStorage.setItem('runsheet_pref_campus', 'BNE');
       window.localStorage.setItem('runsheet_pref_campus', 'BNE');
-      renderLandingView({ runsheetCampuses: ['MNL'] });
+      renderLandingView({ runsheetCampuses: ['MNL'], homeCampus: 'BNE' });
 
       expect(screen.queryByRole('group', { name: 'Campus' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'BNE' })).not.toBeInTheDocument();
