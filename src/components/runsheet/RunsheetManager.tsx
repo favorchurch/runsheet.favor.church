@@ -493,6 +493,7 @@ export function RunsheetManager({
           accessScope={accessScope}
           runsheetCampuses={user?.access?.runsheetCampuses ?? []}
           homeCampus={runsheetHomeCampus(user)}
+          preferenceOwner={user?.sub ?? (user?.contact?.id != null ? `rock:${user.contact.id}` : null)}
         />
       ) : (
         <>
