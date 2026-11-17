@@ -58,6 +58,12 @@ const nextConfig = {
   async headers() {
     return [
       {
+        // Favor App sign-in sheet (iOS webcredentials). The file has no extension, so
+        // without this Next serves it as application/octet-stream and Apple ignores it.
+        source: '/.well-known/apple-app-site-association',
+        headers: [{ key: 'Content-Type', value: 'application/json' }],
+      },
+      {
         source: '/:path*',
         headers: [
           // security headers
