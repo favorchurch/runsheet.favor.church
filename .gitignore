@@ -325,3 +325,7 @@ reports/mutation/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# Favor App association files (sign-in sheet). Must be committed despite the .* rule above.
+!public/.well-known/
+!public/.well-known/**

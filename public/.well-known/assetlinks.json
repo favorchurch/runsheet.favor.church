@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "church.favor.app",
+      "sha256_cert_fingerprints": [
+        "8E:08:4B:30:1E:DD:7E:15:BC:54:C8:2A:78:9D:69:BF:02:69:9B:09:62:CD:9C:85:08:6D:68:8A:93:9A:21:BE",
+        "54:E7:AC:EB:92:70:8D:34:BD:B7:C0:E1:1B:A3:84:0A:1D:B2:C6:58:57:5C:7F:E8:F8:66:48:5C:20:45:82:79"
+      ]
+    }
+  }
+]

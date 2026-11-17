@@ -7,7 +7,9 @@ import { CLEAR_ALL_COOKIES_QUERY_PARAM } from '@/lib/logoutCookies';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const config = {
-  matcher: ['/((?!_next|api|images|img|icon\\.png|favicon\\.ico|redirect).*)'],
+  // `.well-known` is excluded so the Favor App association files are always served
+  // as plain 200s: Apple and Google reject any redirect (canonical host, version cookie).
+  matcher: ['/((?!_next|api|images|img|icon\\.png|favicon\\.ico|redirect|\\.well-known).*)'],
 };
 
 function getExpectedUrl(): URL | null {
