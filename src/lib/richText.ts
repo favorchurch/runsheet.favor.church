@@ -138,6 +138,8 @@ export function htmlToPlainText(value: string): string {
 
   return value
     .replace(CELL_LINK_TAG_REGEX, '')
+    .replace(/<script\b[^>]*>[\s\S]*?(?:<\/script\s*>|$)/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?(?:<\/style\s*>|$)/gi, '')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|li|h[1-6]|blockquote)\s*>/gi, '\n')
     .replace(/<[^>]*>/g, '')
@@ -145,7 +147,8 @@ export function htmlToPlainText(value: string): string {
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
-    .replace(/&#0?39;/gi, "'")
+    .replace(/&#0*39;/gi, "'")
+    .replace(/&#x0*27;/gi, "'")
     .replace(/&apos;/gi, "'")
     .replace(/&amp;/gi, '&') // must come last so `&amp;lt;` does not double-decode
     .replace(/\n{3,}/g, '\n\n')
