@@ -51,6 +51,34 @@ describe('htmlToPlainText', () => {
   it('drops colour markup but keeps the text', () => {
     expect(htmlToPlainText('<p><span style="color: #dc2626">Late</span></p>')).toBe('Late');
   });
+
+  it('strips rich-text and nested HTML tags from activity titles', () => {
+    expect(htmlToPlainText('<p><strong>Runsheet Huddle</strong></p>')).toBe('Runsheet Huddle');
+    expect(htmlToPlainText('<p><strong>All-In Huddle</strong></p>')).toBe('All-In Huddle');
+    expect(
+      htmlToPlainText('<div><p><span style="color: #111827"><strong><em>Worship</em></strong></span></p></div>'),
+    ).toBe('Worship');
+  });
+
+  it('decodes &amp;, &nbsp;, and &#39; entities cleanly', () => {
+    expect(htmlToPlainText('<p>Pastor&nbsp;Rico&#39;s Q&amp;A</p>')).toBe("Pastor Rico's Q&A");
+    expect(htmlToPlainText('<p>It&#x27;s&nbsp;Ready</p>')).toBe("It's Ready");
+  });
+
+  it('strips script, style, and event-handler payloads safely', () => {
+    expect(htmlToPlainText('<script>alert("xss")</script><p><strong>Runsheet Huddle</strong></p>')).toBe(
+      'Runsheet Huddle',
+    );
+    expect(htmlToPlainText('<style>body{display:none}</style><p>All-In Huddle</p>')).toBe('All-In Huddle');
+    expect(
+      htmlToPlainText('<p onload="alert(1)" onclick="evil()"><img src="x" onerror="alert(2)" />Doors Open</p>'),
+    ).toBe('Doors Open');
+    expect(htmlToPlainText('<script>alert(1)</script>')).toBe('');
+  });
+
+  it('leaves plain-text titles untouched', () => {
+    expect(htmlToPlainText('Doors Open')).toBe('Doors Open');
+  });
 });
 
 describe('isRichTextEmpty', () => {

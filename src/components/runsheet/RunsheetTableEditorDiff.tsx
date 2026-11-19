@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FALLBACK_RUNSHEET_COLUMNS, HIDDEN_ATTRIBUTE_KEYS, RESERVED_RUNSHEET_COLUMN_KEYS } from '@/constants/runsheetColumns';
+import { htmlToPlainText } from '@/lib/richText';
 import { buildInlineDiffRows, type InlineDiffCell } from '@/lib/runsheetInlineDiff';
 import { resolveSiblings } from '@/lib/runsheetSiblings';
 import { parseStartTimeFromRunsheetName } from '@/lib/runsheetTime';
@@ -219,7 +220,9 @@ function DiffCards({
 
             {/* Segment Title */}
             <h4 className="font-bold text-slate-900 text-xs sm:text-sm break-words whitespace-normal leading-tight my-0.5">
-              {titleCell?.targetValue || titleCell?.sourceValue || 'Untitled Segment'}
+              {htmlToPlainText(titleCell?.targetValue || '') ||
+                htmlToPlainText(titleCell?.sourceValue || '') ||
+                'Untitled Segment'}
             </h4>
 
             {/* Time fields (Start Time and Duration) */}
