@@ -133,15 +133,15 @@ interface RunsheetTableEditorProps {
  * row greys every cell's background and text rather than fading the row.
  */
 const PAST_ROW_CLASS = '[&>td]:!bg-slate-200 [&>td]:!text-slate-500 [&_*]:!text-slate-500';
-const CURRENT_ROW_CLASS = '[&>td]:!bg-pink-50';
+const CURRENT_ROW_CLASS = '[&>td]:!bg-orange-50';
 const PAST_CARD_CLASS = 'border-slate-300 bg-slate-200 [&_*]:!text-slate-500';
-const CURRENT_CARD_CLASS = 'border-pink-400 bg-pink-50 ring-1 ring-pink-300';
+const CURRENT_CARD_CLASS = 'border-orange-400 bg-orange-50 ring-1 ring-orange-300';
 
 /** Marks the segment planned for right now. */
 function NowBadge({ className = '' }: { className?: string }) {
   return (
     <span
-      className={`flex w-fit items-center gap-1 rounded-full bg-pink-700 px-1.5 py-px font-sans text-[9px] font-bold uppercase tracking-wide !text-white ${className}`}
+      className={`flex w-fit items-center gap-1 rounded-full bg-orange-700 px-1.5 py-px font-sans text-[9px] font-bold uppercase tracking-wide !text-white ${className}`}
     >
       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" aria-hidden />
       Now
