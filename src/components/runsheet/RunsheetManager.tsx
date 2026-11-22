@@ -20,6 +20,7 @@ import type { RunsheetDetails } from '@/types/Runsheet';
 import type { RockRosterAssignmentsResult } from '@/server-actions/rockGetRosterAssignments';
 import {
   getRunsheetAccessScope,
+  refreshRunsheetDetailsAfterSave,
   runsheetQueryKeys,
   useAvailableRunsheetChannels,
   useRunsheetDetails,
@@ -402,12 +403,13 @@ export function RunsheetManager({
   };
 
   const handleOptimisticSave = React.useCallback((updatedData: RunsheetDetails) => {
+    // No invalidate here: that would refetch through the cached read path and race
+    // the fresh reload in handleSaveSettled, which runs right after this.
     queryClient.setQueryData(runsheetQueryKeys.details(updatedData.channelId, accessScope), { success: true, data: updatedData });
-    queryClient.invalidateQueries(runsheetQueryKeys.details(updatedData.channelId, accessScope));
   }, [accessScope, queryClient]);
 
   const handleSaveSettled = React.useCallback((channelId: number) => {
-    queryClient.invalidateQueries(runsheetQueryKeys.details(channelId, accessScope));
+    void refreshRunsheetDetailsAfterSave(queryClient, channelId, accessScope);
   }, [accessScope, queryClient]);
 
   const handleSaveAndLeave = async () => {

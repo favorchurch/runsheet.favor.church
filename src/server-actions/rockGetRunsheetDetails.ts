@@ -194,8 +194,16 @@ async function resolvePersonNamesBatch(rawValues: string[]): Promise<Map<string,
   return result;
 }
 
-/** Loads a runsheet channel, its dynamic columns, and every segment row. */
-export async function rockGetRunsheetDetails(channelId: number) {
+/**
+ * Loads a runsheet channel, its dynamic columns, and every segment row.
+ *
+ * `fresh` reads the runsheet itself straight from Rock, skipping the Redis and
+ * Next.js read caches. The reload that follows a save needs it: the Redis cache
+ * is invalidated by a version counter that each server instance remembers for a
+ * few seconds, so a read landing on another instance right after a write can
+ * still be served the pre-save runsheet, and the editor would show it.
+ */
+export async function rockGetRunsheetDetails(channelId: number, fresh = false) {
   try {
     if (!Number.isSafeInteger(channelId) || channelId <= 0) {
       return { success: false, error: 'Invalid runsheet.' };
@@ -210,7 +218,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
     // Grow schedules are fetched on every branch, so a missing id and another
     // campus's runsheet make the same Rock calls.
     const [channel, growSchedules] = (await Promise.all([
-      rockGet(`/ContentChannels/${channelId}`).catch((error: unknown) => {
+      rockGet(`/ContentChannels/${channelId}`, undefined, fresh).catch((error: unknown) => {
         if (isRockNotFound(error)) return null;
         throw error;
       }),
@@ -260,13 +268,18 @@ export async function rockGetRunsheetDetails(channelId: number) {
           `(EntityTypeQualifierColumn eq 'ContentChannelId' and EntityTypeQualifierValue eq '${channelId}'))`,
         $orderby: 'Order asc,Id asc',
       },
+      fresh,
     );
 
-    const rawItemsPromise = rockGet('/ContentChannelItems', {
-      $filter: `ContentChannelId eq ${channelId}`,
-      $orderby: 'Order asc',
-      loadAttributes: 'simple',
-    });
+    const rawItemsPromise = rockGet(
+      '/ContentChannelItems',
+      {
+        $filter: `ContentChannelId eq ${channelId}`,
+        $orderby: 'Order asc',
+        loadAttributes: 'simple',
+      },
+      fresh,
+    );
 
     const [resolvedAttrs, resolvedItems] = await Promise.all([rawAttrsPromise, rawItemsPromise]);
     const rawAttrs = resolvedAttrs as any[];
