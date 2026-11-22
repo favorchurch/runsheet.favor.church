@@ -23,6 +23,36 @@ function notFound(channelId: number, reason: string) {
   return { success: false, error: NOT_FOUND };
 }
 
+/** The shape Rock returns for one entry of a `loadAttributes=simple` item. */
+interface RockAttributeValueEntry {
+  Value?: string | null;
+  PersistedTextValue?: string | null;
+  ValueFormatted?: string | null;
+}
+
+/**
+ * Reads one cell out of Rock's attribute entry.
+ *
+ * `Value` is the raw stored value: exactly what the runsheet editor wrote, so a
+ * save followed by a read round-trips. `PersistedTextValue` is Rock's cached
+ * display text for the value, refreshed separately from the write
+ * (`IsPersistedValueDirty`), so it can lag behind or be formatted differently.
+ * Preferring it for ordinary cells meant a just-saved cell could read back as
+ * its old or reformatted text: the saved edit looked reverted, and the editor
+ * saw a difference from what it had saved and asked to save again. An emptied
+ * cell (`Value` is `''`) must read back empty, not fall through to the old text.
+ *
+ * Person cells are the exception: Rock stores a person alias GUID in `Value`,
+ * and the persisted text is the readable name.
+ */
+function readCellValue(attrObj: RockAttributeValueEntry | undefined, isPerson: boolean): string {
+  if (isPerson) {
+    return attrObj?.PersistedTextValue || attrObj?.Value || attrObj?.ValueFormatted || '';
+  }
+  if (typeof attrObj?.Value === 'string') return attrObj.Value;
+  return attrObj?.PersistedTextValue || attrObj?.ValueFormatted || '';
+}
+
 /** Resolved person names, memoised per server instance. */
 const personNameCache = new Map<string, string>();
 
@@ -276,8 +306,7 @@ export async function rockGetRunsheetDetails(channelId: number) {
       const attrs = item.AttributeValues || {};
       for (const col of columns) {
         if (!isPersonColumn(col)) continue;
-        const attrObj = attrs[col.key];
-        const rawVal: string = attrObj?.PersistedTextValue || attrObj?.Value || attrObj?.ValueFormatted || '';
+        const rawVal = readCellValue(attrs[col.key], true);
         if (rawVal && looksLikePersonKey(rawVal.trim())) {
           personKeysToResolve.push(rawVal.trim());
         }
@@ -300,8 +329,9 @@ export async function rockGetRunsheetDetails(channelId: number) {
           // HTML-encodes the raw value first (our cells already store real
           // HTML), so preferring it here double-escapes entities like `&`
           // into `&amp;amp;`, which then only half-decodes back to `&amp;`
-          // once rendered. `Value` is what the runsheet editor itself wrote.
-          let rawVal: string = attrObj?.PersistedTextValue || attrObj?.Value || attrObj?.ValueFormatted || '';
+          // once rendered. `Value` is what the runsheet editor itself wrote
+          // (see readCellValue for why the persisted text is not preferred).
+          let rawVal = readCellValue(attrObj, isPersonColumn(col));
 
           if (rawVal && isPersonColumn(col) && looksLikePersonKey(rawVal.trim())) {
             rawVal = resolvedPersonNames.get(rawVal.trim()) || rawVal;
