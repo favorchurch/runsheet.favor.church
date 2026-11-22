@@ -11,11 +11,24 @@ import type { RockQueryParams } from '@/types/RockQueryParams';
 
 const log = serverLog('rockFetch');
 
-/** Build the Next.js fetch cache tag for a Rock path (e.g. `/Groups/5` → `rock:groups`) so writes can revalidate it. */
+/** Build the Next.js fetch cache tag for a Rock path (e.g. `/Groups/5` → `rock:groups`). */
 function deriveRockTag(url: string): string {
   const entity = url.split('/')[1]?.toLowerCase() || 'rock';
   return `rock:${entity}`;
 }
+
+/**
+ * Tag carried by every cached Rock GET and purged by every Rock write, mirroring
+ * the global version bump of the Redis object cache.
+ *
+ * Per-entity tags alone are not enough: Rock responses embed other entities. A
+ * runsheet cell edit only PATCHes `/AttributeValues/{id}`, yet the runsheet is
+ * read from `/ContentChannelItems?loadAttributes=simple`, whose cached copy
+ * carries that attribute value. Purging just `rock:attributevalues` left the old
+ * cell text in the Data Cache, so the refetch after a save (and any later open
+ * of the sheet) returned the pre-save runsheet.
+ */
+const ROCK_ALL_TAG = 'rock:all';
 
 /**
  * Single entry point for all HTTP traffic to the Rock REST API.
@@ -104,7 +117,7 @@ export async function rockFetch(
   } else {
     fetchOptions.next = {
       revalidate: ROCK_FETCH_REVALIDATE_SECONDS,
-      tags: [deriveRockTag(url)],
+      tags: [deriveRockTag(url), ROCK_ALL_TAG],
     };
   }
 
@@ -136,13 +149,16 @@ export async function rockFetch(
       await writeRockObjectCache(url, method, params, parsed);
     } else if (method !== 'GET') {
       await bustRockObjectCache();
-      // Purge the Next.js Data Cache for the mutated entity so reads (which are
-      // tagged by deriveRockTag) don't return stale data on the next refetch.
-      // Mirrors the Redis bust above so both server caches invalidate symmetrically.
-      try {
-        revalidateTag(deriveRockTag(url));
-      } catch (err) {
-        log.warn(`Failed to revalidateTag for ${url} during render context:`, err);
+      // Purge the Next.js Data Cache so reads don't return stale data on the
+      // next refetch. Mirrors the Redis bust above so both server caches
+      // invalidate symmetrically: the mutated entity's own tag, plus the global
+      // tag for responses that embed it (see ROCK_ALL_TAG).
+      for (const tag of [deriveRockTag(url), ROCK_ALL_TAG]) {
+        try {
+          revalidateTag(tag);
+        } catch (err) {
+          log.warn(`Failed to revalidateTag ${tag} for ${url} during render context:`, err);
+        }
       }
 
     }
