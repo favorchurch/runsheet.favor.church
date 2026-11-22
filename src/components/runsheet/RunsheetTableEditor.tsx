@@ -66,6 +66,8 @@ import { isMasterTemplateName } from '@/lib/runsheetTemplate';
 import { EventTeamRosterCard, ensureRosterItems } from './EventTeamRosterCard';
 import { runsheetRowsMatch } from '@/lib/runsheetRowsMatch';
 import { REORDER_INDEX_ATTR, usePointerReorder } from './usePointerReorder';
+import { useCampusClock } from './useCampusClock';
+import { getRunsheetDateKey, getSegmentProgress, type SegmentProgress } from '@/lib/runsheetLiveProgress';
 
 function getNextSunday() {
   const d = new Date();
@@ -126,11 +128,35 @@ interface RunsheetTableEditorProps {
   onSaveSettled?: (channelId: number) => void;
 }
 
+/**
+ * Live-progress styles. Grid cells are opaque (some are sticky), so a finished
+ * row greys every cell's background and text rather than fading the row.
+ */
+const PAST_ROW_CLASS = '[&>td]:!bg-slate-200 [&>td]:!text-slate-500 [&_*]:!text-slate-500';
+const CURRENT_ROW_CLASS = '[&>td]:!bg-pink-50';
+const PAST_CARD_CLASS = 'border-slate-300 bg-slate-200 [&_*]:!text-slate-500';
+const CURRENT_CARD_CLASS = 'border-pink-400 bg-pink-50 ring-1 ring-pink-300';
+
+/** Marks the segment planned for right now. */
+function NowBadge({ className = '' }: { className?: string }) {
+  return (
+    <span
+      className={`flex w-fit items-center gap-1 rounded-full bg-pink-700 px-1.5 py-px font-sans text-[9px] font-bold uppercase tracking-wide !text-white ${className}`}
+    >
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" aria-hidden />
+      Now
+    </span>
+  );
+}
+
 /** A row plus the clock values derived from the durations above it. */
 type ProcessedRow = RunsheetItemRow & {
   calculatedStart: string;
   calculatedEnd: string;
   formattedDuration: string;
+  /** Minutes past midnight the row's segment is planned to start and end; drives live progress. */
+  startMinutes: number;
+  endMinutes: number;
 };
 
 /** Start/End/Duration cells are merged across a block of rows via `rowSpan`. */
@@ -1054,9 +1080,11 @@ export function RunsheetTableEditor({
       const blockStartIndex = index;
       const duration = Number(runsheetItemsOnly[index].duration) || 0;
       const startStr = formatMinutesToTimeWithSeconds(currentMinutes);
+      const startMinutes = currentMinutes;
 
       if (duration > 0) {
         currentMinutes += duration;
+        const endMinutes = currentMinutes;
         const endStr = formatMinutesToTimeWithSeconds(currentMinutes);
         const durStr = formatDurationToHMS(duration);
 
@@ -1066,6 +1094,8 @@ export function RunsheetTableEditor({
           calculatedStart: startStr,
           calculatedEnd: endStr,
           formattedDuration: durStr,
+          startMinutes,
+          endMinutes,
         });
         parents[index] = blockStartIndex;
         index++;
@@ -1078,6 +1108,8 @@ export function RunsheetTableEditor({
             calculatedStart: startStr,
             calculatedEnd: endStr,
             formattedDuration: '',
+            startMinutes,
+            endMinutes,
           });
           parents[index] = blockStartIndex;
           index++;
@@ -1093,6 +1125,8 @@ export function RunsheetTableEditor({
             calculatedStart: startStr,
             calculatedEnd: startStr,
             formattedDuration: '',
+            startMinutes,
+            endMinutes: startMinutes,
           });
           parents[index] = blockStartIndex;
           index++;
@@ -1109,6 +1143,15 @@ export function RunsheetTableEditor({
 
     return { processedRows: processed, timeSpanMap: spans, parentBlockMap: parents };
   }, [items, startTime]);
+
+  /**
+   * Live progress on service day: segments whose planned end has passed turn
+   * grey and the one planned for right now is highlighted, by the campus clock.
+   */
+  const campusClock = useCampusClock(channelName);
+  const runsheetDateKey = useMemo(() => getRunsheetDateKey(channelName), [channelName]);
+  const getRowProgress = (row: ProcessedRow): SegmentProgress | null =>
+    getSegmentProgress(runsheetDateKey, row.startMinutes, row.endMinutes, campusClock);
 
   const totalDurationFormatted = useMemo(() => {
     let totalMinutes = 0;
@@ -3190,13 +3233,16 @@ export function RunsheetTableEditor({
                   : null;
                 const isBlockEditing = !readOnly && editingDurationBlockIndex === parentBlockIndex;
                 const currentTitleVal = item.attributeValues?.ACTIVITYTITLE || item.title || '';
+                const progress = getRowProgress(item);
 
                 return (
                   <tr
                     key={item.id}
                     {...{ [REORDER_INDEX_ATTR]: index }}
+                    data-progress={progress ?? undefined}
                     className={`border-b border-slate-200 transition-colors hover:bg-slate-50/90 ${isDragSource ? 'bg-blue-50 opacity-60' : ''
-                      } ${dropEdge === 'top' ? 'shadow-[inset_0_2px_0_0_#3b82f6] bg-blue-50' : ''} ${dropEdge === 'bottom' ? 'shadow-[inset_0_-2px_0_0_#3b82f6] bg-blue-50' : ''}`}
+                      } ${dropEdge === 'top' ? 'shadow-[inset_0_2px_0_0_#3b82f6] bg-blue-50' : ''} ${dropEdge === 'bottom' ? 'shadow-[inset_0_-2px_0_0_#3b82f6] bg-blue-50' : ''} ${progress === 'past' ? PAST_ROW_CLASS : ''
+                      } ${progress === 'current' ? CURRENT_ROW_CLASS : ''}`}
                   >
                     {!readOnly && (
                       <td
@@ -3216,6 +3262,7 @@ export function RunsheetTableEditor({
                         className={`select-none border-b border-r border-slate-300 bg-slate-50 p-0.5 sm:p-1 text-center align-middle font-mono font-semibold text-slate-800 text-[11px] sticky z-20 ${readOnly ? 'left-0' : 'left-[28px]'}`}
                       >
                         {spanInfo.startStr}
+                        {progress === 'current' ? <NowBadge className="mx-auto mt-0.5" /> : null}
                       </td>
                     ) : null}
 
@@ -3386,6 +3433,7 @@ export function RunsheetTableEditor({
             );
             const isExpanded = !!expandedDetailsMap[String(item.id)];
             const populatedDeptCols = otherDeptCols.filter((col) => !!readRunsheetCellValue(item, col.key));
+            const progress = getRowProgress(item);
 
             return (
               <div
@@ -3393,7 +3441,9 @@ export function RunsheetTableEditor({
                 key={item.id}
                 {...{ [REORDER_INDEX_ATTR]: index }}
                 onClick={() => !readOnly && setEditingCardIndex(index)}
-                className={`rounded-xl border border-slate-200 bg-white p-2 sm:p-2.5 shadow-xs flex flex-col gap-1.5 transition-all active:bg-slate-50 cursor-pointer scroll-mt-4 ${isDragSource ? 'opacity-60' : ''
+                data-progress={progress ?? undefined}
+                className={`rounded-xl border p-2 sm:p-2.5 shadow-xs flex flex-col gap-1.5 transition-all active:bg-slate-50 cursor-pointer scroll-mt-4 ${progress === 'past' ? PAST_CARD_CLASS : progress === 'current' ? CURRENT_CARD_CLASS : 'border-slate-200 bg-white'
+                  } ${isDragSource ? 'opacity-60' : ''
                   } ${dropEdge === 'top' ? 'shadow-[0_-3px_0_0_#3b82f6]' : ''} ${dropEdge === 'bottom' ? 'shadow-[0_3px_0_0_#3b82f6]' : ''}`}
               >
                 <div className="flex items-center justify-between">
@@ -3412,6 +3462,7 @@ export function RunsheetTableEditor({
                     <span className="font-mono text-xs font-bold text-blue-900 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
                       {item.calculatedStart}
                     </span>
+                    {progress === 'current' ? <NowBadge /> : null}
                     {item.formattedDuration ? (
                       <span className="font-mono text-[11px] font-semibold text-slate-500">
                         ({item.formattedDuration})
