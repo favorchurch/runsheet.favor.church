@@ -135,6 +135,37 @@ export function useRunsheetDetails(channelId: number | null, accessScope: string
   );
 }
 
+/**
+ * Reloads a runsheet from Rock after a save, bypassing the server read caches,
+ * and puts the result in the query cache.
+ *
+ * A plain invalidate refetches through the cached read path. Right after a write
+ * that can return the pre-save runsheet, which the editor then shows as if the
+ * save had been undone. If the fresh read fails, the cached copy is left in place
+ * and marked stale so it refetches normally.
+ */
+export async function refreshRunsheetDetailsAfterSave(
+  queryClient: QueryClient,
+  channelId: number,
+  accessScope: string = 'anonymous',
+) {
+  const key = runsheetQueryKeys.details(channelId, accessScope);
+  const requestId = (latestPostSaveReload.get(key.join('|')) ?? 0) + 1;
+  latestPostSaveReload.set(key.join('|'), requestId);
+  // Autosaves can overlap; a slower reload from an earlier save must not replace a newer one.
+  const isLatest = () => latestPostSaveReload.get(key.join('|')) === requestId;
+
+  try {
+    const result = throwOnFailedRead(await rockGetRunsheetDetails(channelId, true));
+    if (isLatest()) queryClient.setQueryData(key, result);
+  } catch {
+    if (isLatest()) queryClient.invalidateQueries(key);
+  }
+}
+
+/** Latest post-save reload per runsheet, so overlapping reloads apply in save order. */
+const latestPostSaveReload = new Map<string, number>();
+
 export async function prefetchRunsheetDetails(
   queryClient: QueryClient,
   channelId: number,

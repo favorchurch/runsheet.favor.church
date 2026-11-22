@@ -35,7 +35,8 @@ describe('runsheet loading server behavior', () => {
     await rockGetRunsheetDetails(42);
 
     expect(mockRockGet).toHaveBeenCalledWith('/ContentChannels', expect.any(Object));
-    expect(mockRockGet).toHaveBeenCalledWith('/ContentChannels/42');
+    // A normal load stays on the cache path; only the post-save reload passes `fresh`.
+    expect(mockRockGet).toHaveBeenCalledWith('/ContentChannels/42', undefined, false);
     expect(mockRockGet.mock.calls.every(([, , noCache]) => noCache !== true)).toBe(true);
   });
 
