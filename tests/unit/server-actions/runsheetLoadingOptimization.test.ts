@@ -20,7 +20,7 @@ describe('runsheet loading server behavior', () => {
     mockGetRockSession.mockResolvedValue(viewerSession);
   });
 
-  it('keeps authorized runsheet channel and detail reads on the centralized cache path', async () => {
+  it('keeps the channel list on the cache path but reads runsheet detail content straight from Rock', async () => {
     mockRockGet.mockImplementation(async (url: string) => {
       if (url === '/ContentChannels') {
         return [{ Id: 42, Name: 'MNL Service // August 17, 2099 // 10AM' }];
@@ -35,9 +35,12 @@ describe('runsheet loading server behavior', () => {
     await rockGetRunsheetDetails(42);
 
     expect(mockRockGet).toHaveBeenCalledWith('/ContentChannels', expect.any(Object));
-    // A normal load stays on the cache path; only the post-save reload passes `fresh`.
-    expect(mockRockGet).toHaveBeenCalledWith('/ContentChannels/42', undefined, false);
-    expect(mockRockGet.mock.calls.every(([, , noCache]) => noCache !== true)).toBe(true);
+    // The list may be cached. The runsheet's own content must not be: the Next.js
+    // Data Cache served an older copy of a just-edited runsheet on reload.
+    const listCall = mockRockGet.mock.calls.find(([url]) => url === '/ContentChannels');
+    expect(listCall?.[2]).not.toBe(true);
+    expect(mockRockGet).toHaveBeenCalledWith('/ContentChannels/42', undefined, true);
+    expect(mockRockGet).toHaveBeenCalledWith('/Attributes', expect.any(Object), true);
   });
 
   it('starts independent attributes and item reads together after channel lookup', async () => {

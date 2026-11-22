@@ -86,7 +86,7 @@ describe('rockGetRunsheetDetails cell values', () => {
   });
 });
 
-describe('rockGetRunsheetDetails fresh reads', () => {
+describe('rockGetRunsheetDetails read path', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetRockSession.mockResolvedValue({
@@ -96,24 +96,17 @@ describe('rockGetRunsheetDetails fresh reads', () => {
     mockRockGet.mockImplementation((async (url: string) => {
       if (url === '/ContentChannels/1') return CHANNEL;
       if (url === '/Attributes') return ATTRIBUTES;
-      if (url === '/ContentChannelItems') return [];
       return [];
     }) as any);
   });
 
   const noCacheFlag = (url: string) => mockRockGet.mock.calls.find(([called]) => called === url)?.[2];
 
-  it('reads through the caches by default', async () => {
+  it('always reads the channel, its columns and its rows straight from Rock', async () => {
     await rockGetRunsheetDetails(1);
 
-    expect(noCacheFlag('/ContentChannels/1')).toBeFalsy();
-    expect(noCacheFlag('/Attributes')).toBeFalsy();
-    expect(noCacheFlag('/ContentChannelItems')).toBeFalsy();
-  });
-
-  it('bypasses the caches for the channel, its columns and its rows when fresh', async () => {
-    await rockGetRunsheetDetails(1, true);
-
+    // The Next.js Data Cache serves a stale copy once after its window, so a
+    // runsheet opened after an edit could show the version from before it.
     expect(noCacheFlag('/ContentChannels/1')).toBe(true);
     expect(noCacheFlag('/Attributes')).toBe(true);
     expect(noCacheFlag('/ContentChannelItems')).toBe(true);

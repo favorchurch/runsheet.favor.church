@@ -136,13 +136,12 @@ export function useRunsheetDetails(channelId: number | null, accessScope: string
 }
 
 /**
- * Reloads a runsheet from Rock after a save, bypassing the server read caches,
- * and puts the result in the query cache.
+ * Reloads a runsheet from Rock after a save and puts the result in the query cache.
  *
- * A plain invalidate refetches through the cached read path. Right after a write
- * that can return the pre-save runsheet, which the editor then shows as if the
- * save had been undone. If the fresh read fails, the cached copy is left in place
- * and marked stale so it refetches normally.
+ * Replaces an invalidate-and-refetch, which raced the optimistic update and could
+ * apply an older response over a newer one. Overlapping reloads (autosaves) apply
+ * in save order. If the read fails, the cached copy is left in place and marked
+ * stale so it refetches normally.
  */
 export async function refreshRunsheetDetailsAfterSave(
   queryClient: QueryClient,
@@ -156,7 +155,7 @@ export async function refreshRunsheetDetailsAfterSave(
   const isLatest = () => latestPostSaveReload.get(key.join('|')) === requestId;
 
   try {
-    const result = throwOnFailedRead(await rockGetRunsheetDetails(channelId, true));
+    const result = throwOnFailedRead(await rockGetRunsheetDetails(channelId));
     if (isLatest()) queryClient.setQueryData(key, result);
   } catch {
     if (isLatest()) queryClient.invalidateQueries(key);

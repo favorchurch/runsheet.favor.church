@@ -18,6 +18,9 @@ const RUNSHEET_CONTENT_CHANNEL_TYPE_ID = 13;
  */
 const NOT_FOUND = 'Runsheet not found.';
 
+/** Passed to `rockGet` to skip the read caches (see rockGetRunsheetDetails). */
+const NO_CACHE = true;
+
 function notFound(channelId: number, reason: string) {
   console.warn('[runsheet-access] details denied as not found', { channelId, reason });
   return { success: false, error: NOT_FOUND };
@@ -197,13 +200,16 @@ async function resolvePersonNamesBatch(rawValues: string[]): Promise<Map<string,
 /**
  * Loads a runsheet channel, its dynamic columns, and every segment row.
  *
- * `fresh` reads the runsheet itself straight from Rock, skipping the Redis and
- * Next.js read caches. The reload that follows a save needs it: the Redis cache
- * is invalidated by a version counter that each server instance remembers for a
- * few seconds, so a read landing on another instance right after a write can
- * still be served the pre-save runsheet, and the editor would show it.
+ * The runsheet itself (channel, columns, rows) is always read straight from
+ * Rock, never from the Next.js Data Cache. That cache serves an entry once more
+ * after its revalidate window while it refreshes in the background, whatever the
+ * entry's age, and relies on tag purges on every write to stay correct. Neither
+ * is good enough here: a runsheet opened after an edit came back as the version
+ * from before it ("old on the first reload, new on the second"), and staff saved
+ * over newer notes from that stale copy. Only the lookups that a save cannot
+ * change (resolving a stored person to a name) stay cached.
  */
-export async function rockGetRunsheetDetails(channelId: number, fresh = false) {
+export async function rockGetRunsheetDetails(channelId: number) {
   try {
     if (!Number.isSafeInteger(channelId) || channelId <= 0) {
       return { success: false, error: 'Invalid runsheet.' };
@@ -218,7 +224,7 @@ export async function rockGetRunsheetDetails(channelId: number, fresh = false) {
     // Grow schedules are fetched on every branch, so a missing id and another
     // campus's runsheet make the same Rock calls.
     const [channel, growSchedules] = (await Promise.all([
-      rockGet(`/ContentChannels/${channelId}`, undefined, fresh).catch((error: unknown) => {
+      rockGet(`/ContentChannels/${channelId}`, undefined, NO_CACHE).catch((error: unknown) => {
         if (isRockNotFound(error)) return null;
         throw error;
       }),
@@ -268,7 +274,7 @@ export async function rockGetRunsheetDetails(channelId: number, fresh = false) {
           `(EntityTypeQualifierColumn eq 'ContentChannelId' and EntityTypeQualifierValue eq '${channelId}'))`,
         $orderby: 'Order asc,Id asc',
       },
-      fresh,
+      NO_CACHE,
     );
 
     const rawItemsPromise = rockGet(
@@ -278,7 +284,7 @@ export async function rockGetRunsheetDetails(channelId: number, fresh = false) {
         $orderby: 'Order asc',
         loadAttributes: 'simple',
       },
-      fresh,
+      NO_CACHE,
     );
 
     const [resolvedAttrs, resolvedItems] = await Promise.all([rawAttrsPromise, rawItemsPromise]);

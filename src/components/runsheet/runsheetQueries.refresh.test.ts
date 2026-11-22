@@ -26,16 +26,16 @@ describe('refreshRunsheetDetailsAfterSave', () => {
     queryClient.clear();
   });
 
-  it('reads fresh from Rock and stores the result as the runsheet', async () => {
+  it('reloads from Rock and stores the result as the runsheet', async () => {
     mockDetails.mockResolvedValue(ok('after save'));
 
     await refreshRunsheetDetailsAfterSave(queryClient, 1, 'scope');
 
-    expect(mockDetails).toHaveBeenCalledWith(1, true);
+    expect(mockDetails).toHaveBeenCalledWith(1);
     expect(queryClient.getQueryData(key)).toEqual(ok('after save'));
   });
 
-  it('keeps the cached runsheet and marks it stale when the fresh read fails', async () => {
+  it('keeps the cached runsheet and marks it stale when the reload fails', async () => {
     queryClient.setQueryData(key, ok('optimistic'));
     mockDetails.mockResolvedValue({ success: false, error: 'boom' } as any);
     const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
