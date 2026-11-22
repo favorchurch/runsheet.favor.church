@@ -64,6 +64,7 @@ import { ShareRunsheetModal } from './ShareRunsheetModal';
 import { ExportPdfButton } from './ExportPdfButton';
 import { isMasterTemplateName } from '@/lib/runsheetTemplate';
 import { EventTeamRosterCard, ensureRosterItems } from './EventTeamRosterCard';
+import { runsheetRowsMatch } from '@/lib/runsheetRowsMatch';
 import { REORDER_INDEX_ATTR, usePointerReorder } from './usePointerReorder';
 
 function getNextSunday() {
@@ -570,10 +571,50 @@ export function RunsheetTableEditor({
   /** Rows deleted in the save that triggered propagation — still needed to match their counterparts. */
   const propagateDeletedRowsRef = React.useRef<RunsheetItemRow[]>([]);
 
-  // Populate initial baseline for loaded items that exist in Rock
+  /** Latest values, read inside the refresh effect below without re-running it on every edit. */
+  const isDirtyRef = React.useRef(isDirty);
+  isDirtyRef.current = isDirty;
+  const itemsRef = React.useRef(items);
+  itemsRef.current = items;
+  /** A cell, card or duration editor is open: its draft is not in `items` yet, so a refresh must not replace rows under it. */
+  const isEditingRef = React.useRef(false);
+  const baselineLoadedRef = React.useRef(false);
+
+  // Populate the baseline for loaded items that exist in Rock, and keep it in
+  // step with every later refetch (see the guard below).
   useEffect(() => {
     const map = new Map<number | string, RowFingerprint>();
     const fullInitialItems = ensureRosterItems(initialItems);
+
+    const isRefresh = baselineLoadedRef.current;
+    baselineLoadedRef.current = true;
+    if (isRefresh && !initialTemplate) {
+      /*
+       * The diff behind Save is `items` against this baseline, so the two must
+       * not drift apart. Replacing only the baseline while `items` holds older
+       * rows (opened from a cached copy, or another editor saved since) turns
+       * every stale row into an apparent edit, and the next Save writes it back
+       * over newer content in Rock.
+       *
+       * - Unsaved edits or an open cell editor: keep the baseline, so Save sends
+       *   only what this user changed and never rows they did not touch.
+       * - Otherwise: if the screen is behind Rock, show Rock's rows.
+       */
+      if (isDirtyRef.current || isEditingRef.current) return;
+
+      if (!runsheetRowsMatch(itemsRef.current, initialItems)) {
+        setItems(fullInitialItems);
+        const songs: Record<string, boolean> = {};
+        initialItems.forEach((item) => {
+          if (item.songItemId !== null && item.songItemId !== undefined) songs[String(item.id)] = true;
+        });
+        setMusicCellMap(songs);
+        // Snapshots taken against the replaced rows would undo into stale content.
+        setHistory([]);
+        setFuture([]);
+      }
+    }
+
     fullInitialItems.forEach((item) => {
       if (typeof item.id === 'number' || (!item.isNew && item.id)) {
         map.set(item.id, createRowFingerprint(item));
@@ -584,7 +625,7 @@ export function RunsheetTableEditor({
     });
     baselineRef.current = map;
     setBaselineVersion((v) => v + 1);
-  }, [initialItems, createRowFingerprint]);
+  }, [initialItems, createRowFingerprint, initialTemplate]);
 
   // Keep the stored `Roster:` items in step with Rock, so propagate/compare/print
   // never disagree with the card. Rock is the source of truth; these rows are a mirror.
@@ -640,6 +681,7 @@ export function RunsheetTableEditor({
     setMounted(true);
   }, []);
   const [editingCardIndex, setEditingCardIndex] = useState<number | null>(null);
+  isEditingRef.current = editingCell !== null || editingDurationBlockIndex !== null || editingCardIndex !== null;
   /** Draft text for the Card view's Duration field — lets seconds be typed (`00:05:30`) without every keystroke reformatting the input. */
   const [cardDurationDraft, setCardDurationDraft] = useState('');
   /**
