@@ -3,7 +3,6 @@
 import { getRockSession } from '@/auth0-hooks/server/getRockSession';
 import { rockGet } from '@/server-actions/internal/rockFetch';
 import { hasGrowRole } from '@/lib/permissions';
-import { extractRunsheetCampus } from '@/lib/runsheetCampus';
 import { canEditRunsheetChannel, canViewRunsheetChannel } from '@/lib/runsheetChannelAccess';
 import { fetchGrowSchedules } from '@/server-actions/internal/rockGrowSchedules';
 import { assertRunsheetViewAccess } from '@/server-actions/runsheetAuthorization';
@@ -16,18 +15,7 @@ export interface RunsheetChannelOption {
 
 import { extractChannelDate, extractChannelTime, sortRunsheetChannels } from '@/lib/runsheetDate';
 import { isMasterTemplateName } from '@/lib/runsheetTemplate';
-
-function getTimezoneForChannelName(name: string): string {
-  switch (extractRunsheetCampus(name)) {
-    case 'BNE':
-      return 'Australia/Brisbane';
-    case 'SEL':
-      return 'Asia/Seoul';
-    case 'MNL':
-    default:
-      return 'Asia/Manila';
-  }
-}
+import { getRunsheetTimeZone } from '@/lib/runsheetLiveProgress';
 
 function getTodayInTimezone(timeZone = 'Asia/Manila'): Date {
   const now = new Date();
@@ -49,7 +37,7 @@ function isChannelPast(name: string): boolean {
   const dt = extractChannelDate(name);
   if (!dt) return false;
 
-  const tz = getTimezoneForChannelName(name);
+  const tz = getRunsheetTimeZone(name);
   const today = getTodayInTimezone(tz);
   dt.setHours(0, 0, 0, 0);
   return dt.getTime() < today.getTime();
